@@ -36,7 +36,11 @@ pub enum SelectToolState {
 impl SelectToolState {
     #[must_use]
     pub fn marquee_rect(&self) -> Option<Rect> {
-        if let Self::MarqueeSelecting { start_screen, current_screen } = self {
+        if let Self::MarqueeSelecting {
+            start_screen,
+            current_screen,
+        } = self
+        {
             let min_x = (start_screen.x.0).min(current_screen.x.0) as f64;
             let max_x = (start_screen.x.0).max(current_screen.x.0) as f64;
             let min_y = (start_screen.y.0).min(current_screen.y.0) as f64;

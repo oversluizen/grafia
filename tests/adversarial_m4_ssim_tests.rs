@@ -172,10 +172,7 @@ fn test_adversarial_numerical_stability_zero_variance() {
         assert!(!ssim.is_nan(), "{name} SSIM must not be NaN");
         assert!(!ssim.is_infinite(), "{name} SSIM must not be infinite");
         assert!(ssim.is_finite(), "{name} SSIM must be finite");
-        assert!(
-            (ssim - 1.0).abs() < 1e-9,
-            "{name} self SSIM must equal 1.0"
-        );
+        assert!((ssim - 1.0).abs() < 1e-9, "{name} self SSIM must equal 1.0");
     }
 
     // Between distinct uniform images (both having zero variance)
@@ -230,22 +227,34 @@ fn test_adversarial_pmr_tolerance_boundary_exact_12_vs_13() {
     // 1. Delta exactly 12 on Red channel: 112 vs 100 -> NOT mismatch
     let delta_r_12 = create_solid_image(w, h, Rgba([112, 100, 100, 255]));
     let (pmr_r_12, _) = compute_pmr_and_diff_heatmap(&base, &delta_r_12, 12);
-    assert_eq!(pmr_r_12, 0.0, "Delta 12 on R channel must NOT be a mismatch");
+    assert_eq!(
+        pmr_r_12, 0.0,
+        "Delta 12 on R channel must NOT be a mismatch"
+    );
 
     // 2. Delta exactly 12 on Green channel: 100 vs 112 -> NOT mismatch
     let delta_g_12 = create_solid_image(w, h, Rgba([100, 112, 100, 255]));
     let (pmr_g_12, _) = compute_pmr_and_diff_heatmap(&base, &delta_g_12, 12);
-    assert_eq!(pmr_g_12, 0.0, "Delta 12 on G channel must NOT be a mismatch");
+    assert_eq!(
+        pmr_g_12, 0.0,
+        "Delta 12 on G channel must NOT be a mismatch"
+    );
 
     // 3. Delta exactly 12 on Blue channel: 100 vs 112 -> NOT mismatch
     let delta_b_12 = create_solid_image(w, h, Rgba([100, 100, 112, 255]));
     let (pmr_b_12, _) = compute_pmr_and_diff_heatmap(&base, &delta_b_12, 12);
-    assert_eq!(pmr_b_12, 0.0, "Delta 12 on B channel must NOT be a mismatch");
+    assert_eq!(
+        pmr_b_12, 0.0,
+        "Delta 12 on B channel must NOT be a mismatch"
+    );
 
     // 4. Delta exactly 12 on ALL channels (112, 112, 112 vs 100, 100, 100) -> NOT mismatch
     let delta_all_12 = create_solid_image(w, h, Rgba([112, 112, 112, 255]));
     let (pmr_all_12, _) = compute_pmr_and_diff_heatmap(&base, &delta_all_12, 12);
-    assert_eq!(pmr_all_12, 0.0, "Delta 12 on all channels must NOT be a mismatch");
+    assert_eq!(
+        pmr_all_12, 0.0,
+        "Delta 12 on all channels must NOT be a mismatch"
+    );
 
     // 5. Negative delta exactly 12 (88, 88, 88 vs 100, 100, 100) -> NOT mismatch
     let delta_neg_12 = create_solid_image(w, h, Rgba([88, 88, 88, 255]));
@@ -282,8 +291,7 @@ fn test_adversarial_pmr_tolerance_boundary_exact_12_vs_13() {
     single_mut_buf.put_pixel(5, 5, Rgba([113, 100, 100, 255]));
     let single_mut_img = DynamicImage::ImageRgba8(single_mut_buf);
 
-    let (pmr_single, heatmap_single) =
-        compute_pmr_and_diff_heatmap(&base, &single_mut_img, 12);
+    let (pmr_single, heatmap_single) = compute_pmr_and_diff_heatmap(&base, &single_mut_img, 12);
     assert_eq!(
         pmr_single, 0.01,
         "1 mismatch in 100 pixels must yield PMR exactly 0.01 (1.0%)"

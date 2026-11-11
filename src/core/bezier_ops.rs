@@ -33,7 +33,11 @@ impl Node {
 
 /// Aligns `bcp_in` so that it lies collinear and 180 degrees opposite to `bcp_out` relative to `anchor`.
 #[must_use]
-pub fn align_collinear_opposite(anchor: FontPoint, bcp_in: FontPoint, bcp_out: FontPoint) -> FontPoint {
+pub fn align_collinear_opposite(
+    anchor: FontPoint,
+    bcp_in: FontPoint,
+    bcp_out: FontPoint,
+) -> FontPoint {
     if anchor.distance_to(bcp_out) <= crate::tokens::COLLINEAR_MIN_LEN_EPSILON {
         return bcp_in;
     }

@@ -5,7 +5,7 @@ use crate::core::bezier_ops::{Node, NodeId, NodeType};
 use crate::core::coordinates::{FontPoint, ScreenPoint, ViewportTransform};
 use crate::core::transform_ops::TransformGridAnchor;
 use crate::tokens::{
-    DEG_TO_RAD_F64, EditCanvasTokens, MARQUEE_MAX_SLANT_TAN, SOLVER_DET_EPSILON,
+    EditCanvasTokens, DEG_TO_RAD_F64, MARQUEE_MAX_SLANT_TAN, SOLVER_DET_EPSILON,
     ZOOM_MARQUEE_MIN_SUM_DP, ZOOM_STEPS, ZOOM_STEP_NEXT_THRESHOLD, ZOOM_STEP_PREV_THRESHOLD,
     ZOOM_TOOL_MAX_SCALE, ZOOM_TOOL_MIN_SCALE,
 };
@@ -214,7 +214,9 @@ pub fn compute_rotate_tool_affine(
     curr_font: FontPoint,
     is_shift: bool,
 ) -> kurbo::Affine {
-    use crate::tokens::{RAD_TO_DEG_F64, TRANSFORM_MIN_PIVOT_DIST_UPM, TRANSFORM_ROTATE_SHIFT_STEP_DEG};
+    use crate::tokens::{
+        RAD_TO_DEG_F64, TRANSFORM_MIN_PIVOT_DIST_UPM, TRANSFORM_ROTATE_SHIFT_STEP_DEG,
+    };
     if start_font.distance_to(origin) <= TRANSFORM_MIN_PIVOT_DIST_UPM {
         return kurbo::Affine::IDENTITY;
     }
@@ -222,10 +224,12 @@ pub fn compute_rotate_tool_affine(
     let a1 = (curr_font.y.0 - origin.y.0).atan2(curr_font.x.0 - origin.x.0);
     let mut d_deg = (a1 - a0) * RAD_TO_DEG_F64;
     if is_shift {
-        d_deg =
-            (d_deg / TRANSFORM_ROTATE_SHIFT_STEP_DEG).round() * TRANSFORM_ROTATE_SHIFT_STEP_DEG;
+        d_deg = (d_deg / TRANSFORM_ROTATE_SHIFT_STEP_DEG).round() * TRANSFORM_ROTATE_SHIFT_STEP_DEG;
     }
-    kurbo::Affine::rotate_about(d_deg * DEG_TO_RAD_F64, kurbo::Point::new(origin.x.0, origin.y.0))
+    kurbo::Affine::rotate_about(
+        d_deg * DEG_TO_RAD_F64,
+        kurbo::Point::new(origin.x.0, origin.y.0),
+    )
 }
 
 #[must_use]
@@ -243,7 +247,10 @@ pub fn compute_scale_tool_affine(
     if ax.abs() <= TRANSFORM_MIN_PIVOT_DIST_UPM || ay.abs() <= TRANSFORM_MIN_PIVOT_DIST_UPM {
         return kurbo::Affine::IDENTITY;
     }
-    let (mut sx, mut sy) = ((curr_font.x.0 - origin.x.0) / ax, (curr_font.y.0 - origin.y.0) / ay);
+    let (mut sx, mut sy) = (
+        (curr_font.x.0 - origin.x.0) / ax,
+        (curr_font.y.0 - origin.y.0) / ay,
+    );
     if is_shift {
         let u = (curr_font.y.0 - start_font.y.0)
             .atan2(curr_font.x.0 - start_font.x.0)
@@ -294,7 +301,9 @@ pub fn apply_mode_nodes_transform(
         }
     };
     for (c_idx, contour) in contours.iter_mut().enumerate() {
-        let Some(shadow) = shadow_contours.get(c_idx) else { continue; };
+        let Some(shadow) = shadow_contours.get(c_idx) else {
+            continue;
+        };
         for (i, node) in contour.iter_mut().enumerate() {
             if selected_nodes.contains(&node.id) {
                 let sp = shadow[i].point;
@@ -317,7 +326,9 @@ pub fn apply_mode_nodes_transform(
         return;
     }
     for (c_idx, contour) in contours.iter_mut().enumerate() {
-        let Some(shadow) = shadow_contours.get(c_idx) else { continue; };
+        let Some(shadow) = shadow_contours.get(c_idx) else {
+            continue;
+        };
         let len = contour.len();
         if len < 2 {
             continue;
@@ -328,12 +339,26 @@ pub fn apply_mode_nodes_transform(
             {
                 continue;
             }
-            let prev = if i > 0 { Some(i - 1) } else if closed { Some(len - 1) } else { None };
-            let next = if i + 1 < len { Some(i + 1) } else if closed { Some(0) } else { None };
+            let prev = if i > 0 {
+                Some(i - 1)
+            } else if closed {
+                Some(len - 1)
+            } else {
+                None
+            };
+            let next = if i + 1 < len {
+                Some(i + 1)
+            } else if closed {
+                Some(0)
+            } else {
+                None
+            };
             let anchor_idx = prev
                 .filter(|&p| contour[p].node_type != NodeType::OffCurve)
                 .or_else(|| next.filter(|&n| contour[n].node_type != NodeType::OffCurve));
-            let Some(a_idx) = anchor_idx else { continue; };
+            let Some(a_idx) = anchor_idx else {
+                continue;
+            };
             if selected_nodes.contains(&contour[a_idx].id) {
                 let da_x = contour[a_idx].point.x.0 - shadow[a_idx].point.x.0;
                 let da_y = contour[a_idx].point.y.0 - shadow[a_idx].point.y.0;
@@ -344,7 +369,13 @@ pub fn apply_mode_nodes_transform(
             }
             if contour[a_idx].node_type == NodeType::Smooth {
                 let opp_idx = if prev == Some(a_idx) {
-                    if a_idx > 0 { Some(a_idx - 1) } else if closed { Some(len - 1) } else { None }
+                    if a_idx > 0 {
+                        Some(a_idx - 1)
+                    } else if closed {
+                        Some(len - 1)
+                    } else {
+                        None
+                    }
                 } else if a_idx + 1 < len {
                     Some(a_idx + 1)
                 } else if closed {

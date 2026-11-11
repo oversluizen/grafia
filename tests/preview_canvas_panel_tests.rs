@@ -10,11 +10,11 @@ use egui::{vec2, Pos2, Rect, Vec2};
 use grafia::adapters::headless::{
     pixmap_to_rgba_image, rasterize_full_window, rasterize_preview_panel,
 };
-use grafia::adapters::{CanvasViewMode, GlifoCanvasState, GlifoCanvasWidget};
+use grafia::adapters::{CanvasViewMode, GrafiaCanvasState, GrafiaCanvasWidget};
 use grafia::locator::{ShapeLocatorRenderer, ShapeLocatorStyle};
-use grafia::render::{GlifoPreviewWidget, PreviewPanelConfig};
+use grafia::render::{GrafiaPreviewWidget, PreviewPanelConfig};
 use grafia::tokens::{
-    GlifoTheme, GOLDEN_MASTER_CANVAS_EDIT_HEIGHT_DP, GOLDEN_MASTER_CANVAS_PREVIEW_HEIGHT_DP,
+    GrafiaTheme, GOLDEN_MASTER_CANVAS_EDIT_HEIGHT_DP, GOLDEN_MASTER_CANVAS_PREVIEW_HEIGHT_DP,
     GOLDEN_MASTER_CANVAS_WIDTH_DP, GOLDEN_MASTER_SIDEBAR_WIDTH_DP, LOCATOR_DEFAULT_HEIGHT_DP,
     LOCATOR_DEFAULT_WIDTH_DP, PREVIEW_PANEL_DEFAULT_HEIGHT_DP,
 };
@@ -36,7 +36,7 @@ fn test_shape_locator_default_dimensions_match_v010_sidebar() {
     assert_eq!(default_style.size, vec2(48.0, 36.0));
     assert_eq!(default_style.padding, 2.0);
 
-    let state = GlifoCanvasState::init_glyph_a();
+    let state = GrafiaCanvasState::init_glyph_a();
     let renderer = ShapeLocatorRenderer::new(&state.glyph, default_style.clone());
     let (ctx_m, foc_m) = renderer.render_locator(state.glyph.contours[0].id, default_style.size);
     assert!(!ctx_m.vertices.is_empty());
@@ -65,8 +65,8 @@ fn test_preview_panel_default_height_matches_golden_master_163dp() {
 }
 
 #[test]
-fn test_glifo_preview_widget_normal_inverted_and_flipped_modes() {
-    let state = GlifoCanvasState::init_glyph_a();
+fn test_grafia_preview_widget_normal_inverted_and_flipped_modes() {
+    let state = GrafiaCanvasState::init_glyph_a();
     let cfg_normal = PreviewPanelConfig::default();
     let cfg_flipped = PreviewPanelConfig {
         flipped: true,
@@ -116,7 +116,7 @@ fn test_glifo_preview_widget_normal_inverted_and_flipped_modes() {
         ..Default::default()
     };
     let mut full_output = ctx.run_ui(raw_input, |ui| {
-        ui.add(GlifoPreviewWidget::new(&state).with_config(cfg_flipped));
+        ui.add(GrafiaPreviewWidget::new(&state).with_config(cfg_flipped));
     });
     full_output.textures_delta.clear();
     let primitives = ctx.tessellate(full_output.shapes, full_output.pixels_per_point);
@@ -125,8 +125,8 @@ fn test_glifo_preview_widget_normal_inverted_and_flipped_modes() {
 
 #[test]
 fn test_rasterize_full_window_renders_bottom_preview_silhouette() {
-    let theme = GlifoTheme::sonoma_default();
-    let state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let state = GrafiaCanvasState::init_glyph_a();
     let pixmap = rasterize_full_window(&state, &theme);
 
     // Check bottom preview area: x in [251..986], y in [618..811]
@@ -153,8 +153,8 @@ fn test_rasterize_full_window_renders_bottom_preview_silhouette() {
 
 #[test]
 fn test_shape_thumbnail_view_mode_egui_uses_96x64_scaled_cards() {
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_o();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_o();
     state.view_mode = CanvasViewMode::ShapeThumbnail;
 
     let ctx = egui::Context::default();
@@ -165,7 +165,7 @@ fn test_shape_thumbnail_view_mode_egui_uses_96x64_scaled_cards() {
     };
 
     let mut full_output = ctx.run_ui(raw_input, |ui| {
-        GlifoCanvasWidget::new(&mut state, &theme)
+        GrafiaCanvasWidget::new(&mut state, &theme)
             .with_size(Vec2::new(800.0, 600.0))
             .show(ui);
     });
@@ -195,8 +195,8 @@ fn test_generate_visual_proof_preview_panel_and_full_window() {
     let out_dir = PathBuf::from("target/visual_verification");
     std::fs::create_dir_all(&out_dir).expect("create target/visual_verification");
 
-    let state = GlifoCanvasState::init_glyph_a();
-    let theme = GlifoTheme::sonoma_default();
+    let state = GrafiaCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
 
     let cfg_norm = PreviewPanelConfig::default();
     let cfg_inv = PreviewPanelConfig {
@@ -243,8 +243,8 @@ fn point_in_triangle_2d(p: Pos2, a: Pos2, b: Pos2, c: Pos2) -> bool {
 
 #[test]
 fn test_shape_thumbnail_concave_glyph_n_uses_lyon_nonzero_fill_without_convex_fan_corruption() {
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_n();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_n();
     state.view_mode = CanvasViewMode::ShapeThumbnail;
 
     let ctx = egui::Context::default();
@@ -255,7 +255,7 @@ fn test_shape_thumbnail_concave_glyph_n_uses_lyon_nonzero_fill_without_convex_fa
             ..Default::default()
         },
         |ui| {
-            GlifoCanvasWidget::new(&mut state, &theme)
+            GrafiaCanvasWidget::new(&mut state, &theme)
                 .with_size(Vec2::new(800.0, 600.0))
                 .show(ui);
         },
@@ -326,7 +326,7 @@ fn test_shape_thumbnail_concave_glyph_n_uses_lyon_nonzero_fill_without_convex_fa
     );
 
     // Also verify double-inflection concave glyph /s suppresses convex-fan PathShape fill in ShapeThumbnail
-    let mut state_s = GlifoCanvasState::init_glyph_s();
+    let mut state_s = GrafiaCanvasState::init_glyph_s();
     state_s.view_mode = CanvasViewMode::ShapeThumbnail;
     let mut out_s = ctx.run_ui(
         egui::RawInput {
@@ -334,14 +334,17 @@ fn test_shape_thumbnail_concave_glyph_n_uses_lyon_nonzero_fill_without_convex_fa
             ..Default::default()
         },
         |ui| {
-            GlifoCanvasWidget::new(&mut state_s, &theme)
+            GrafiaCanvasWidget::new(&mut state_s, &theme)
                 .with_size(Vec2::new(800.0, 600.0))
                 .show(ui);
         },
     );
     out_s.textures_delta.clear();
     assert!(
-        out_s.shapes.iter().any(|cs| matches!(&cs.shape, egui::Shape::Mesh(m) if !m.is_empty())),
+        out_s
+            .shapes
+            .iter()
+            .any(|cs| matches!(&cs.shape, egui::Shape::Mesh(m) if !m.is_empty())),
         "ShapeThumbnail must emit non-empty Lyon Mesh for concave /s"
     );
     for cs in &out_s.shapes {
@@ -354,5 +357,3 @@ fn test_shape_thumbnail_concave_glyph_n_uses_lyon_nonzero_fill_without_convex_fa
         }
     }
 }
-
-

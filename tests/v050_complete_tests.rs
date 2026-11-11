@@ -1,5 +1,4 @@
-#![allow(unexpected_cfgs)]
-#![cfg(feature = "v050_red")]
+#![allow(unexpected_cfgs, clippy::too_many_arguments)]
 //! Normative COTS Verification Suite for `SPEC-006` (`grafia v0.5.0`):
 //! Multi-Glyph Horizontal Text Strip (`CanvasTextStream`), Interactive Spacing (`LSB` / `RSB` /
 //! Contour Shift), Kerning Delta Emission, Baseline Highlight Wedges, and Text-Mode Measurement Line
@@ -11,12 +10,15 @@
 use approx::assert_relative_eq;
 use arbtest::arbtest;
 use egui::{Event, Key, Modifiers as EguiModifiers, Pos2, RawInput, Rect, Vec2};
-use grafia::adapters::headless::rasterize_canvas_subregion;
+use grafia::adapters::headless::{
+    pixmap_to_rgba_image, rasterize_canvas_subregion, rasterize_full_window,
+};
 use grafia::adapters::input_dispatcher::InputDispatcher;
 use grafia::{
-    AppearanceMode, CanvasTextStream, CanvasTool, ContourId, FontPoint, GrafiaCanvasState,
-    GrafiaTheme, Glyph, GlyphContour, GlyphSlot, KerningDelta, KerningIndicatorQuad, Node, NodeId,
-    NodeType, RgbaColorToken, SlotScanlineMeasurement, SpacingDelta, KERNING_INCREMENT_HIGH_UPM,
+    AppearanceMode, CanvasHostRequest, CanvasTool, ContourId, FontPoint, Glyph, GlyphContour,
+    GlyphSlot, GrafiaCanvasState, GrafiaTheme, KerningDelta, KerningIndicatorQuad, Node, NodeId,
+    NodeType, RgbaColorToken, ScreenPoint, SlotScanlineMeasurement, SpacingDelta,
+    TextStreamEditKind, TextStreamEditRequest, KERNING_INCREMENT_HIGH_UPM,
     KERNING_INCREMENT_LOW_UPM, KERNING_NEGATIVE_FILL_LIGHT, KERNING_POSITIVE_FILL_LIGHT,
     SPACING_INCREMENT_HIGH_UPM, SPACING_INCREMENT_LOW_UPM, TEXT_MEASUREMENT_LINE_DEFAULT_Y_UPM,
     TEXT_MODE_NUMBERS_THRESHOLD_DEFAULT,
@@ -119,6 +121,9 @@ fn tc_v050_002_and_003_active_vs_passive_slots_and_double_click_switch() {
     assert_eq!(state.text_stream.caret_index, 2);
     assert_eq!(state.glyph.name, "V");
     assert_eq!(state.active_tool, CanvasTool::Select);
+    assert_relative_eq!(state.active_slot_origin_x_upm(), 1100.0, epsilon = 1e-6);
+    let slot2_node_scr = state.viewport.to_screen(FontPoint::new(1140.0, 0.0));
+    assert!(state.hit_test_node(slot2_node_scr).is_some());
     state.validate_invariants().unwrap();
 }
 
@@ -208,6 +213,7 @@ fn tc_v050_007_to_009_spacing_keyboard_matrix_and_deltas(
 }
 
 // TC-V050-010, TC-V050-011 & TC-V050-012: Left & Right Kerning shortcuts + KerningDelta emission.
+#[allow(clippy::too_many_arguments)]
 #[rstest]
 #[case::left_kern_low(false, false, true, Key::ArrowLeft, 0, 1, -1, -21)]
 #[case::left_kern_high(true, false, true, Key::ArrowRight, 0, 1, 10, -10)]
@@ -291,8 +297,16 @@ fn tc_v050_016_and_017_repeated_slot_sync_and_headless_rendering() {
     state.set_text_stream_slots(slots, 0);
     state.active_tool = CanvasTool::Text;
     dispatch_key(&mut state, Key::ArrowRight, true, false, true, false);
-    assert_relative_eq!(state.text_stream.slots[0].glyph.width, 610.0, epsilon = 1e-6);
-    assert_relative_eq!(state.text_stream.slots[2].glyph.width, 610.0, epsilon = 1e-6);
+    assert_relative_eq!(
+        state.text_stream.slots[0].glyph.width,
+        610.0,
+        epsilon = 1e-6
+    );
+    assert_relative_eq!(
+        state.text_stream.slots[2].glyph.width,
+        610.0,
+        epsilon = 1e-6
+    );
 
     state.show_text_measurement_line = true;
     state.set_appearance_mode(AppearanceMode::Light);
@@ -300,6 +314,35 @@ fn tc_v050_016_and_017_repeated_slot_sync_and_headless_rendering() {
     state.set_appearance_mode(AppearanceMode::Dark);
     let dark_px = rasterize_canvas_subregion(&state, &GrafiaTheme::sonoma_dark(), 320, 180);
     assert_ne!(light_px.data(), dark_px.data());
+
+    let out_dir = std::path::Path::new(
+        r"C:\Users\jhove\.gemini\antigravity-cli\brain\fccb9142-9217-4702-a2ca-95303b541ee0",
+    );
+    if out_dir.exists() {
+        let mut s54 = GrafiaCanvasState::init_glyph_a();
+        s54.load_demo_text_strip();
+        s54.active_tool = CanvasTool::Text;
+        s54.text_stream.selection_range = Some((1, 3));
+        s54.text_stream.caret_index = 2;
+        s54.viewport.zoom = 0.21;
+        s54.viewport.pan_offset = ScreenPoint::new(300.0, 315.0);
+        let img54 =
+            pixmap_to_rgba_image(rasterize_full_window(&s54, &GrafiaTheme::sonoma_default()));
+        let _ = img54.save(out_dir.join("frame_54_v050_text_stream_and_kerning.png"));
+
+        let mut s55 = GrafiaCanvasState::init_glyph_a();
+        s55.load_demo_text_strip();
+        s55.switch_active_slot(2);
+        s55.active_tool = CanvasTool::Select;
+        s55.show_text_measurement_line = true;
+        s55.set_text_measurement_y(240.0);
+        s55.italic_angle_deg = 8.0;
+        s55.viewport.zoom = 0.21;
+        s55.viewport.pan_offset = ScreenPoint::new(300.0, 315.0);
+        s55.set_appearance_mode(AppearanceMode::Dark);
+        let img55 = pixmap_to_rgba_image(rasterize_full_window(&s55, &GrafiaTheme::sonoma_dark()));
+        let _ = img55.save(out_dir.join("frame_55_v050_text_measurement_scanline.png"));
+    }
 }
 
 // Property-based test for cumulative slot origin invariant under arbitrary widths and kerning.
@@ -373,4 +416,231 @@ fn tc_v050_018_arbtest_stateful_multi_glyph_text_stream_and_kerning_chains() {
         Ok(())
     })
     .budget_ms(250);
+}
+
+// TC-V050-019: Live character typing (`Event::Text`) & deletion (`Backspace`/`Delete`) at the caret via `CanvasHostRequest::EditTextStream`.
+#[test]
+fn tc_v050_019_live_text_typing_and_backspace_delete_events() {
+    let mut state = make_havo_strip_state();
+    state.activate_tool(CanvasTool::Select);
+    state.set_caret_index(2);
+    let _ = state.drain_host_requests();
+
+    let ctx = egui::Context::default();
+    let theme = state.theme.clone();
+    // Pressing Key::T + Event::Text("t") in the same frame must activate Text tool without typing "t".
+    let mut out_t = ctx.run_ui(
+        RawInput {
+            screen_rect: Some(default_canvas_rect()),
+            events: vec![
+                Event::Key {
+                    key: Key::T,
+                    physical_key: Some(Key::T),
+                    pressed: true,
+                    repeat: false,
+                    modifiers: EguiModifiers::NONE,
+                },
+                Event::Text("t".to_string()),
+            ],
+            ..Default::default()
+        },
+        |ui| {
+            let ev = ui.input(|i| i.events.clone());
+            let mut disp = InputDispatcher::new(&mut state, &theme, default_canvas_rect());
+            let _ = disp.dispatch_events(&ev, ui);
+        },
+    );
+    out_t.textures_delta.clear();
+    assert_eq!(state.active_tool, CanvasTool::Text);
+    assert_eq!(state.text_stream.slots.len(), 4);
+    assert!(state.drain_host_requests().is_empty());
+
+    let mut out = ctx.run_ui(
+        RawInput {
+            screen_rect: Some(default_canvas_rect()),
+            events: vec![Event::Text("X".to_string())],
+            ..Default::default()
+        },
+        |ui| {
+            let ev = ui.input(|i| i.events.clone());
+            let mut disp = InputDispatcher::new(&mut state, &theme, default_canvas_rect());
+            let _ = disp.dispatch_events(&ev, ui);
+        },
+    );
+    out.textures_delta.clear();
+
+    // `grafia` must NOT synthesize a dummy glyph internally; it emits `CanvasHostRequest::EditTextStream`!
+    assert_eq!(state.text_stream.slots.len(), 4);
+    assert_eq!(
+        state.drain_host_requests(),
+        vec![CanvasHostRequest::EditTextStream(TextStreamEditRequest {
+            caret_index: 2,
+            selection_range: None,
+            edit: TextStreamEditKind::InsertText("X".to_string()),
+        })]
+    );
+
+    // Host resolves "X" and updates the stream slots with caret and Undo support:
+    let mut slots_after_x = state.text_stream.slots.clone();
+    slots_after_x.insert(
+        2,
+        GlyphSlot::new(make_stem_glyph("X", 45.0, 555.0, 600.0), 0),
+    );
+    state.set_text_stream_slots_with_caret(slots_after_x, 2, 3);
+    assert_eq!(state.text_stream.slots.len(), 5);
+    assert_eq!(state.text_stream.slots[2].glyph.name, "X");
+    assert_eq!(state.text_stream.caret_index, 3);
+
+    // Replace selection range (1..3) by typing "O", then Backspace once and Delete once.
+    state.text_stream.selection_range = Some((1, 3));
+    state.insert_text_at_caret("O");
+    assert_eq!(
+        state.drain_host_requests(),
+        vec![CanvasHostRequest::EditTextStream(TextStreamEditRequest {
+            caret_index: 3,
+            selection_range: Some((1, 3)),
+            edit: TextStreamEditKind::InsertText("O".to_string()),
+        })]
+    );
+    let mut slots_after_o = state.text_stream.slots.clone();
+    slots_after_o.splice(
+        1..3,
+        [GlyphSlot::new(make_stem_glyph("O", 50.0, 600.0, 650.0), 0)],
+    );
+    state.set_text_stream_slots_with_caret(slots_after_o, 1, 2);
+    assert_eq!(state.text_stream.slots.len(), 4);
+    assert_eq!(state.text_stream.slots[1].glyph.name, "O");
+
+    dispatch_key(&mut state, Key::Backspace, false, false, false, false);
+    assert_eq!(
+        state.drain_host_requests(),
+        vec![CanvasHostRequest::EditTextStream(TextStreamEditRequest {
+            caret_index: 2,
+            selection_range: None,
+            edit: TextStreamEditKind::Backspace,
+        })]
+    );
+    let mut slots_after_bs = state.text_stream.slots.clone();
+    slots_after_bs.remove(1);
+    state.set_text_stream_slots_with_caret(slots_after_bs, 1, 1);
+    assert_eq!(state.text_stream.slots.len(), 3);
+
+    dispatch_key(&mut state, Key::Delete, false, false, false, false);
+    assert_eq!(
+        state.drain_host_requests(),
+        vec![CanvasHostRequest::EditTextStream(TextStreamEditRequest {
+            caret_index: 1,
+            selection_range: None,
+            edit: TextStreamEditKind::DeleteForward,
+        })]
+    );
+    let mut slots_after_del = state.text_stream.slots.clone();
+    slots_after_del.remove(1);
+    state.set_text_stream_slots_with_caret(slots_after_del, 1, 1);
+    assert_eq!(state.text_stream.slots.len(), 2);
+
+    assert!(state.undo());
+    assert_eq!(state.text_stream.slots.len(), 3);
+    assert!(state.redo());
+    assert_eq!(state.text_stream.slots.len(), 2);
+    state.assert_invariants();
+}
+
+// TC-V050-020: Interactive vertical mouse dragging of the Text-Mode Measurement Scanline.
+#[test]
+fn tc_v050_020_interactive_measurement_scanline_vertical_drag() {
+    let mut state = make_havo_strip_state();
+    state.show_text_measurement_line = true;
+    state.set_text_measurement_y(200.0);
+    state.activate_tool(CanvasTool::Select);
+
+    let start_scr = state.viewport.to_screen(FontPoint::new(150.0, 200.0));
+    let target_scr = state.viewport.to_screen(FontPoint::new(150.0, 340.0));
+    let ctx = egui::Context::default();
+    let theme = state.theme.clone();
+    let mut out = ctx.run_ui(
+        RawInput {
+            screen_rect: Some(default_canvas_rect()),
+            events: vec![
+                Event::PointerButton {
+                    pos: Pos2::new(start_scr.x.0, start_scr.y.0),
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: EguiModifiers::NONE,
+                },
+                Event::PointerMoved(Pos2::new(target_scr.x.0, target_scr.y.0)),
+                Event::PointerButton {
+                    pos: Pos2::new(target_scr.x.0, target_scr.y.0),
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: EguiModifiers::NONE,
+                },
+            ],
+            ..Default::default()
+        },
+        |ui| {
+            let ev = ui.input(|i| i.events.clone());
+            let mut disp = InputDispatcher::new(&mut state, &theme, default_canvas_rect());
+            let _ = disp.dispatch_events(&ev, ui);
+        },
+    );
+    out.textures_delta.clear();
+
+    assert!(!state.text_measurement_dragging);
+    assert_relative_eq!(state.text_measurement_y_upm, 340.0, epsilon = 1e-3);
+    state.assert_invariants();
+}
+
+// TC-V050-021: Windows modifier disambiguation (`ctrl && command && !mac_cmd` -> LSB; `Alt + Arrow` -> RSB).
+#[test]
+fn tc_v050_021_windows_ctrl_and_alt_modifier_ergonomics() {
+    let mut state = make_havo_strip_state();
+    state.activate_tool(CanvasTool::Text);
+    let _ = state.drain_spacing_deltas();
+    let lsb_0 = state.active_glyph_lsb();
+    let rsb_0 = state.active_glyph_rsb();
+    let width_0 = state.glyph.width;
+
+    // Simulate Windows physical Ctrl +Shift + Right (`ctrl: true, command: true, mac_cmd: false`).
+    let win_ctrl_shift = EguiModifiers {
+        alt: false,
+        ctrl: true,
+        shift: true,
+        mac_cmd: false,
+        command: true,
+    };
+    let ctx = egui::Context::default();
+    ctx.input_mut(|i| i.modifiers = win_ctrl_shift);
+    let theme = state.theme.clone();
+    let mut out = ctx.run_ui(
+        RawInput {
+            screen_rect: Some(default_canvas_rect()),
+            events: vec![Event::Key {
+                key: Key::ArrowRight,
+                physical_key: Some(Key::ArrowRight),
+                pressed: true,
+                repeat: false,
+                modifiers: win_ctrl_shift,
+            }],
+            ..Default::default()
+        },
+        |ui| {
+            let ev = ui.input(|i| i.events.clone());
+            let mut disp = InputDispatcher::new(&mut state, &theme, default_canvas_rect());
+            let _ = disp.dispatch_events(&ev, ui);
+        },
+    );
+    out.textures_delta.clear();
+
+    // Must adjust LSB (+10 UPM) and advance_width (+10 UPM), NOT contour-shift with constant width!
+    assert_relative_eq!(state.active_glyph_lsb(), lsb_0 + 10.0, epsilon = 1e-6);
+    assert_relative_eq!(state.active_glyph_rsb(), rsb_0, epsilon = 1e-6);
+    assert_relative_eq!(state.glyph.width, width_0 + 10.0, epsilon = 1e-6);
+
+    // Now test Windows ergonomic fallback `Alt + Shift + ArrowRight` (`!ctrl && !cmd && alt`) -> RSB (+10 UPM).
+    dispatch_key(&mut state, Key::ArrowRight, true, true, false, false);
+    assert_relative_eq!(state.active_glyph_lsb(), lsb_0 + 10.0, epsilon = 1e-6);
+    assert_relative_eq!(state.active_glyph_rsb(), rsb_0 + 10.0, epsilon = 1e-6);
+    assert_relative_eq!(state.glyph.width, width_0 + 20.0, epsilon = 1e-6);
+    state.assert_invariants();
 }

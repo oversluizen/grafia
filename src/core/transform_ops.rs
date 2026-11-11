@@ -16,8 +16,9 @@ use crate::tokens::{
     TRANSFORM_ROTATE_SHIFT_STEP_DEG, ZOOM_TOOL_MIN_SCALE,
 };
 use kurbo::{Affine, Point};
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[repr(u8)]
 pub enum TransformGridAnchor {
     BottomLeft = 0,
@@ -304,7 +305,11 @@ pub fn compute_bbox_scale_affine(
 ) -> Affine {
     let alt_center = is_alt && !is_ctrl;
     let pivot = bounds.aligned_point(if alt_center { 4 } else { 8 - k });
-    let mult = if alt_center { BBOX_ALT_CENTER_SCALE_MULTIPLIER } else { 1.0 };
+    let mult = if alt_center {
+        BBOX_ALT_CENTER_SCALE_MULTIPLIER
+    } else {
+        1.0
+    };
     let s_u = unslant_point(start_font, bounds.angle_deg, bounds.half_x_height);
     let c_u = unslant_point(curr_font, bounds.angle_deg, bounds.half_x_height);
     let (dx, dy) = ((c_u.x.0 - s_u.x.0) * mult, (c_u.y.0 - s_u.y.0) * mult);

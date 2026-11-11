@@ -1,18 +1,20 @@
 //! Preview canvas filled silhouette projection and live glyph preview widget.
 
-use crate::adapters::headless::kurbo_to_tiny_skia_path;
+pub use crate::render::preview_canvas_ts::{
+    rasterize_preview_panel, render_preview_panel_into_rect,
+};
+
 use crate::adapters::state::GrafiaCanvasState;
 use crate::core::coordinates::{ScreenPoint, ViewportTransform};
 use crate::tokens::{
-    color32_to_tiny_skia, preview_panel_baseline_color, preview_panel_bg_inverted,
-    preview_panel_bg_normal, preview_panel_border_color, preview_panel_fill_inverted,
-    preview_panel_fill_normal, DEFAULT_ASCENDER_UPM, DEFAULT_DESCENDER_UPM, DEFAULT_X_HEIGHT_UPM,
+    preview_panel_baseline_color, preview_panel_bg_inverted, preview_panel_bg_normal,
+    preview_panel_border_color, preview_panel_fill_inverted, preview_panel_fill_normal,
+    DEFAULT_ASCENDER_UPM, DEFAULT_DESCENDER_UPM, DEFAULT_X_HEIGHT_UPM,
     PREVIEW_PANEL_AUTOFIT_MARGIN, PREVIEW_PANEL_BASELINE_STROKE_WIDTH_DP,
     PREVIEW_PANEL_DEFAULT_HEIGHT_DP, PREVIEW_PANEL_MIN_HEIGHT_DP, PREVIEW_PANEL_PADDING_DP,
 };
 use egui::{vec2, Pos2, Response, Sense, Shape, Stroke, Ui, Widget};
 use kurbo::BezPath;
-use tiny_skia::{FillRule, Paint, PathBuilder, Pixmap, Rect as TsRect, Stroke as TsStroke, Transform};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PreviewFilledProjection {
@@ -42,6 +44,7 @@ pub struct PreviewPanelConfig {
     pub show_baseline: bool,
     pub padding_dp: f32,
     pub height_dp: f32,
+    pub blur_radius_px: f32,
 }
 
 impl Default for PreviewPanelConfig {
@@ -52,6 +55,7 @@ impl Default for PreviewPanelConfig {
             show_baseline: true,
             padding_dp: PREVIEW_PANEL_PADDING_DP,
             height_dp: PREVIEW_PANEL_DEFAULT_HEIGHT_DP,
+            blur_radius_px: 0.0,
         }
     }
 }
@@ -62,8 +66,6 @@ pub struct GrafiaPreviewWidget<'a> {
     state: &'a GrafiaCanvasState,
     config: PreviewPanelConfig,
 }
-
-pub type GlifoPreviewWidget<'a> = GrafiaPreviewWidget<'a>;
 
 impl<'a> GrafiaPreviewWidget<'a> {
     #[must_use]
@@ -94,8 +96,12 @@ impl<'a> GrafiaPreviewWidget<'a> {
             };
             ui.painter().rect_filled(rect, 0.0, bg_color);
 
-            let border_stroke = Stroke::new(PREVIEW_PANEL_BASELINE_STROKE_WIDTH_DP, preview_panel_border_color());
-            ui.painter().line_segment([rect.left_top(), rect.right_top()], border_stroke);
+            let border_stroke = Stroke::new(
+                PREVIEW_PANEL_BASELINE_STROKE_WIDTH_DP,
+                preview_panel_border_color(),
+            );
+            ui.painter()
+                .line_segment([rect.left_top(), rect.right_top()], border_stroke);
 
             let asc = DEFAULT_ASCENDER_UPM;
             let desc = DEFAULT_DESCENDER_UPM;
@@ -112,7 +118,9 @@ impl<'a> GrafiaPreviewWidget<'a> {
                 normal_baseline_y
             };
 
-            let adv_w = if self.state.glyph.width > 0.0 {
+            let adv_w = if let Some(last) = self.state.text_stream.slots.last() {
+                (last.origin_x_upm + last.glyph.width).max(DEFAULT_X_HEIGHT_UPM)
+            } else if self.state.glyph.width > 0.0 {
                 self.state.glyph.width
             } else {
                 DEFAULT_X_HEIGHT_UPM
@@ -145,20 +153,75 @@ impl<'a> GrafiaPreviewWidget<'a> {
                 preview_panel_fill_normal()
             };
 
-            let closed_flags = self.state.closed_flags();
-            let mut mesh = crate::render::tessellate_closed_contours_nonzero(
-                &self.state.contours,
-                &closed_flags,
-                &temp_vp,
-                fill_color,
-            );
-            if self.config.flipped {
-                for v in &mut mesh.vertices {
-                    v.pos.y = 2.0 * center_y - v.pos.y;
+            if self.config.blur_radius_px > crate::tokens::PREVIEW_BLUR_ACTIVE_THRESHOLD_PX {
+                let rw = (rect.width().round().max(1.0)) as u32;
+                let rh = (rect.height().round().max(1.0)) as u32;
+                let pix = rasterize_preview_panel(self.state, &self.config, rw, rh);
+                let data = pix.data();
+                let w_us = rw as usize;
+                let h_us = rh as usize;
+                for y in 0..h_us {
+                    let mut x = 0usize;
+                    while x < w_us {
+                        let idx = (y * w_us + x) * crate::tokens::RGBA_CHANNEL_COUNT;
+                        let col = crate::tokens::preview_rgba_slice_to_color32(
+                            &data[idx..idx + crate::tokens::RGBA_CHANNEL_COUNT],
+                        );
+                        let mut end_x = x + 1;
+                        while end_x < w_us {
+                            let nidx = (y * w_us + end_x) * crate::tokens::RGBA_CHANNEL_COUNT;
+                            if data[nidx..nidx + crate::tokens::RGBA_CHANNEL_COUNT]
+                                != data[idx..idx + crate::tokens::RGBA_CHANNEL_COUNT]
+                            {
+                                break;
+                            }
+                            end_x += 1;
+                        }
+                        if col != bg_color {
+                            let r = egui::Rect::from_min_max(
+                                Pos2::new(rect.left() + x as f32, rect.top() + y as f32),
+                                Pos2::new(rect.left() + end_x as f32, rect.top() + (y + 1) as f32),
+                            );
+                            ui.painter().rect_filled(r, 0.0, col);
+                        }
+                        x = end_x;
+                    }
                 }
-            }
-            if !mesh.is_empty() {
-                ui.painter().add(Shape::mesh(mesh));
+                ui.painter()
+                    .line_segment([rect.left_top(), rect.right_top()], border_stroke);
+            } else if self.state.text_stream.slots.is_empty() {
+                let closed_flags = self.state.closed_flags();
+                let mut mesh = crate::render::tessellate_closed_contours_nonzero(
+                    &self.state.contours,
+                    &closed_flags,
+                    &temp_vp,
+                    fill_color,
+                );
+                if self.config.flipped {
+                    for v in &mut mesh.vertices {
+                        v.pos.y = 2.0 * center_y - v.pos.y;
+                    }
+                }
+                if !mesh.is_empty() {
+                    ui.painter().add(Shape::mesh(mesh));
+                }
+            } else {
+                for slot in &self.state.text_stream.slots {
+                    let slot_vp = temp_vp.with_origin_x_upm(slot.origin_x_upm);
+                    let mut mesh = crate::render::tessellate_glyph_contours_nonzero(
+                        &slot.glyph.contours,
+                        &slot_vp,
+                        fill_color,
+                    );
+                    if self.config.flipped {
+                        for v in &mut mesh.vertices {
+                            v.pos.y = 2.0 * center_y - v.pos.y;
+                        }
+                    }
+                    if !mesh.is_empty() {
+                        ui.painter().add(Shape::mesh(mesh));
+                    }
+                }
             }
         }
 
@@ -170,121 +233,4 @@ impl Widget for GrafiaPreviewWidget<'_> {
     fn ui(self, ui: &mut Ui) -> Response {
         self.show(ui)
     }
-}
-
-/// Renders the bottom preview panel into a sub-rectangle of a `tiny_skia::Pixmap`.
-pub fn render_preview_panel_into_rect(
-    pixmap: &mut Pixmap,
-    state: &GrafiaCanvasState,
-    config: &PreviewPanelConfig,
-    rect_x: f32,
-    rect_y: f32,
-    rect_w: f32,
-    rect_h: f32,
-) {
-    let use_dark = state.theme.is_dark() ^ config.inverted;
-    let bg_color = if use_dark {
-        preview_panel_bg_inverted()
-    } else {
-        preview_panel_bg_normal()
-    };
-    if let Some(ts_rect) = TsRect::from_xywh(rect_x, rect_y, rect_w, rect_h) {
-        let mut bg_paint = Paint::default();
-        bg_paint.set_color(color32_to_tiny_skia(bg_color));
-        pixmap.fill_rect(ts_rect, &bg_paint, Transform::identity(), None);
-    }
-
-    let asc = DEFAULT_ASCENDER_UPM;
-    let desc = DEFAULT_DESCENDER_UPM;
-    let v_span = (asc - desc).max(1.0);
-    let pad = config.padding_dp as f64;
-    let avail_h = (rect_h as f64 - pad * 2.0).max(1.0);
-    let scale = (avail_h / v_span) * PREVIEW_PANEL_AUTOFIT_MARGIN;
-
-    let center_y = rect_y + rect_h * 0.5;
-    let normal_baseline_y = center_y + ((asc + desc) * 0.5 * scale) as f32;
-    let draw_baseline_y = if config.flipped {
-        2.0 * center_y - normal_baseline_y
-    } else {
-        normal_baseline_y
-    };
-
-    let adv_w = if state.glyph.width > 0.0 {
-        state.glyph.width
-    } else {
-        DEFAULT_X_HEIGHT_UPM
-    };
-    let origin_x_scr = rect_x + rect_w * 0.5 - (adv_w * 0.5 * scale) as f32;
-
-    if config.show_baseline {
-        let mut pb = PathBuilder::new();
-        pb.move_to(rect_x, draw_baseline_y);
-        pb.line_to(rect_x + rect_w, draw_baseline_y);
-        if let Some(line_path) = pb.finish() {
-            let mut base_paint = Paint::default();
-            base_paint.set_color(color32_to_tiny_skia(preview_panel_baseline_color()));
-            let stroke = TsStroke {
-                width: PREVIEW_PANEL_BASELINE_STROKE_WIDTH_DP,
-                ..Default::default()
-            };
-            pixmap.stroke_path(&line_path, &base_paint, &stroke, Transform::identity(), None);
-        }
-    }
-
-    let temp_vp = ViewportTransform::new(
-        scale as f32,
-        ScreenPoint::new(origin_x_scr, normal_baseline_y),
-        state.glyph.upm,
-    );
-
-    let mut compound = BezPath::new();
-    let flip_affine = kurbo::Affine::translate((0.0, 2.0 * center_y as f64))
-        * kurbo::Affine::scale_non_uniform(1.0, -1.0);
-    for (c_idx, path) in state.paths.iter().enumerate() {
-        if !state.is_contour_closed(c_idx) {
-            continue;
-        }
-        let proj = PreviewFilledProjection::compute(path, &temp_vp);
-        let final_path = if config.flipped {
-            flip_affine * proj.screen_path
-        } else {
-            proj.screen_path
-        };
-        for el in final_path.elements() {
-            compound.push(*el);
-        }
-    }
-
-    if let Some(ts_path) = kurbo_to_tiny_skia_path(&compound) {
-        let fill_color = if use_dark {
-            preview_panel_fill_inverted()
-        } else {
-            preview_panel_fill_normal()
-        };
-        let mut fill_paint = Paint::default();
-        fill_paint.set_color(color32_to_tiny_skia(fill_color));
-        fill_paint.anti_alias = true;
-        pixmap.fill_path(&ts_path, &fill_paint, FillRule::Winding, Transform::identity(), None);
-    }
-}
-
-/// Offscreen `tiny-skia` rasterizer for the bottom preview panel.
-#[must_use]
-pub fn rasterize_preview_panel(
-    state: &GrafiaCanvasState,
-    config: &PreviewPanelConfig,
-    width: u32,
-    height: u32,
-) -> Pixmap {
-    let mut pixmap = Pixmap::new(width, height).expect("Failed to allocate Pixmap for preview panel");
-    render_preview_panel_into_rect(
-        &mut pixmap,
-        state,
-        config,
-        0.0,
-        0.0,
-        width as f32,
-        height as f32,
-    );
-    pixmap
 }

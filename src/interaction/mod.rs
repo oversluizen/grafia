@@ -1,4 +1,4 @@
-//! Interaction, gesture normalization, and tool state machines for glifo.
+//! Interaction, gesture normalization, and tool state machines for grafia.
 
 pub mod gestures;
 pub mod history;

@@ -1,4 +1,4 @@
-//! Integration tests for glifo v0.1.0-alpha baseline.
+//! Integration tests for grafia v0.1.0-alpha baseline.
 
 use approx::assert_relative_eq;
 use grafia::core::{
@@ -7,14 +7,14 @@ use grafia::core::{
 };
 use grafia::interaction::{CommandHistory, GlyphSnapshot, PenToolState};
 use grafia::render::{PreviewFilledProjection, ProjectedNode, ShapeThumbnailProjection};
-use grafia::tokens::GlifoTheme;
+use grafia::tokens::GrafiaTheme;
 use kurbo::{BezPath, Shape};
 use rstest::rstest;
 use std::sync::Arc;
 
 #[test]
 fn test_01_tokens_loaded_from_json() {
-    let theme = GlifoTheme::sonoma_default();
+    let theme = GrafiaTheme::sonoma_default();
     assert_eq!(theme.edit_canvas.node_size_dp, 7.0);
     assert_eq!(theme.shape_canvas.row_height_dp, 20.0);
     assert_eq!(theme.shape_canvas.thumbnail_width_dp, 24.0);
@@ -35,7 +35,7 @@ fn test_02_coordinate_roundtrip() {
 
 #[test]
 fn test_03_edit_canvas_projected_node_hit_test() {
-    let theme = GlifoTheme::sonoma_default();
+    let theme = GrafiaTheme::sonoma_default();
     let vp = ViewportTransform::new(1.0, ScreenPoint::new(0.0, 1000.0), 1000);
     let font_pt = FontPoint::new(100.0, 200.0);
 
@@ -66,7 +66,7 @@ fn test_04_preview_canvas_projection() {
 
 #[test]
 fn test_05_shape_canvas_thumbnail_fit_24x16() {
-    let theme = GlifoTheme::sonoma_default();
+    let theme = GrafiaTheme::sonoma_default();
     let mut path = BezPath::new();
     path.move_to((100.0, 100.0));
     path.line_to((500.0, 100.0));
@@ -117,7 +117,10 @@ fn test_08_shoelace_winding_area() {
         FontPoint::new(200.0, 0.0),
     ];
     let area = compute_signed_area(&pts);
-    assert!(area < 0.0, "Clockwise triangle must have negative signed area in Y-up space");
+    assert!(
+        area < 0.0,
+        "Clockwise triangle must have negative signed area in Y-up space"
+    );
 }
 
 #[test]
@@ -125,7 +128,13 @@ fn test_09_pen_tool_symmetric_handles() {
     let anchor = FontPoint::new(200.0, 200.0);
     let state = PenToolState::compute_symmetric_handles(anchor, (30.0, 40.0), false);
 
-    if let PenToolState::DraggingHandles { anchor: a, bcp_out, bcp_in, is_closing } = state {
+    if let PenToolState::DraggingHandles {
+        anchor: a,
+        bcp_out,
+        bcp_in,
+        is_closing,
+    } = state
+    {
         assert_relative_eq!(a.x.0, 200.0);
         assert_relative_eq!(bcp_out.x.0, 230.0);
         assert_relative_eq!(bcp_out.y.0, 240.0);
@@ -167,11 +176,11 @@ fn test_10_history_undo_redo_cow() {
 }
 
 fn assert_mutation_undo_redo_roundtrip<F>(
-    state: &mut grafia::adapters::GlifoCanvasState,
+    state: &mut grafia::adapters::GrafiaCanvasState,
     label: &str,
     mutate: F,
 ) where
-    F: FnOnce(&mut grafia::adapters::GlifoCanvasState),
+    F: FnOnce(&mut grafia::adapters::GrafiaCanvasState),
 {
     state
         .validate_invariants()
@@ -216,13 +225,13 @@ fn assert_mutation_undo_redo_roundtrip<F>(
 
 #[test]
 fn test_11_universal_action_undo_redo_bit_exact_roundtrip_and_invariants() {
-    use grafia::adapters::GlifoCanvasState;
+    use grafia::adapters::GrafiaCanvasState;
     use grafia::core::{
-        cut_open_delete_nodes_in_contour, heal_delete_nodes, split_contour_segment,
-        ContourSegment, NodeId, SegmentHit, ShapeBooleanRole,
+        cut_open_delete_nodes_in_contour, heal_delete_nodes, split_contour_segment, ContourSegment,
+        NodeId, SegmentHit, ShapeBooleanRole,
     };
 
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     // Set non-default contour metadata on counter contour to prove metadata roundtrip preservation
     state.glyph.contours[1].role = ShapeBooleanRole::Mask;
     state.glyph.contours[1].visible = false;
@@ -244,7 +253,7 @@ fn test_11_universal_action_undo_redo_bit_exact_roundtrip_and_invariants() {
     });
 
     // 3. Toggle Smooth/Corner roundtrip on /O
-    let mut state_o = GlifoCanvasState::init_glyph_o();
+    let mut state_o = GrafiaCanvasState::init_glyph_o();
     let target_node_id = state_o.contours[0][0].id;
     assert_mutation_undo_redo_roundtrip(&mut state_o, "Toggle Smooth/Corner", |s| {
         s.toggle_node_smooth_corner(target_node_id);
@@ -295,14 +304,14 @@ fn test_11_universal_action_undo_redo_bit_exact_roundtrip_and_invariants() {
     });
 
     // 8. Negative invariant checks: verify validate_invariants() catches desyncs, duplicates, and dangling IDs
-    let mut broken = GlifoCanvasState::init_glyph_a();
+    let mut broken = GrafiaCanvasState::init_glyph_a();
     broken.selected_nodes.push(NodeId(999_999));
     assert!(
         broken.validate_invariants().is_err(),
         "validate_invariants must reject dangling NodeId in selected_nodes"
     );
 
-    let mut broken_dup_sel = GlifoCanvasState::init_glyph_a();
+    let mut broken_dup_sel = GrafiaCanvasState::init_glyph_a();
     let valid_id = broken_dup_sel.contours[0][0].id;
     broken_dup_sel.selected_nodes = vec![valid_id, valid_id];
     assert!(
@@ -310,7 +319,7 @@ fn test_11_universal_action_undo_redo_bit_exact_roundtrip_and_invariants() {
         "validate_invariants must reject duplicate NodeId in selected_nodes"
     );
 
-    let mut broken_dup_node = GlifoCanvasState::init_glyph_a();
+    let mut broken_dup_node = GrafiaCanvasState::init_glyph_a();
     broken_dup_node.contours[1][0].id = broken_dup_node.contours[0][0].id;
     broken_dup_node.glyph.contours[1].nodes[0].id = broken_dup_node.contours[0][0].id;
     assert!(
@@ -318,21 +327,21 @@ fn test_11_universal_action_undo_redo_bit_exact_roundtrip_and_invariants() {
         "validate_invariants must reject duplicate NodeId across contours"
     );
 
-    let mut broken_paths = GlifoCanvasState::init_glyph_a();
+    let mut broken_paths = GrafiaCanvasState::init_glyph_a();
     broken_paths.paths.pop();
     assert!(
         broken_paths.validate_invariants().is_err(),
         "validate_invariants must reject contours.len() != paths.len()"
     );
 
-    let mut broken_open = GlifoCanvasState::init_glyph_a();
+    let mut broken_open = GrafiaCanvasState::init_glyph_a();
     broken_open.active_open_contour = Some(99);
     assert!(
         broken_open.validate_invariants().is_err(),
         "validate_invariants must reject out-of-bounds active_open_contour"
     );
 
-    let mut broken_hover = GlifoCanvasState::init_glyph_a();
+    let mut broken_hover = GrafiaCanvasState::init_glyph_a();
     broken_hover.hovered_segment_hit = Some(SegmentHit {
         contour_idx: 99,
         segment: ContourSegment::Line {
@@ -350,7 +359,7 @@ fn test_11_universal_action_undo_redo_bit_exact_roundtrip_and_invariants() {
     );
 
     // 8b. Single-Point / Zero-OnCurve Contour Invariant & Open-Contour Handle Integrity
-    let mut broken_single_closed = GlifoCanvasState::init_glyph_a();
+    let mut broken_single_closed = GrafiaCanvasState::init_glyph_a();
     broken_single_closed.contours[0].truncate(1);
     broken_single_closed.glyph.contours[0].nodes.truncate(1);
     broken_single_closed.glyph.contours[0].closed = true;
@@ -359,14 +368,14 @@ fn test_11_universal_action_undo_redo_bit_exact_roundtrip_and_invariants() {
         "validate_invariants must reject closed contour with <= 1 OnCurve node"
     );
 
-    let mut broken_open_closed_flag = GlifoCanvasState::init_glyph_a();
+    let mut broken_open_closed_flag = GrafiaCanvasState::init_glyph_a();
     broken_open_closed_flag.active_open_contour = Some(0);
     assert!(
         broken_open_closed_flag.validate_invariants().is_err(),
         "validate_invariants must reject active_open_contour pointing to a closed contour"
     );
 
-    let mut broken_open_handles = GlifoCanvasState::init_glyph_o();
+    let mut broken_open_handles = GrafiaCanvasState::init_glyph_o();
     broken_open_handles.set_contour_closed(0, false);
     broken_open_handles.contours[0].remove(1); // Remove one OffCurve leaving a run of 1 OffCurve
     broken_open_handles.sync_paths_from_contours();
@@ -379,19 +388,19 @@ fn test_11_universal_action_undo_redo_bit_exact_roundtrip_and_invariants() {
 #[test]
 fn test_12_cold_start_smoke_and_zero_idle_repaint_leak() {
     use egui::{Context, RawInput};
-    use grafia::adapters::{CanvasViewMode, GlifoCanvasState, GlifoCanvasWidget};
+    use grafia::adapters::{CanvasViewMode, GrafiaCanvasState, GrafiaCanvasWidget};
     use std::time::{Duration, Instant};
 
     let cold_start_begin = Instant::now();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     state
         .validate_invariants()
         .expect("Cold-start state invariants must hold");
 
     let ctx = Context::default();
     let mut first_output = ctx.run_ui(RawInput::default(), |ui| {
-        let _ = GlifoCanvasWidget::new(&mut state, &theme).show(ui);
+        let _ = GrafiaCanvasWidget::new(&mut state, &theme).show(ui);
     });
     first_output.textures_delta.clear();
     let primitives = ctx.tessellate(first_output.shapes, first_output.pixels_per_point);
@@ -420,7 +429,7 @@ fn test_12_cold_start_smoke_and_zero_idle_repaint_leak() {
                 ..Default::default()
             };
             let mut out = ctx.run_ui(input, |ui| {
-                let _ = GlifoCanvasWidget::new(&mut state, &theme).show(ui);
+                let _ = GrafiaCanvasWidget::new(&mut state, &theme).show(ui);
             });
             out.textures_delta.clear();
             if frame_idx == 2 {

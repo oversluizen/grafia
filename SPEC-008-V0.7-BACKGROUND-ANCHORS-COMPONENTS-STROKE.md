@@ -39,7 +39,7 @@ All geometric rules, keyboard shortcuts, affine transformations, and rendering i
 ### 2.1 Background Layer (`Cmd+B`, `Cmd+J`, `Cmd+K` — `src/core/background_layer.rs`)
 
 1. **Dual-Buffer Layer Topology**:
-   - In addition to the primary foreground contours (`state.glyph.contours`), `GlifoCanvasState` maintains a background contour buffer (`state.background_contours: Vec<GlyphContour>`) and two independent boolean flags:
+   - In addition to the primary foreground contours (`state.glyph.contours`), `GrafiaCanvasState` maintains a background contour buffer (`state.background_contours: Vec<GlyphContour>`) and two independent boolean flags:
      - `show_background: bool` (default `true`): controls whether inactive background contours are rendered as a reference wireframe in Pass 2.
      - `editing_background: bool` (default `false`): indicates whether the user is currently editing the background layer instead of the foreground layer.
 2. **Selection to Background (`Cmd+J` / `Cmd+Opt+J` — `copy_selection_to_background(keep_old: bool)`)**:
@@ -67,7 +67,7 @@ All geometric rules, keyboard shortcuts, affine transformations, and rendering i
 
 1. **Strict Architectural Boundary (Font-Database-Agnostic Canvas)**:
    - `grafia` is strictly a 2D vector canvas and interaction engine; it has zero dependency on Unicode character databases, glyph naming tables, or font-wide anchor recipes.
-   - Anchor recipe generation (`Cmd+U` *Set Anchors*) and resolving which diacritic marks belong to a Mark Preview Cloud (`top`, `bottom`, `ogonek`, etc.) are the exclusive responsibility of the **Host Font Model Backend**, which supplies `anchors: Vec<CanvasAnchor>` and `ghost_paths: Vec<GhostMarkPath>` to `GlifoCanvasState`.
+   - Anchor recipe generation (`Cmd+U` *Set Anchors*) and resolving which diacritic marks belong to a Mark Preview Cloud (`top`, `bottom`, `ogonek`, etc.) are the exclusive responsibility of the **Host Font Model Backend**, which supplies `anchors: Vec<CanvasAnchor>` and `ghost_paths: Vec<GhostMarkPath>` to `GrafiaCanvasState`.
 2. **2D `CanvasAnchor` Data Model & Diamond Handle Geometry**:
    - Each `CanvasAnchor` stores `id: AnchorId`, `name: String`, `position: FontPoint`, and `selected: bool`.
    - Rendered in Pass 4 as a 4-vertex rotated diamond (rhombus) centered at `anchor.position` with half-diagonal radius:
@@ -159,7 +159,7 @@ All geometric rules, keyboard shortcuts, affine transformations, and rendering i
 
 1. **Strict Architectural Boundary (2D Companion Master Layers on Canvas)**:
    - Designspace axis management, variable font instance generation, and cross-font master tables reside in the **Host Font Model Backend**.
-   - The Host supplies zero or more `CompanionMasterLayer` records (`id: u32`, `name: String`, `color_rgba: [u8; 4]`, `contours: Vec<Vec<Node>>`, `closed_flags: Vec<bool>`, `anchors: Vec<CanvasAnchor>`, `editable: bool`) to `GlifoCanvasState` so multiple font masters (`Regular`, `Bold`, `Condensed`, etc.) can be overlaid, verified for interpolation compatibility, and edited simultaneously on the 2D canvas.
+   - The Host supplies zero or more `CompanionMasterLayer` records (`id: u32`, `name: String`, `color_rgba: [u8; 4]`, `contours: Vec<Vec<Node>>`, `closed_flags: Vec<bool>`, `anchors: Vec<CanvasAnchor>`, `editable: bool`) to `GrafiaCanvasState` so multiple font masters (`Regular`, `Bold`, `Condensed`, etc.) can be overlaid, verified for interpolation compatibility, and edited simultaneously on the 2D canvas.
 2. **Master Compatibility Evaluation (`compute_master_compatibility(&self) -> MasterCompatibilityReport`)**:
    - Toggled for Pass-4 overlay rendering via keyboard shortcut `Ctrl+Opt+Cmd+N` (`toggle_show_master_compatibility()`, setting `state.show_master_compatibility: bool`).
    - Compares the active foreground layer (`state.glyph.contours` and `state.anchors`) against each `CompanionMasterLayer` in `state.companion_master_layers`:
@@ -236,6 +236,10 @@ pub enum CanvasHostRequest {
         id: ComponentId,
         component_name: String,
     },
+    ResetDefaultAnchors {
+        glyph_name: String,
+    },
+    EditTextStream(TextStreamEditRequest),
 }
 
 /// Configuration for the 8-step Fit Curve ladder.
@@ -320,7 +324,7 @@ impl FitCurveConfig {
     pub fn ratio_for_column(&self, col: usize) -> f64;
 }
 
-impl GlifoCanvasState {
+impl GrafiaCanvasState {
     // 2.1 Background Layer (Cmd+B, Cmd+J, Cmd+K, Cmd+Opt+B)
     pub fn copy_selection_to_background(&mut self, keep_old: bool);
     pub fn swap_foreground_with_background(&mut self);
@@ -329,6 +333,7 @@ impl GlifoCanvasState {
 
     // 2.2 2D CanvasAnchor & Mark Preview Cloud
     pub fn set_anchors(&mut self, anchors: Vec<CanvasAnchor>);
+    pub fn set_anchors_with_undo(&mut self, anchors: Vec<CanvasAnchor>);
     pub fn set_ghost_mark_paths(&mut self, paths: Vec<GhostMarkPath>);
     pub fn select_anchor_at_upm(&mut self, pt: FontPoint, extend: bool) -> bool;
     pub fn cycle_selected_anchor(&mut self, reverse: bool);
@@ -389,3 +394,4 @@ All 17 test cases are implemented under `#![cfg(feature = "v070_red")]`:
 | **`TC-V070-015`** | Headless Pass-2 & Pass-4 Light/Dark Rendering Parity | Render canvas with active background wireframe, selected `CanvasAnchor` + `GhostMarkPath`, tinted `CanvasComponent`, and live stroked contour in Light & Dark modes. | Both modes rasterize non-empty deterministic pixel buffers with distinct Light vs. Dark theme colors and zero panics. |
 | **`TC-V070-016`** | Stateful Pull-Based `arbtest` Multi-Tool Fuzzing (`Background + Anchors + Components + FitCurve + Stroke + Undo/Redo`) | Run 250 ms pull-based `arbtest` action sequences mixing `Cmd+J`, `Cmd+K`, `Cmd+B`, anchor drag/delete, component decompose, Fit Curve `Ctrl+Opt+1..8`, stroke expansion, and `Undo`/`Redo`. | `state.validate_invariants()` holds after every step and `Action -> Undo -> Redo` preserves bit-exact canvas state. |
 | **`TC-V070-017`** | `CompanionMasterLayer`, Master Compatibility (`Ctrl+Opt+Cmd+N`) & `SelectAllLayers` Multi-Layer Editing | Register a compatible editable `Bold` `CompanionMasterLayer` and a non-editable `Condensed` layer; toggle `Ctrl+Opt+Cmd+N`, verify `compute_master_compatibility()` on compatible vs. segment-mismatched contours, then enable `select_all_layers_mode` and marquee-select + translate across layers with Undo. | Compatible layers report `is_compatible == true` with start-node (`index 0`) and anchor vectors; mutating a segment type or node count flags the contour index in `incompatible_contour_indices`; `select_all_layers_mode` translates selected nodes in both active and editable `CompanionMasterLayer`s while leaving non-editable companion layers fixed, and `Undo` restores all layers bit-exactly. |
+| **`TC-V070-019`** | Zero-clone direct `GlyphContour` slice tessellation (`tessellate_glyph_contours_nonzero`) | Tessellate `&[GlyphContour]` directly without cloning `Vec<Node>` per contour, and verify bit-identical vertex and index buffers against `tessellate_closed_contours_nonzero`. | Produces identical `egui::Mesh` vertices and indices while eliminating per-frame heap cloning of contour node vectors in Pass-2 overlay rendering. |

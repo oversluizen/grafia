@@ -9,30 +9,30 @@
 
 use egui::{Context, Event, Modifiers as EguiModifiers, PointerButton, Pos2, RawInput};
 use grafia::adapters::{
-    CanvasTool, CanvasViewMode, GlifoCanvasResponse, GlifoCanvasState, GlifoCanvasWidget,
+    CanvasTool, CanvasViewMode, GrafiaCanvasResponse, GrafiaCanvasState, GrafiaCanvasWidget,
 };
 use grafia::core::{FontPoint, NodeType};
 use grafia::interaction::PenToolState;
-use grafia::tokens::GlifoTheme;
+use grafia::tokens::GrafiaTheme;
 
 fn run_canvas_frame(
     ctx: &Context,
-    state: &mut GlifoCanvasState,
-    theme: &GlifoTheme,
+    state: &mut GrafiaCanvasState,
+    theme: &GrafiaTheme,
     raw_input: RawInput,
-) -> GlifoCanvasResponse {
+) -> GrafiaCanvasResponse {
     let mut resp = None;
     let mut full_output = ctx.run_ui(raw_input, |ui| {
-        resp = Some(GlifoCanvasWidget::new(state, theme).show(ui));
+        resp = Some(GrafiaCanvasWidget::new(state, theme).show(ui));
     });
     full_output.textures_delta.clear();
-    resp.expect("GlifoCanvasWidget must return a response")
+    resp.expect("GrafiaCanvasWidget must return a response")
 }
 
 #[test]
 fn test_empirical_marquee_2d_isolation_all_directions_and_subsets() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
+    let theme = GrafiaTheme::sonoma_default();
 
     // The apex nodes of glyph /A in outer contour:
     // Apex 1: (300.0, 700.0) -> node index 1
@@ -45,26 +45,14 @@ fn test_empirical_marquee_2d_isolation_all_directions_and_subsets() {
     // Test marquee dragging across all 4 diagonal drag orientations
     let test_diagonals = [
         // (start, end) in font coordinates
-        (
-            FontPoint::new(200.0, 750.0),
-            FontPoint::new(500.0, 650.0),
-        ), // top-left to bottom-right
-        (
-            FontPoint::new(500.0, 650.0),
-            FontPoint::new(200.0, 750.0),
-        ), // bottom-right to top-left
-        (
-            FontPoint::new(500.0, 750.0),
-            FontPoint::new(200.0, 650.0),
-        ), // top-right to bottom-left
-        (
-            FontPoint::new(200.0, 650.0),
-            FontPoint::new(500.0, 750.0),
-        ), // bottom-left to top-right
+        (FontPoint::new(200.0, 750.0), FontPoint::new(500.0, 650.0)), // top-left to bottom-right
+        (FontPoint::new(500.0, 650.0), FontPoint::new(200.0, 750.0)), // bottom-right to top-left
+        (FontPoint::new(500.0, 750.0), FontPoint::new(200.0, 650.0)), // top-right to bottom-left
+        (FontPoint::new(200.0, 650.0), FontPoint::new(500.0, 750.0)), // bottom-left to top-right
     ];
 
     for (dir_idx, (f_start, f_end)) in test_diagonals.iter().enumerate() {
-        let mut state = GlifoCanvasState::init_glyph_a();
+        let mut state = GrafiaCanvasState::init_glyph_a();
         let apex1_id = state.contours[0][1].id;
         let apex2_id = state.contours[0][2].id;
         let crossbar1_id = state.contours[0][5].id;
@@ -131,7 +119,7 @@ fn test_empirical_marquee_2d_isolation_all_directions_and_subsets() {
 
     // Isolated test: Marquee targeting ONLY the crossbar [Font X 200..500, Font Y 150..200]
     {
-        let mut state = GlifoCanvasState::init_glyph_a();
+        let mut state = GrafiaCanvasState::init_glyph_a();
         let apex1_id = state.contours[0][1].id;
         let apex2_id = state.contours[0][2].id;
         let crossbar1_id = state.contours[0][5].id;
@@ -150,7 +138,9 @@ fn test_empirical_marquee_2d_isolation_all_directions_and_subsets() {
         let _ = run_canvas_frame(&ctx, &mut state, &theme, input);
 
         let mut input = RawInput::default();
-        input.events.push(Event::PointerMoved(Pos2::new(p_end.x.0, p_end.y.0)));
+        input
+            .events
+            .push(Event::PointerMoved(Pos2::new(p_end.x.0, p_end.y.0)));
         let _ = run_canvas_frame(&ctx, &mut state, &theme, input);
 
         let mut input = RawInput::default();
@@ -182,7 +172,7 @@ fn test_empirical_marquee_2d_isolation_all_directions_and_subsets() {
 
     // Isolated test: Marquee targeting ONLY inner triangle apex [Font X 330..370, Font Y 500..540]
     {
-        let mut state = GlifoCanvasState::init_glyph_a();
+        let mut state = GrafiaCanvasState::init_glyph_a();
         let apex1_id = state.contours[0][1].id;
         let inner_apex_id = state.contours[1][2].id;
 
@@ -199,7 +189,9 @@ fn test_empirical_marquee_2d_isolation_all_directions_and_subsets() {
         let _ = run_canvas_frame(&ctx, &mut state, &theme, input);
 
         let mut input = RawInput::default();
-        input.events.push(Event::PointerMoved(Pos2::new(p_end.x.0, p_end.y.0)));
+        input
+            .events
+            .push(Event::PointerMoved(Pos2::new(p_end.x.0, p_end.y.0)));
         let _ = run_canvas_frame(&ctx, &mut state, &theme, input);
 
         let mut input = RawInput::default();
@@ -225,8 +217,8 @@ fn test_empirical_marquee_2d_isolation_all_directions_and_subsets() {
 #[test]
 fn test_empirical_pentool_click_hover_no_mutation_and_closing_state_machine() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::new(theme.clone());
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::new(theme.clone());
     state.active_tool = CanvasTool::Pen;
 
     let click_pos = Pos2::new(250.0, 250.0);
@@ -245,7 +237,10 @@ fn test_empirical_pentool_click_hover_no_mutation_and_closing_state_machine() {
     assert_eq!(state.contours[0].len(), 1);
     let anchor_id = state.contours[0][0].id;
     assert_eq!(state.contours[0][0].node_type, NodeType::Corner);
-    assert!(matches!(state.pen_state, PenToolState::PlacingAnchor { .. }));
+    assert!(matches!(
+        state.pen_state,
+        PenToolState::PlacingAnchor { .. }
+    ));
 
     // 2. Button release without drag
     let mut input = RawInput::default();
@@ -312,7 +307,11 @@ fn test_empirical_pentool_click_hover_no_mutation_and_closing_state_machine() {
         let _ = run_canvas_frame(&ctx, &mut state, &theme, input);
     }
 
-    assert_eq!(state.contours[0].len(), 3, "Should have 3 nodes before closing");
+    assert_eq!(
+        state.contours[0].len(),
+        3,
+        "Should have 3 nodes before closing"
+    );
     assert!(!state.active_contour_closed);
 
     // Click on node 1 (at click_pos 250, 250) to CLOSE contour
@@ -371,8 +370,8 @@ fn test_empirical_pentool_click_hover_no_mutation_and_closing_state_machine() {
 #[test]
 fn test_empirical_thumbnail_card_and_silhouette_rendering_pass() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
 
     // 1. ShapeThumbnail mode: Verify thumbnail rendering generates shapes into painter
     state.view_mode = CanvasViewMode::ShapeThumbnail;
@@ -381,7 +380,7 @@ fn test_empirical_thumbnail_card_and_silhouette_rendering_pass() {
     let mut has_path = false;
 
     let mut full_output = ctx.run_ui(RawInput::default(), |ui| {
-        let resp = GlifoCanvasWidget::new(&mut state, &theme).show(ui);
+        let resp = GrafiaCanvasWidget::new(&mut state, &theme).show(ui);
         assert_eq!(resp.view_mode, CanvasViewMode::ShapeThumbnail);
     });
 
@@ -418,7 +417,7 @@ fn test_empirical_thumbnail_card_and_silhouette_rendering_pass() {
     // 2. PreviewFilled mode: Verify silhouette fill rendering
     state.view_mode = CanvasViewMode::PreviewFilled;
     let mut full_output = ctx.run_ui(RawInput::default(), |ui| {
-        let resp = GlifoCanvasWidget::new(&mut state, &theme).show(ui);
+        let resp = GrafiaCanvasWidget::new(&mut state, &theme).show(ui);
         assert_eq!(resp.view_mode, CanvasViewMode::PreviewFilled);
     });
 

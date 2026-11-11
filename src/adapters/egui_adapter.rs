@@ -15,8 +15,6 @@ pub struct GrafiaCanvasWidget<'a> {
     pub desired_size: Option<Vec2>,
 }
 
-pub type GlifoCanvasWidget<'a> = GrafiaCanvasWidget<'a>;
-
 impl<'a> GrafiaCanvasWidget<'a> {
     #[must_use]
     pub fn new(state: &'a mut GrafiaCanvasState, theme: &'a GrafiaTheme) -> Self {
@@ -46,20 +44,14 @@ impl<'a> GrafiaCanvasWidget<'a> {
 
     pub fn show(self, ui: &mut egui::Ui) -> GrafiaCanvasResponse {
         self.state.set_system_dark_mode(ui.visuals().dark_mode);
-        let size = self.desired_size.unwrap_or_else(|| {
-            Vec2::new(DEFAULT_CANVAS_WIDTH_DP, DEFAULT_CANVAS_HEIGHT_DP)
-        });
+        let size = self
+            .desired_size
+            .unwrap_or_else(|| Vec2::new(DEFAULT_CANVAS_WIDTH_DP, DEFAULT_CANVAS_HEIGHT_DP));
         let (rect, response) = ui.allocate_exact_size(size, Sense::click_and_drag());
-
-        // Resolve authoritative theme (honoring `state.theme` when `AppearanceMode` differs from caller's `theme`)
-        let resolved_theme = match self.theme {
-            Some(ext) if ext.is_dark() == self.state.theme.is_dark() => ext.clone(),
-            _ => self.state.theme.clone(),
-        };
 
         // Process pointer and keyboard interactions through gated input dispatcher
         let events = ui.input(|i| i.events.clone());
-        let mut dispatcher = InputDispatcher::new(self.state, &resolved_theme, rect);
+        let mut dispatcher = InputDispatcher::for_canvas(self.state, rect);
         let changed = dispatcher.dispatch_events(&events, ui);
 
         if response.clicked() || response.drag_started() {
@@ -71,7 +63,10 @@ impl<'a> GrafiaCanvasWidget<'a> {
         if let Some(pos) = latest_pointer.filter(|p| rect.contains(egui::pos2(p.x.0, p.y.0))) {
             self.state.cursor_screen_pos = Some(pos);
             let space_held = ui.input(|i| i.key_down(egui::Key::Space));
-            let icon = if matches!(self.state.select_state, SelectToolState::PanningViewport { .. }) {
+            let icon = if matches!(
+                self.state.select_state,
+                SelectToolState::PanningViewport { .. }
+            ) {
                 CursorIcon::Grabbing
             } else if self.state.view_mode == CanvasViewMode::PreviewFilled || space_held {
                 CursorIcon::Grab
@@ -93,7 +88,8 @@ impl<'a> GrafiaCanvasWidget<'a> {
                             self.state.select_state,
                             SelectToolState::DraggingNodes { .. }
                                 | SelectToolState::DraggingSegment { .. }
-                        ) || self.state.guide_drag != crate::adapters::v030_guides::GuideDragState::Idle
+                        ) || self.state.guide_drag
+                            != crate::adapters::v030_guides::GuideDragState::Idle
                         {
                             CursorIcon::Grabbing
                         } else if self.state.hit_test_node(pos).is_some()
@@ -120,6 +116,7 @@ impl<'a> GrafiaCanvasWidget<'a> {
                     | CanvasTool::Pencil
                     | CanvasTool::Pixel => CursorIcon::Crosshair,
                     CanvasTool::Annotation => CursorIcon::Default,
+                    CanvasTool::Text => CursorIcon::Text,
                 }
             };
             ui.ctx().set_cursor_icon(icon);
@@ -163,7 +160,10 @@ impl GrafiaCanvasState {
         let target_ids: Vec<crate::core::NodeId> = if !self.selected_nodes.is_empty() {
             self.selected_nodes.clone()
         } else {
-            self.contours.iter().flat_map(|c| c.iter().map(|n| n.id)).collect()
+            self.contours
+                .iter()
+                .flat_map(|c| c.iter().map(|n| n.id))
+                .collect()
         };
         let grid = self.effective_grid_step();
         crate::core::apply_mode_nodes_transform(
@@ -198,7 +198,9 @@ impl GrafiaCanvasState {
     }
 
     pub fn scale_by_factor(&mut self, sx: f64, sy: f64) -> bool {
-        if sx.abs() <= crate::tokens::SCALE_MIN_FACTOR || sy.abs() <= crate::tokens::SCALE_MIN_FACTOR {
+        if sx.abs() <= crate::tokens::SCALE_MIN_FACTOR
+            || sy.abs() <= crate::tokens::SCALE_MIN_FACTOR
+        {
             return false;
         }
         let p = self.resolve_transform_origin();
@@ -209,7 +211,10 @@ impl GrafiaCanvasState {
     }
 
     pub fn rotate_by_degrees(&mut self, angle_deg: f64) -> bool {
-        let clamped = angle_deg.clamp(-crate::tokens::FULL_CIRCLE_DEG_F64, crate::tokens::FULL_CIRCLE_DEG_F64);
+        let clamped = angle_deg.clamp(
+            -crate::tokens::FULL_CIRCLE_DEG_F64,
+            crate::tokens::FULL_CIRCLE_DEG_F64,
+        );
         let p = self.resolve_transform_origin();
         let aff = kurbo::Affine::rotate_about(
             clamped * crate::tokens::DEG_TO_RAD_F64,
@@ -238,9 +243,16 @@ impl GrafiaCanvasState {
     #[must_use]
     pub fn duplicate_warning_nodes(
         &self,
-    ) -> Vec<(crate::core::NodeId, crate::core::FontPoint, crate::core::DuplicateWarningKind)> {
+    ) -> Vec<(
+        crate::core::NodeId,
+        crate::core::FontPoint,
+        crate::core::DuplicateWarningKind,
+    )> {
         let dragging = !matches!(self.select_state, SelectToolState::Idle)
-            || !matches!(self.v020_drag, crate::adapters::v020_tools::V020DragState::Idle);
+            || !matches!(
+                self.v020_drag,
+                crate::adapters::v020_tools::V020DragState::Idle
+            );
         crate::core::find_duplicate_warning_nodes(&self.contours, &self.closed_flags(), dragging)
     }
 }

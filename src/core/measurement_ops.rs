@@ -128,7 +128,12 @@ pub fn compute_measurement_ray_intersections(
     let mut points = Vec::new();
     points.push(start);
     points.push(end);
-    points.extend(compute_knife_intersections(contours, closed_flags, start, end));
+    points.extend(compute_knife_intersections(
+        contours,
+        closed_flags,
+        start,
+        end,
+    ));
 
     // Left sidebearing (x = 0) and Right sidebearing (x = advance_width), sheared by `italic_angle_deg` around `slant_origin_y` (`spec_ref..spec_ref`)
     let tan_italic = italic_angle_deg.to_radians().tan();

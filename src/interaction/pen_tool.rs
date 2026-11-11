@@ -20,7 +20,11 @@ pub enum PenToolState {
 impl PenToolState {
     /// Computes symmetrical handles extruded from `anchor` by `delta`.
     #[must_use]
-    pub fn compute_symmetric_handles(anchor: FontPoint, delta: (f64, f64), is_closing: bool) -> Self {
+    pub fn compute_symmetric_handles(
+        anchor: FontPoint,
+        delta: (f64, f64),
+        is_closing: bool,
+    ) -> Self {
         let bcp_out = FontPoint::new(anchor.x.0 + delta.0, anchor.y.0 + delta.1);
         let bcp_in = FontPoint::new(anchor.x.0 - delta.0, anchor.y.0 - delta.1);
         Self::DraggingHandles {

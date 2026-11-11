@@ -2,9 +2,10 @@
 //!
 //! Extracted 1-to-1 from `CanvasTool` (`SPEC-005`) in Reference Vector (``).
 
+use crate::core::boolean_geom::{merge_two_closed_rings_at_cut, split_closed_ring_at_indices};
 use crate::core::{
-    extract_segments, hit_test_segments, reverse_contour_nodes, split_contour_segment,
-    ContourSegment, FontPoint, Node, NodeId, NodeType,
+    extract_segments, hit_test_segments, split_contour_segment, ContourSegment, FontPoint, Node,
+    NodeId, NodeType,
 };
 use crate::tokens::{
     KNIFE_CUBIC_SUBDIVISIONS, KNIFE_MIN_DRAG_UPM, KNIFE_PARAM_DEDUP_EPS, KNIFE_SEG_T_MAX,
@@ -117,10 +118,9 @@ fn resolve_or_insert_cut_node(
     pt: FontPoint,
     next_node_id: &mut u64,
 ) -> Option<NodeId> {
-    if let Some(existing) = contour
-        .iter()
-        .find(|n| n.node_type != NodeType::OffCurve && n.point.distance_to(pt) <= KNIFE_MIN_DRAG_UPM)
-    {
+    if let Some(existing) = contour.iter().find(|n| {
+        n.node_type != NodeType::OffCurve && n.point.distance_to(pt) <= KNIFE_MIN_DRAG_UPM
+    }) {
         return Some(existing.id);
     }
     let seg_hit = hit_test_segments(std::slice::from_ref(contour), &[closed], pt, 2.0)?;
@@ -144,7 +144,9 @@ pub fn compute_knife_intersections(
     let mut all_hits: Vec<(f64, FontPoint)> = Vec::new();
     for (c_idx, nodes) in contours.iter().enumerate() {
         let closed = closed_flags.get(c_idx).copied().unwrap_or(true);
-        all_hits.extend(contour_intersections_with_segment(nodes, closed, start, end));
+        all_hits.extend(contour_intersections_with_segment(
+            nodes, closed, start, end,
+        ));
     }
     all_hits.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
     all_hits.into_iter().map(|(_, pt)| pt).collect()
@@ -235,12 +237,15 @@ pub fn knife_cut_paths_in_layer(
                         *next_node_id += 1;
                         first.node_type = NodeType::Corner;
                     }
-                    let on1 = part1.iter().filter(|n| n.node_type != NodeType::OffCurve).count();
-                    let on2 = part2.iter().filter(|n| n.node_type != NodeType::OffCurve).count();
-                    if on1 >= 2 {
+                    let count_on = |v: &[Node]| {
+                        v.iter()
+                            .filter(|n| n.node_type != NodeType::OffCurve)
+                            .count()
+                    };
+                    if count_on(&part1) >= 2 {
                         pieces.push(part1);
                     }
-                    if on2 >= 2 {
+                    if count_on(&part2) >= 2 {
                         pieces.push(part2);
                     }
                 }
@@ -255,13 +260,13 @@ pub fn knife_cut_paths_in_layer(
     if !touched_closed.is_empty() {
         closed_hits.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
         let (pairs, remainder) = closed_hits.as_chunks::<2>();
+        let has_oncurve = |r: &[Node], id: NodeId| {
+            r.iter()
+                .any(|n| n.id == id && n.node_type != NodeType::OffCurve)
+        };
         for &[(_, _, id_a), (_, _, id_b)] in pairs {
-            let pos_a = touched_closed.iter().position(|r| {
-                r.iter().any(|n| n.id == id_a && n.node_type != NodeType::OffCurve)
-            });
-            let pos_b = touched_closed.iter().position(|r| {
-                r.iter().any(|n| n.id == id_b && n.node_type != NodeType::OffCurve)
-            });
+            let pos_a = touched_closed.iter().position(|r| has_oncurve(r, id_a));
+            let pos_b = touched_closed.iter().position(|r| has_oncurve(r, id_b));
             match (pos_a, pos_b) {
                 (Some(r_a), Some(r_b)) if r_a == r_b => {
                     let ring = touched_closed.remove(r_a);
@@ -280,8 +285,11 @@ pub fn knife_cut_paths_in_layer(
                     let (hi, lo) = if r_a > r_b { (r_a, r_b) } else { (r_b, r_a) };
                     let ring_hi = touched_closed.remove(hi);
                     let ring_lo = touched_closed.remove(lo);
-                    let (ring_a, ring_b) =
-                        if r_a < r_b { (ring_lo, ring_hi) } else { (ring_hi, ring_lo) };
+                    let (ring_a, ring_b) = if r_a < r_b {
+                        (ring_lo, ring_hi)
+                    } else {
+                        (ring_hi, ring_lo)
+                    };
                     let ia = ring_a.iter().position(|n| n.id == id_a).unwrap_or(0);
                     let ib = ring_b.iter().position(|n| n.id == id_b).unwrap_or(0);
                     touched_closed.push(merge_two_closed_rings_at_cut(
@@ -298,17 +306,16 @@ pub fn knife_cut_paths_in_layer(
             }
         }
         if let &[(_, _, id_rem)] = remainder {
-            if let Some(r_rem) = touched_closed.iter().position(|r| {
-                r.iter().any(|n| n.id == id_rem && n.node_type != NodeType::OffCurve)
-            }) {
+            if let Some(r_rem) = touched_closed.iter().position(|r| has_oncurve(r, id_rem)) {
                 let working = touched_closed.remove(r_rem);
                 if let Some(cut_idx) = working
                     .iter()
                     .position(|n| n.id == id_rem && n.node_type != NodeType::OffCurve)
                 {
                     let len = working.len();
-                    let mut opened: Vec<Node> =
-                        (0..len).map(|k| working[(cut_idx + k) % len].clone()).collect();
+                    let mut opened: Vec<Node> = (0..len)
+                        .map(|k| working[(cut_idx + k) % len].clone())
+                        .collect();
                     opened[0].node_type = NodeType::Corner;
                     let end_pt = opened[0].point;
                     let end_id = NodeId(*next_node_id);
@@ -332,87 +339,4 @@ pub fn knife_cut_paths_in_layer(
         *closed_flags = new_closed;
     }
     mutated
-}
-
-fn merge_two_closed_rings_at_cut(
-    ring_a: &[Node],
-    idx_a: usize,
-    ring_b: &[Node],
-    idx_b: usize,
-    knife_start: FontPoint,
-    knife_end: FontPoint,
-    next_node_id: &mut u64,
-) -> Vec<Node> {
-    let (dx, dy) = (knife_end.x.0 - knife_start.x.0, knife_end.y.0 - knife_start.y.0);
-    let pt_a = ring_a[idx_a].point;
-    let next_a = (1..ring_a.len())
-        .map(|k| ring_a[(idx_a + k) % ring_a.len()].point)
-        .find(|p| p.distance_to(pt_a) > KNIFE_PARAM_DEDUP_EPS)
-        .unwrap_or(pt_a);
-    let cross_a = dx * (next_a.y.0 - pt_a.y.0) - dy * (next_a.x.0 - pt_a.x.0);
-
-    let mut oriented_b = ring_b.to_vec();
-    let pt_b = oriented_b[idx_b].point;
-    let next_b = (1..oriented_b.len())
-        .map(|k| oriented_b[(idx_b + k) % oriented_b.len()].point)
-        .find(|p| p.distance_to(pt_b) > KNIFE_PARAM_DEDUP_EPS)
-        .unwrap_or(pt_b);
-    let cross_b = dx * (next_b.y.0 - pt_b.y.0) - dy * (next_b.x.0 - pt_b.x.0);
-    if cross_a * cross_b > 0.0 {
-        reverse_contour_nodes(&mut oriented_b, true);
-    }
-    let ib = oriented_b.iter().position(|n| n.id == ring_b[idx_b].id).unwrap_or(0);
-
-    let mut merged = Vec::with_capacity(ring_a.len() + oriented_b.len() + 2);
-    for (ring, start_idx) in [(ring_a, idx_a), (oriented_b.as_slice(), ib)] {
-        let len = ring.len();
-        for k in 0..len {
-            let mut node = ring[(start_idx + k) % len].clone();
-            if k == 0 { node.node_type = NodeType::Corner; }
-            merged.push(node);
-        }
-        let mut dup = ring[start_idx].clone();
-        dup.id = NodeId(*next_node_id);
-        *next_node_id += 1;
-        dup.node_type = NodeType::Corner;
-        merged.push(dup);
-    }
-    merged
-}
-
-fn split_closed_ring_at_indices(
-    ring: &[Node],
-    idx_a: usize,
-    idx_b: usize,
-    next_node_id: &mut u64,
-) -> (Vec<Node>, Vec<Node>) {
-    let len = ring.len();
-    let mut half1 = Vec::new();
-    let mut curr = idx_a;
-    loop {
-        half1.push(ring[curr].clone());
-        if curr == idx_b { break; }
-        curr = (curr + 1) % len;
-    }
-    if let Some(first) = half1.first_mut() { first.node_type = NodeType::Corner; }
-    if let Some(last) = half1.last_mut() { last.node_type = NodeType::Corner; }
-
-    let mut half2 = Vec::new();
-    let mut curr2 = idx_b;
-    loop {
-        half2.push(ring[curr2].clone());
-        if curr2 == idx_a { break; }
-        curr2 = (curr2 + 1) % len;
-    }
-    if let Some(first) = half2.first_mut() {
-        first.id = NodeId(*next_node_id);
-        *next_node_id += 1;
-        first.node_type = NodeType::Corner;
-    }
-    if let Some(last) = half2.last_mut() {
-        last.id = NodeId(*next_node_id);
-        *next_node_id += 1;
-        last.node_type = NodeType::Corner;
-    }
-    (half1, half2)
 }

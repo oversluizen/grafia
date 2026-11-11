@@ -27,7 +27,7 @@ All curvature equations, tangent-balance handle ratios, proportional handle serv
 | **1. $G^2$ Smoothness Continuity & Harmonize (`Ctrl+Shift+H`)** | Romer / Farin Parametric Curvature Continuity | $\kappa(t) = \frac{x'y'' - y'x''}{(x'^2 + y'^2)^{3/2}}$, $\;p_0 = \frac{a}{b} = \sqrt{\frac{d_{\text{in}}}{d_{\text{out}}}}$ | Equalizes signed curvature $\kappa_{\text{in}}(1) = \kappa_{\text{out}}(0)$ across collinear smooth joins (`Ctrl+Shift+H`), supports fixed-anchor handle balancing (`harmonize_handles_keep_node`), and enforces live $G^2$ continuity on registered `genius_nodes`. |
 | **2. Interactive Tangent Balance (Tunni) Lines** | Henestrosa & Tunni Tangent-Triangle Balance Line | $M_{\text{tunni}} = \frac{1}{2}(P_1 + P_2)$, $\;t_i \in [0.20, 0.95]$ | Renders and hit-tests the chord $[P_1, P_2]$ between cubic off-curve handles (`6.0 dp` tolerance), scales both handles along their tangent rays toward apex $T$ within $[0.20, 0.95]$, and equalizes ratios to parallelize $[P_1, P_2] \parallel [P_0, P_3]$. |
 | **3. Proportional Handle Servo & Interpolated Neighbour Nudge (`C`)** | Per-Axis Affine Handle Servo & Bounded Linear Weighting | $x_i' = P_{3,x} + (x_i - P_{3,x})\frac{P_{0,x}' - P_{3,x}}{P_{0,x} - P_{3,x}}$ | Preserves dimensionless off-curve handle-to-chord ratios when an extremum moves (`servo_translate_on_curve_node`) and linearly interpolates intermediate unselected contour nodes between translated stems and stationary contour extrema (`power_nudge_translate_selected`, shortcut `C`). |
-| **4. Master Trajectory Crossings & Smooth-Node Kink Detection** | `OpenType 1.9` `gvar` Linear Point Trajectory & Tangent-Ratio Invariance | $\vec{T}_k(s) = (1-s)P_k^{(A)} + sP_k^{(B)}$, $\;\Delta\theta > 1^\circ \land |r_A - r_B| > 0.05$ | Supports `MasterCompatibilityMode { OriginAndAnchorRays, FullNodeTrajectories }`, detects intersecting node trajectories $\vec{T}_i \cap \vec{T}_j \neq \emptyset$ within a contour, and flags smooth nodes whose cross-master tangent angle and handle-length ratio simultaneously diverge. |
+| **4. Master Trajectory Crossings, Smooth-Node Kink Detection & Master Auto-Matching** | `OpenType 1.9` `gvar` Linear Point Trajectory, Winding Parity & Cyclic Least-Squares Registration | $\vec{T}_k(s) = (1-s)P_k^{(A)} + sP_k^{(B)}$, $\;k^* = \arg\min_k \sum_{i=0}^{N-1} \|P_{(i+k)\bmod N} - Q_i\|^2$ | Supports `MasterCompatibilityMode { OriginAndAnchorRays, FullNodeTrajectories }`, detects intersecting node trajectories $\vec{T}_i \cap \vec{T}_j \neq \emptyset$, flags smooth nodes whose cross-master tangent angle and handle-length ratio simultaneously diverge, and automatically repairs contour order, winding direction, and cyclic `Node 0` start-node alignment via `auto_match_master_compatibility`. |
 | **5. Proactive Vector Outline Audit** | Parametric Extrema, Slant Frame & Chord Collinearity Analysis | $x'_{\text{slant}}(t)=0,\; y'(t)=0$, $\;d_\perp(P_{1,2}, [P_0,P_3]) \le 0.05$ | Audits contours for `MissingExtremum` (including italic-slanted extrema), `QuasiOrthogonalStem` ($0.1^\circ \le \Delta\theta \le 2.0^\circ$), `CrossedHandles` ($[P_0,P_1] \cap [P_2,P_3] \neq \emptyset$), and `CollinearCubic` ($\le 0.05\;\text{UPM}$). |
 | **6. Off-Axis Handle Warning & Handle-Ratio HUD** | Extremum Tangent Orthogonality & Apex Percentage Telemetry | $\Delta\theta \in [0.05^\circ, 15.0^\circ]$, $\;\text{ratio} = 100 \cdot \frac{\|H - P\|}{\|T - P\|}$ | Flags `OffCurve` handles on `Smooth` extrema that deviate slightly from $0^\circ$, $90^\circ$, or `italic_angle_deg`, and reports `(ratio_in, ratio_out)` handle length percentages relative to tangent intersection apex $T$. |
 | **7. Diagonal Leg / Tangent Extension & Virtual Apex Snapping** | Infinite Ray Projection & Pairwise Line-Line Apex Intersection | $P_{\text{proj}} = A + s(B-A)$, $\;V_{m,n} = L_m \cap L_n$ | Extends non-orthogonal `Corner` line legs as infinite rays so truncated diagonal stems (`/A`, `/V`, `/M`, `/K`) snap directly to ray extensions or virtual ray-ray apex intersections within `snap_radius_upm`. |
@@ -63,7 +63,7 @@ All curvature equations, tangent-balance handle ratios, proportional handle serv
 
 3. **Live $G^2$ Smoothness Node Constraint (`genius_nodes: BTreeSet<NodeId>`)**:
    - Any smooth on-curve node can be registered in `state.genius_nodes` via `set_node_genius(node_id: NodeId, enabled: bool)`.
-   - When an off-curve handle ($Q_2$ or $R_1$) adjacent to a $G^2$-constrained node $P \in \text{genius\_nodes}$ is translated, `GlifoCanvasState` automatically enforces collinearity ($G^1$) and updates the opposite handle / join anchor to maintain $G^2$ curvature equality $\kappa_{\text{in}}(1) = \kappa_{\text{out}}(0)$.
+   - When an off-curve handle ($Q_2$ or $R_1$) adjacent to a $G^2$-constrained node $P \in \text{genius\_nodes}$ is translated, `GrafiaCanvasState` automatically enforces collinearity ($G^1$) and updates the opposite handle / join anchor to maintain $G^2$ curvature equality $\kappa_{\text{in}}(1) = \kappa_{\text{out}}(0)$.
 
 ---
 
@@ -115,6 +115,24 @@ All curvature equations, tangent-balance handle ratios, proportional handle serv
      - Let the normalized handle-length ratio in master $M \in \{A, B\}$ be:
        $$r_M = \frac{\|H_{\text{in}}^{(M)} - P_k^{(M)}\|_2}{\|H_{\text{in}}^{(M)} - P_k^{(M)}\|_2 + \|H_{\text{out}}^{(M)} - P_k^{(M)}\|_2}$$
      - When $\Delta\theta > 1.0^\circ$ **and** $|r_A - r_B| > 0.05$, linear interpolation produces an interior tangent cusp (kink) at intermediate designspace instances; `compute_master_kinks_and_crossings` emits `KinkWarning { contour_idx, node_id: P_k.id, companion_layer_id: B.id, severity: delta_theta_deg * (r_a - r_b).abs() }`.
+
+---
+
+4. **Automatic Cross-Master Contour Order, Winding & Start-Node Matching (`auto_match_master_compatibility(companion_layer_id: u32) -> bool`)**:
+   - When the active foreground layer $A$ and a target `CompanionMasterLayer` $B$ (`companion_layer_id`) contain compatible contour sets (matching contour count and a bijection of `(node_count, closed)` signatures), `auto_match_master_compatibility` deterministically aligns layer $A$'s contours to reference master $B$ in three sequential steps:
+     1. **Contour Pairing (Order Matching)**:
+        - Pairs each reference contour $C_j^{(B)}$ ($j \in \{0, \dots, M-1\}$) with an unassigned foreground contour $C_{\pi(j)}^{(A)}$ having identical `(nodes.len(), closed)` signature that minimizes the squared Euclidean distance between contour bounding-box centers (centroids):
+          $$\pi(j) = \arg\min_{m \in \text{unassigned}} \left\| \text{center}\!\left(C_m^{(A)}\right) - \text{center}\!\left(C_j^{(B)}\right) \right\|_2^2$$
+        - Reorders `state.contours` and `state.glyph.contours` into the matched reference sequence $(C_{\pi(0)}^{(A)}, \dots, C_{\pi(M-1)}^{(A)})$.
+     2. **Winding Alignment (`reverse_contour_nodes`)**:
+        - For each paired closed contour $(C^{(A)}, C^{(B)})$ with non-zero signed shoelace area, compares $\operatorname{sgn}\!\big(\text{Area}(C^{(A)})\big)$ against $\operatorname{sgn}\!\big(\text{Area}(C^{(B)})\big)$.
+        - If $\operatorname{sgn}\!\big(\text{Area}(C^{(A)})\big) \neq \operatorname{sgn}\!\big(\text{Area}(C^{(B)})\big)$, reverses $C^{(A)}$ via `reverse_contour_nodes(&mut C_a, true)` so both masters share identical outer/counter winding orientation.
+     3. **Optimal Cyclic Start-Node Shift (`Node 0` Least-Squares Registration)**:
+        - For each paired closed contour of $N$ nodes after winding alignment, evaluates all cyclic node shifts $k \in \{0, \dots, N-1\}$ that preserve the topological `OnCurve` / `OffCurve` sequence (`(P_{(i+k) \bmod N}.node_type == NodeType::OffCurve) == (Q_i.node_type == NodeType::OffCurve)` for all $i \in \{0, \dots, N-1\}$) and where `P_k` is an on-curve node (`P_k.node_type != NodeType::OffCurve`).
+        - Selects the shift $k^*$ that minimizes total squared Euclidean trajectory length across all $N$ nodes:
+          $$k^* = \arg\min_{k} \sum_{i=0}^{N-1} \left\| P_{(i+k)\bmod N}^{(A)} - Q_i^{(B)} \right\|_2^2$$
+        - Cyclically rotates the foreground contour by $k^*$ so `Node 0` aligns with $Q_0^{(B)}$.
+   - Records an atomic Undo snapshot before mutating `state.contours` / `state.glyph.contours` (only when at least one contour order, winding direction, or start-node index changes) and increments `content_generation`. Returns `true` if the layer was matched (or already aligned) against a topologically compatible companion master, and `false` if `companion_layer_id` does not exist or has incompatible contour counts/node signatures.
 
 ---
 
@@ -295,7 +313,7 @@ pub fn cubic_signed_curvature(
     t: f64,
 ) -> f64;
 
-impl GlifoCanvasState {
+impl GrafiaCanvasState {
     // 2.1 G2 Smoothness Continuity & Harmonize (Ctrl+Shift+H)
     pub fn set_node_genius(&mut self, node_id: NodeId, enabled: bool);
     pub fn harmonize_selected_nodes(&mut self);
@@ -314,9 +332,10 @@ impl GlifoCanvasState {
     pub fn servo_translate_on_curve_node(&mut self, node_id: NodeId, delta: FontPoint);
     pub fn power_nudge_translate_selected(&mut self, delta: FontPoint);
 
-    // 2.4 Master Trajectory Crossings & Smooth-Node Interpolation Kink Detector
+    // 2.4 Master Trajectory Crossings, Smooth-Node Interpolation Kink Detector & Auto-Match
     pub fn set_master_compatibility_mode(&mut self, mode: MasterCompatibilityMode);
     pub fn compute_master_kinks_and_crossings(&self) -> MasterKinkAndCrossingReport;
+    pub fn auto_match_master_compatibility(&mut self, companion_layer_id: u32) -> bool;
 
     // 2.5 Proactive Vector Outline Audit
     pub fn audit_layer_outlines(&self) -> Vec<OutlineAuditFinding>;
@@ -336,9 +355,9 @@ impl GlifoCanvasState {
 
 ---
 
-## 4. Complete Normative Test Matrix (`TC-V080-001` .. `TC-V080-016`)
+## 4. Complete Normative Test Matrix (`TC-V080-001` .. `TC-V080-017`)
 
-All 16 test cases are implemented under `#![cfg(feature = "v080_red")]`:
+All 17 test cases are implemented under `#![cfg(feature = "v080_red")]`:
 
 | Test Case ID | Requirement / Mathematical Contract | Input / Action | Expected Normative Outcome |
 | :--- | :--- | :--- | :--- |
@@ -358,3 +377,4 @@ All 16 test cases are implemented under `#![cfg(feature = "v080_red")]`:
 | **`TC-V080-014`** | Proactive Vector Outline Audit (`audit_layer_outlines` — `MissingExtremum`, `QuasiOrthogonalStem`, `CrossedHandles`, `CollinearCubic`) | Audit a contour containing an unsplit S-arch missing its vertical extremum (plus italic-slanted check), a $89.2^\circ$ near-vertical stem, a self-crossing handle pair, and a flat collinear cubic. | `audit_layer_outlines()` deterministically flags all 4 `OutlineAuditKind` variants with accurate `contour_idx` and `seg_idx`. |
 | **`TC-V080-015`** | Off-Axis Handle Warning & Handle-Ratio Percentage HUD (`compute_angled_handle_warnings`, `compute_segment_handle_ratios`) | Attach a $3^\circ$-tilted off-curve handle to a `Smooth` extremum and evaluate `compute_angled_handle_warnings()` and `compute_segment_handle_ratios()` on a $60\% / 75\%$ cubic arc. | Flags the tilted extremum handle with `deviation_deg ≈ 3.0` and reports `(ratio_in, ratio_out) ≈ (75.0, 60.0)` around apex $T$. |
 | **`TC-V080-016`** | Diagonal Leg / Tangent Extension & Virtual Apex Snapping (`compute_tangent_extension_snaps`) | Construct truncated diagonal legs of `/A` converging toward virtual apex $(200, 700)$; query `compute_tangent_extension_snaps` near $(200, 700)$ and along a leg ray extension. | Snaps to `TangentExtensionSnapKind::VirtualApex` at $(200, 700)$ near the apex and `TangentExtensionSnapKind::RayExtension` along the extended leg slope. |
+| **`TC-V080-017`** | Automatic Cross-Master Contour Order, Winding & Cyclic `Node 0` Matching (`auto_match_master_compatibility`) | Construct a 2-contour foreground glyph where contours 0 and 1 are swapped in order, contour 0 has reversed winding, and contour 1 has its `Node 0` shifted by 2 nodes relative to `CompanionMasterLayer(1)`; invoke `state.auto_match_master_compatibility(1)`. | Reorders contours to match `CompanionMasterLayer(1)`, corrects winding parity, rotates `Node 0` to minimize $\sum \|P_{(i+k)\bmod N} - Q_i\|^2$ eliminating all `TrajectoryCrossing`s, and round-trips cleanly through `Undo` / `Redo`. |

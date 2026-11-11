@@ -1,11 +1,11 @@
-//! `SPEC-005` (`glifo v0.4.0`) tokens: Specialized Edit Tools (`KnifeTool`, `PrimitivesTool`,
+//! `SPEC-005` (`grafia v0.4.0`) tokens: Specialized Edit Tools (`KnifeTool`, `PrimitivesTool`,
 //! `MeasurementTool`, `AnnotationTool`, `PencilTool`, `PixelTool`), Coordinate & Segment Delta
 //! Overlays, and Canvas Annotations (`CanvasAnnotation`).
 //!
 //! Normative token definitions and specification constants
 //! (`SPEC-005 §1 & §3`).
 
-use crate::tokens::{GlifoTheme, RgbaColorToken};
+use crate::tokens::{GrafiaTheme, RgbaColorToken};
 
 // ============================================================================
 // 1. KnifeTool (`CanvasTool` — Shortcut `E` / `Shift+E`)
@@ -210,10 +210,15 @@ pub const BOOL_PROBE_MAX_LEN_FRACTION: f64 = 0.2;
 /// Angular score bonus (`10.0`) when closing a directed boundary cycle back to its origin vertex.
 pub const BOOL_CYCLE_CLOSE_BONUS: f64 = 10.0;
 
-impl GlifoTheme {
+impl GrafiaTheme {
     #[must_use]
     pub fn knife_line_color32(&self) -> egui::Color32 {
-        (if self.is_dark() { KNIFE_LINE_COLOR_DARK } else { KNIFE_LINE_COLOR_LIGHT }).to_color32()
+        (if self.is_dark() {
+            KNIFE_LINE_COLOR_DARK
+        } else {
+            KNIFE_LINE_COLOR_LIGHT
+        })
+        .to_color32()
     }
 
     #[must_use]

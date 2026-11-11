@@ -5,6 +5,9 @@ pub mod cursor_tokens;
 pub mod v020_tokens;
 pub mod v030_tokens;
 pub mod v040_tokens;
+pub mod v050_tokens;
+pub mod v060_tokens;
+pub mod v070_tokens;
 pub use archetypes_tokens::{
     load_archetype_preset, ArchetypeContourPreset, ArchetypeGlyphPreset, ArchetypeNodePreset,
     GlyphAGoldenMaster, GlyphArchetype, GlyphPointToken,
@@ -13,6 +16,9 @@ pub use cursor_tokens::*;
 pub use v020_tokens::*;
 pub use v030_tokens::*;
 pub use v040_tokens::*;
+pub use v050_tokens::*;
+pub use v060_tokens::*;
+pub use v070_tokens::*;
 
 use serde::{Deserialize, Serialize};
 
@@ -26,33 +32,21 @@ pub fn hex_to_color32(hex: &str) -> egui::Color32 {
     if !(clean.is_ascii() && clean.bytes().all(|b| b.is_ascii_hexdigit())) {
         return egui::Color32::from_rgb(0, 0, 0);
     }
+    let parse_pair = |idx: usize| {
+        if clean.len() <= 4 {
+            u8::from_str_radix(&clean[idx..=idx].repeat(2), 16).unwrap_or(0)
+        } else {
+            u8::from_str_radix(&clean[idx * 2..idx * 2 + 2], 16).unwrap_or(0)
+        }
+    };
     match clean.len() {
-        3 => {
-            let r = u8::from_str_radix(&clean[0..1].repeat(2), 16).unwrap_or(0);
-            let g = u8::from_str_radix(&clean[1..2].repeat(2), 16).unwrap_or(0);
-            let b = u8::from_str_radix(&clean[2..3].repeat(2), 16).unwrap_or(0);
-            egui::Color32::from_rgb(r, g, b)
-        }
-        4 => {
-            let r = u8::from_str_radix(&clean[0..1].repeat(2), 16).unwrap_or(0);
-            let g = u8::from_str_radix(&clean[1..2].repeat(2), 16).unwrap_or(0);
-            let b = u8::from_str_radix(&clean[2..3].repeat(2), 16).unwrap_or(0);
-            let a = u8::from_str_radix(&clean[3..4].repeat(2), 16).unwrap_or(255);
-            egui::Color32::from_rgba_unmultiplied(r, g, b, a)
-        }
-        6 => {
-            let r = u8::from_str_radix(&clean[0..2], 16).unwrap_or(0);
-            let g = u8::from_str_radix(&clean[2..4], 16).unwrap_or(0);
-            let b = u8::from_str_radix(&clean[4..6], 16).unwrap_or(0);
-            egui::Color32::from_rgb(r, g, b)
-        }
-        8 => {
-            let r = u8::from_str_radix(&clean[0..2], 16).unwrap_or(0);
-            let g = u8::from_str_radix(&clean[2..4], 16).unwrap_or(0);
-            let b = u8::from_str_radix(&clean[4..6], 16).unwrap_or(0);
-            let a = u8::from_str_radix(&clean[6..8], 16).unwrap_or(255);
-            egui::Color32::from_rgba_unmultiplied(r, g, b, a)
-        }
+        3 | 6 => egui::Color32::from_rgb(parse_pair(0), parse_pair(1), parse_pair(2)),
+        4 | 8 => egui::Color32::from_rgba_unmultiplied(
+            parse_pair(0),
+            parse_pair(1),
+            parse_pair(2),
+            parse_pair(3),
+        ),
         _ => egui::Color32::from_rgb(0, 0, 0),
     }
 }
@@ -333,36 +327,88 @@ pub struct GrafiaTheme {
     pub preview_canvas: PreviewCanvasTokens,
     pub shape_canvas: ShapeCanvasTokens,
     pub snapping: SnappingTokens,
+    #[serde(default = "default_passive_glyph_fill_rgba")]
+    pub passive_glyph_fill: RgbaColorToken,
+    #[serde(default = "default_kerning_negative_fill_rgba")]
+    pub kerning_negative_fill: RgbaColorToken,
+    #[serde(default = "default_kerning_positive_fill_rgba")]
+    pub kerning_positive_fill: RgbaColorToken,
+    #[serde(default = "default_text_caret_color_rgba")]
+    pub text_caret_color: RgbaColorToken,
+    #[serde(default = "default_text_selection_fill_rgba")]
+    pub text_selection_fill: RgbaColorToken,
+    #[serde(default = "default_text_measurement_line_color_rgba")]
+    pub text_measurement_line_color: RgbaColorToken,
+    #[serde(default = "default_text_measurement_knob_fill_rgba")]
+    pub text_measurement_knob_fill: RgbaColorToken,
+    #[serde(default = "default_text_metrics_number_color_rgba")]
+    pub text_metrics_number_color: RgbaColorToken,
+    #[serde(default = "default_preview_bg_normal_rgba")]
+    pub preview_bg_normal: RgbaColorToken,
+    #[serde(default = "default_preview_fg_normal_rgba")]
+    pub preview_fg_normal: RgbaColorToken,
+    #[serde(default = "default_preview_bg_inverted_rgba")]
+    pub preview_bg_inverted: RgbaColorToken,
+    #[serde(default = "default_preview_fg_inverted_rgba")]
+    pub preview_fg_inverted: RgbaColorToken,
+    #[serde(default = "default_ruler_bg_fill_rgba")]
+    pub ruler_bg_fill: RgbaColorToken,
+    #[serde(default = "default_ruler_border_stroke_rgba")]
+    pub ruler_border_stroke: RgbaColorToken,
+    #[serde(default = "default_ruler_tick_color_rgba")]
+    pub ruler_tick_color: RgbaColorToken,
+    #[serde(default = "default_ruler_hairline_color_rgba")]
+    pub ruler_hairline_color: RgbaColorToken,
+    #[serde(default = "default_background_layer_stroke_rgba")]
+    pub background_layer_stroke: RgbaColorToken,
+    #[serde(default = "default_anchor_fill_rgba")]
+    pub anchor_fill: RgbaColorToken,
+    #[serde(default = "default_anchor_selected_fill_rgba")]
+    pub anchor_selected_fill: RgbaColorToken,
+    #[serde(default = "default_mark_cloud_fill_rgba")]
+    pub mark_cloud_fill: RgbaColorToken,
+    #[serde(default = "default_component_fill_rgba")]
+    pub component_fill: RgbaColorToken,
+    #[serde(default = "default_component_selected_fill_rgba")]
+    pub component_selected_fill: RgbaColorToken,
+    #[serde(default = "default_component_locked_fill_rgba")]
+    pub component_locked_fill: RgbaColorToken,
+    #[serde(default = "default_master_compat_ray_color_rgba")]
+    pub master_compat_ray_color: RgbaColorToken,
+    #[serde(default = "default_master_incompat_highlight_rgba")]
+    pub master_incompat_highlight: RgbaColorToken,
 }
 
-pub type GlifoTheme = GrafiaTheme;
-
 impl GrafiaTheme {
-    /// Loads default theme embedded from `tokens/glifo_theme_sonoma.json`.
+    /// Loads default theme embedded from `tokens/grafia_theme_sonoma.json`.
     #[must_use]
     pub fn sonoma_default() -> Self {
-        let json_str = include_str!("../../tokens/glifo_theme_sonoma.json");
-        serde_json::from_str(json_str).expect("glifo_theme_sonoma.json must be valid JSON")
+        let json_str = include_str!("../../tokens/grafia_theme_sonoma.json");
+        serde_json::from_str(json_str).expect("grafia_theme_sonoma.json must be valid JSON")
+    }
+
+    fn themed_hex(&self, dark: &str, light: &str) -> egui::Color32 {
+        hex_to_color32(if self.is_dark() { dark } else { light })
     }
 
     #[must_use]
     pub fn canvas_background_color32(&self) -> egui::Color32 {
-        hex_to_color32(if self.is_dark() { DARK_CANVAS_BACKGROUND_HEX } else { "#FFFFFF" })
+        self.themed_hex(DARK_CANVAS_BACKGROUND_HEX, "#FFFFFF")
     }
 
     #[must_use]
     pub fn sidebar_background_color32(&self) -> egui::Color32 {
-        hex_to_color32(if self.is_dark() { DARK_SIDEBAR_BACKGROUND_HEX } else { "#F6F6F6" })
+        self.themed_hex(DARK_SIDEBAR_BACKGROUND_HEX, "#F6F6F6")
     }
 
     #[must_use]
     pub fn infobox_background_color32(&self) -> egui::Color32 {
-        hex_to_color32(if self.is_dark() { DARK_INFOBOX_BACKGROUND_HEX } else { "#ECECEC" })
+        self.themed_hex(DARK_INFOBOX_BACKGROUND_HEX, "#ECECEC")
     }
 
     #[must_use]
     pub fn splitter_color32(&self) -> egui::Color32 {
-        hex_to_color32(if self.is_dark() { DARK_SPLITTER_HEX } else { "#E1E1E1" })
+        self.themed_hex(DARK_SPLITTER_HEX, "#E1E1E1")
     }
 
     #[must_use]
@@ -372,16 +418,16 @@ impl GrafiaTheme {
 
     #[must_use]
     pub fn metrics_guide_color32(&self) -> egui::Color32 {
-        hex_to_color32(if self.is_dark() { DARK_METRICS_GUIDE_HEX } else { "#EAEAEA" })
+        self.themed_hex(DARK_METRICS_GUIDE_HEX, "#EAEAEA")
     }
 
     #[must_use]
     pub fn metrics_label_color32(&self) -> egui::Color32 {
-        hex_to_color32(if self.is_dark() { DARK_METRICS_LABEL_HEX } else { "#8E8E93" })
+        self.themed_hex(DARK_METRICS_LABEL_HEX, "#8E8E93")
     }
 
     #[must_use]
     pub fn open_endpoint_color32(&self) -> egui::Color32 {
-        hex_to_color32(if self.is_dark() { DARK_OPEN_ENDPOINT_HEX } else { "#007AFF" })
+        self.themed_hex(DARK_OPEN_ENDPOINT_HEX, "#007AFF")
     }
 }

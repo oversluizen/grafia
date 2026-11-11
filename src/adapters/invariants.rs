@@ -1,10 +1,10 @@
-//! Central state invariant validation for `GlifoCanvasState` (`STD-ARCH §3.5`).
+//! Central state invariant validation for `GrafiaCanvasState` (`STD-ARCH §3.5`).
 
-use crate::adapters::state::GlifoCanvasState;
+use crate::adapters::state::GrafiaCanvasState;
 use crate::core::NodeType;
 use crate::interaction::PenToolState;
 
-impl GlifoCanvasState {
+impl GrafiaCanvasState {
     /// Central State Invariant Checker (`STD-ARCH §3.5`).
     ///
     /// Verifies that:
@@ -86,12 +86,18 @@ impl GlifoCanvasState {
             }
 
             if pen_idle && !closed && !contour.is_empty() {
-                if contour.first().is_some_and(|n| n.node_type == NodeType::OffCurve) {
+                if contour
+                    .first()
+                    .is_some_and(|n| n.node_type == NodeType::OffCurve)
+                {
                     return Err(format!(
                         "Invariant violated: open contour[{idx}] starts with an OffCurve node"
                     ));
                 }
-                if contour.last().is_some_and(|n| n.node_type == NodeType::OffCurve) {
+                if contour
+                    .last()
+                    .is_some_and(|n| n.node_type == NodeType::OffCurve)
+                {
                     return Err(format!(
                         "Invariant violated: open contour[{idx}] ends with an OffCurve node"
                     ));
@@ -205,8 +211,14 @@ impl GlifoCanvasState {
             if !seen_guides.insert(g.id) {
                 return Err(format!("Invariant violated: duplicate GuideId {:?}", g.id));
             }
-            if !g.position.x.0.is_finite() || !g.position.y.0.is_finite() || !g.angle_deg.is_finite() {
-                return Err(format!("Invariant violated: non-finite geometry in Guide {:?}", g.id));
+            if !g.position.x.0.is_finite()
+                || !g.position.y.0.is_finite()
+                || !g.angle_deg.is_finite()
+            {
+                return Err(format!(
+                    "Invariant violated: non-finite geometry in Guide {:?}",
+                    g.id
+                ));
             }
         }
         if let Some(sel_g) = self.selected_guide {
@@ -215,6 +227,37 @@ impl GlifoCanvasState {
                     "Invariant violated: selected_guide {:?} does not exist in guides or global_guides",
                     sel_g
                 ));
+            }
+        }
+
+        if !self.text_stream.slots.is_empty() {
+            if self.text_stream.active_slot_index >= self.text_stream.slots.len() {
+                return Err(format!(
+                    "Invariant violated: active_slot_index ({}) >= slots.len() ({})",
+                    self.text_stream.active_slot_index,
+                    self.text_stream.slots.len()
+                ));
+            }
+            if self.text_stream.caret_index > self.text_stream.slots.len() {
+                return Err(format!(
+                    "Invariant violated: caret_index ({}) > slots.len() ({})",
+                    self.text_stream.caret_index,
+                    self.text_stream.slots.len()
+                ));
+            }
+            let eps = crate::tokens::TEXT_STREAM_ORIGIN_INVARIANT_EPS_UPM;
+            let mut expected_origin = 0.0;
+            for (idx, slot) in self.text_stream.slots.iter().enumerate() {
+                if idx > 0 {
+                    expected_origin += self.text_stream.slots[idx - 1].glyph.width
+                        + f64::from(slot.kern_with_prev);
+                }
+                if (slot.origin_x_upm - expected_origin).abs() > eps {
+                    return Err(format!(
+                        "Invariant violated: slot[{idx}].origin_x_upm ({}) != expected ({expected_origin})",
+                        slot.origin_x_upm
+                    ));
+                }
             }
         }
 

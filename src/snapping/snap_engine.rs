@@ -5,10 +5,9 @@ use crate::core::{unslant_point, FontPoint, Node, NodeId, NodeType};
 use crate::snapping::guides::Guide;
 use crate::tokens::{
     DEFAULT_ALIGNMENT_ZONE_SIZE_UPM, DEFAULT_ASCENDER_UPM, DEFAULT_BASELINE_UPM,
-    DEFAULT_CAP_HEIGHT_UPM, DEFAULT_DESCENDER_UPM, DEFAULT_SNAP_THRESHOLD_DP,
-    DEFAULT_X_HEIGHT_UPM, DEG_TO_RAD_F64, GUIDE_BADGE_TOL_MAX_UPM, GUIDE_BADGE_TOL_MIN_UPM,
-    MAX_ACTIVE_SNAPPERS, METRIC_BADGE_TOLERANCE_UPM, RIGHT_ANGLE_DEG_F64,
-    SNAP_LINE_INTERSECT_DET_EPS,
+    DEFAULT_CAP_HEIGHT_UPM, DEFAULT_DESCENDER_UPM, DEFAULT_SNAP_THRESHOLD_DP, DEFAULT_X_HEIGHT_UPM,
+    DEG_TO_RAD_F64, GUIDE_BADGE_TOL_MAX_UPM, GUIDE_BADGE_TOL_MIN_UPM, MAX_ACTIVE_SNAPPERS,
+    METRIC_BADGE_TOLERANCE_UPM, RIGHT_ANGLE_DEG_F64, SNAP_LINE_INTERSECT_DET_EPS,
 };
 use serde::{Deserialize, Serialize};
 
@@ -167,7 +166,8 @@ impl SnapEngine {
             };
         }
 
-        let tolerance_upm = f64::from(DEFAULT_SNAP_THRESHOLD_DP) / f64::from(zoom.max(f32::EPSILON));
+        let tolerance_upm =
+            f64::from(DEFAULT_SNAP_THRESHOLD_DP) / f64::from(zoom.max(f32::EPSILON));
         let mut best_point: Option<(FontPoint, f64)> = None;
         let mut line_candidates: Vec<CandidateLineSnapper> = Vec::new();
 
@@ -237,13 +237,23 @@ impl SnapEngine {
         }
 
         // Sort line candidates by perpendicular distance ascending
-        line_candidates.sort_by(|a, b| a.dist.partial_cmp(&b.dist).unwrap_or(std::cmp::Ordering::Equal));
+        line_candidates.sort_by(|a, b| {
+            a.dist
+                .partial_cmp(&b.dist)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Check if we have two non-parallel line snappers from distinct anchors whose intersection is within tolerance
         if let Some(&first) = line_candidates.first() {
             if let Some(&second) = line_candidates.iter().skip(1).find(|cand| {
                 first.anchor.distance_to(cand.anchor) > SNAP_LINE_INTERSECT_DET_EPS
-                    && intersect_two_infinite_lines(first.anchor, first.angle_deg, cand.anchor, cand.angle_deg).is_some()
+                    && intersect_two_infinite_lines(
+                        first.anchor,
+                        first.angle_deg,
+                        cand.anchor,
+                        cand.angle_deg,
+                    )
+                    .is_some()
             }) {
                 if let Some(inter) = intersect_two_infinite_lines(
                     first.anchor,
@@ -297,7 +307,10 @@ impl SnapEngine {
         if let Some(&best_line) = line_candidates.first() {
             return SnapResult {
                 snapped_point: best_line.proj,
-                delta: (best_line.proj.x.0 - query.x.0, best_line.proj.y.0 - query.y.0),
+                delta: (
+                    best_line.proj.x.0 - query.x.0,
+                    best_line.proj.y.0 - query.y.0,
+                ),
                 active_snappers: vec![ActiveSnapper {
                     from: best_line.anchor,
                     to: best_line.proj,
@@ -358,7 +371,8 @@ pub fn classify_node_alignment(
     // 3. Mode 4: On vertical LSB (x = 0) or RSB (x = advance_width) metric line (sheared by italic_angle_deg)
     let unslanted = unslant_point(pt, italic_angle_deg, metrics.x_height * 0.5);
     if unslanted.x.0.abs() < METRIC_BADGE_TOLERANCE_UPM
-        || (advance_width > 0.0 && (unslanted.x.0 - advance_width).abs() < METRIC_BADGE_TOLERANCE_UPM)
+        || (advance_width > 0.0
+            && (unslanted.x.0 - advance_width).abs() < METRIC_BADGE_TOLERANCE_UPM)
     {
         return Some(AlignmentBadgeMode::OnVerticalMetric);
     }
@@ -366,7 +380,8 @@ pub fn classify_node_alignment(
     // 4. Mode 2: On visible Local or Global Guide (`clamp(0.5 * grid_step, 0.4, 2.0)` @ `spec_ref..spec_ref`)
     // Note: in `drawAlignmentZoneIndicators:` (`spec_ref..spec_ref`), guide alignment is evaluated independently
     if show_guides {
-        let guide_tol = (grid_step_upm * 0.5).clamp(GUIDE_BADGE_TOL_MIN_UPM, GUIDE_BADGE_TOL_MAX_UPM);
+        let guide_tol =
+            (grid_step_upm * 0.5).clamp(GUIDE_BADGE_TOL_MIN_UPM, GUIDE_BADGE_TOL_MAX_UPM);
         for g in local_guides {
             if g.perpendicular_distance(pt) < guide_tol {
                 return Some(AlignmentBadgeMode::OnLocalGuide);

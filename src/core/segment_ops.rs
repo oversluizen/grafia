@@ -1,23 +1,24 @@
 //! Segment-level operations: cubic belly drag (`dragCurve`), extremum solver,
 //! paired OffCurve handle removal, proportional handle tension, and contour reversal.
 
+pub use crate::core::segment_slide::{
+    make_selected_on_curve_node_first, reverse_contour_nodes, slide_on_curve_node_along_contour,
+};
+
 use crate::core::bezier_ops::{Node, NodeId, NodeType};
 use crate::core::coordinates::FontPoint;
 use crate::core::curve_manipulation::{extract_segments, ContourSegment};
-use crate::core::handle_constraints::{
-    enforce_smooth_collinearity_on_handle_drag, fit_cubic_to_segment_chain,
-};
+use crate::core::handle_constraints::enforce_smooth_collinearity_on_handle_drag;
 use crate::tokens::{
-    BERNSTEIN_CUBIC_COEFF, COLLINEAR_MIN_LEN_EPSILON, CURVE_SOLVE_ACCURACY,
-    DRAG_CURVE_MIN_HANDLE_LEN, DRAG_CURVE_T_MAX, DRAG_CURVE_T_MIN, EXTREMUM_SNAP_MAX_DELTA_T,
-    EXTREMUM_T_MAX, EXTREMUM_T_MIN, SEGMENT_DRAG_FREE_WEIGHT_FACTOR,
-    SEGMENT_DRAG_MAX_HANDLE_LEN_UPM, SOLVER_DET_EPSILON, SPLIT_RATIO_MAX, SPLIT_RATIO_MIN,
+    BERNSTEIN_CUBIC_COEFF, COLLINEAR_MIN_LEN_EPSILON, DRAG_CURVE_MIN_HANDLE_LEN, DRAG_CURVE_T_MAX,
+    DRAG_CURVE_T_MIN, EXTREMUM_SNAP_MAX_DELTA_T, EXTREMUM_T_MAX, EXTREMUM_T_MIN,
+    SEGMENT_DRAG_FREE_WEIGHT_FACTOR, SEGMENT_DRAG_MAX_HANDLE_LEN_UPM, SOLVER_DET_EPSILON,
     TENSION_SCALE_MAX, TENSION_SCALE_MIN,
 };
-use kurbo::{CubicBez, ParamCurve, ParamCurveNearest, Point};
+use kurbo::{CubicBez, ParamCurve};
 
 /// Removes an `OffCurve` BCP handle AND its partner `OffCurve` handle in the same cubic segment,
-/// converting that cubic segment back into a pure straight `Line` and resetting its two adjacent
+/// converting that cubic segment back into a straight `Line` and resetting its two adjacent
 /// `OnCurve` endpoints from `Smooth` to `Corner` (`SPEC-002 §3.1.5`).
 pub fn remove_off_curve_segment_handles(
     contour: &mut Vec<Node>,
@@ -26,7 +27,14 @@ pub fn remove_off_curve_segment_handles(
 ) -> bool {
     let segments = extract_segments(contour, closed);
     for seg in segments {
-        if let ContourSegment::Cubic { start_idx, h1_idx, h2_idx, end_idx, .. } = seg {
+        if let ContourSegment::Cubic {
+            start_idx,
+            h1_idx,
+            h2_idx,
+            end_idx,
+            ..
+        } = seg
+        {
             let h1_id = contour[h1_idx].id;
             let h2_id = contour[h2_idx].id;
             if h1_id == target_off_curve_id || h2_id == target_off_curve_id {
@@ -48,7 +56,11 @@ pub fn remove_off_curve_segment_handles(
     contour.len() != len_before
 }
 
-fn project_onto_infinite_line(target: FontPoint, origin: FontPoint, line_pt: FontPoint) -> FontPoint {
+fn project_onto_infinite_line(
+    target: FontPoint,
+    origin: FontPoint,
+    line_pt: FontPoint,
+) -> FontPoint {
     let vx = line_pt.x.0 - origin.x.0;
     let vy = line_pt.y.0 - origin.y.0;
     let len_sq = vx * vx + vy * vy;
@@ -65,7 +77,10 @@ fn clamp_handle_length(anchor: FontPoint, handle: FontPoint, max_len: f64) -> Fo
     let dist = anchor.distance_to(handle);
     if dist > max_len && dist > SOLVER_DET_EPSILON {
         let s = max_len / dist;
-        FontPoint::new(anchor.x.0 + (handle.x.0 - anchor.x.0) * s, anchor.y.0 + (handle.y.0 - anchor.y.0) * s)
+        FontPoint::new(
+            anchor.x.0 + (handle.x.0 - anchor.x.0) * s,
+            anchor.y.0 + (handle.y.0 - anchor.y.0) * s,
+        )
     } else {
         handle
     }
@@ -85,7 +100,9 @@ pub fn apply_cubic_segment_belly_drag(
     dx: f64,
     dy: f64,
 ) {
-    apply_cubic_segment_belly_drag_with_alt(contour, closed, segment, t, initial_h1, initial_h2, dx, dy, false);
+    apply_cubic_segment_belly_drag_with_alt(
+        contour, closed, segment, t, initial_h1, initial_h2, dx, dy, false,
+    );
 }
 
 /// Same as [`apply_cubic_segment_belly_drag`] with explicit `alt_held` flag.
@@ -101,7 +118,16 @@ pub fn apply_cubic_segment_belly_drag_with_alt(
     dy: f64,
     alt_held: bool,
 ) {
-    let ContourSegment::Cubic { start_idx, h1_idx, h2_idx, end_idx, .. } = segment else { return; };
+    let ContourSegment::Cubic {
+        start_idx,
+        h1_idx,
+        h2_idx,
+        end_idx,
+        ..
+    } = segment
+    else {
+        return;
+    };
     if h1_idx >= contour.len() || h2_idx >= contour.len() {
         return;
     }
@@ -115,8 +141,12 @@ pub fn apply_cubic_segment_belly_drag_with_alt(
 
     let p0 = contour[start_idx].point;
     let p3 = contour[end_idx].point;
-    let s0 = contour[start_idx].node_type == NodeType::Smooth && !alt_held && initial_h1.distance_to(p0) >= DRAG_CURVE_MIN_HANDLE_LEN;
-    let s3 = contour[end_idx].node_type == NodeType::Smooth && !alt_held && initial_h2.distance_to(p3) >= DRAG_CURVE_MIN_HANDLE_LEN;
+    let s0 = contour[start_idx].node_type == NodeType::Smooth
+        && !alt_held
+        && initial_h1.distance_to(p0) >= DRAG_CURVE_MIN_HANDLE_LEN;
+    let s3 = contour[end_idx].node_type == NodeType::Smooth
+        && !alt_held
+        && initial_h2.distance_to(p3) >= DRAG_CURVE_MIN_HANDLE_LEN;
 
     let w1 = om / denom;
     let w2 = u / denom;
@@ -133,20 +163,48 @@ pub fn apply_cubic_segment_belly_drag_with_alt(
             )
         }
         (true, true) => (
-            clamp_handle_length(p0, project_onto_infinite_line(t1, p0, initial_h1), SEGMENT_DRAG_MAX_HANDLE_LEN_UPM),
-            clamp_handle_length(p3, project_onto_infinite_line(t2, p3, initial_h2), SEGMENT_DRAG_MAX_HANDLE_LEN_UPM),
+            clamp_handle_length(
+                p0,
+                project_onto_infinite_line(t1, p0, initial_h1),
+                SEGMENT_DRAG_MAX_HANDLE_LEN_UPM,
+            ),
+            clamp_handle_length(
+                p3,
+                project_onto_infinite_line(t2, p3, initial_h2),
+                SEGMENT_DRAG_MAX_HANDLE_LEN_UPM,
+            ),
         ),
         (true, false) => {
-            let h1_proj = clamp_handle_length(p0, project_onto_infinite_line(t1, p0, initial_h1), SEGMENT_DRAG_MAX_HANDLE_LEN_UPM);
+            let h1_proj = clamp_handle_length(
+                p0,
+                project_onto_infinite_line(t1, p0, initial_h1),
+                SEGMENT_DRAG_MAX_HANDLE_LEN_UPM,
+            );
             let comp = om / (2.0 * u);
-            let h2_comp = FontPoint::new(t2.x.0 + comp * (t1.x.0 - h1_proj.x.0), t2.y.0 + comp * (t1.y.0 - h1_proj.y.0));
-            (h1_proj, clamp_handle_length(p3, h2_comp, SEGMENT_DRAG_MAX_HANDLE_LEN_UPM))
+            let h2_comp = FontPoint::new(
+                t2.x.0 + comp * (t1.x.0 - h1_proj.x.0),
+                t2.y.0 + comp * (t1.y.0 - h1_proj.y.0),
+            );
+            (
+                h1_proj,
+                clamp_handle_length(p3, h2_comp, SEGMENT_DRAG_MAX_HANDLE_LEN_UPM),
+            )
         }
         (false, true) => {
-            let h2_proj = clamp_handle_length(p3, project_onto_infinite_line(t2, p3, initial_h2), SEGMENT_DRAG_MAX_HANDLE_LEN_UPM);
+            let h2_proj = clamp_handle_length(
+                p3,
+                project_onto_infinite_line(t2, p3, initial_h2),
+                SEGMENT_DRAG_MAX_HANDLE_LEN_UPM,
+            );
             let comp = u / (2.0 * om);
-            let h1_comp = FontPoint::new(t1.x.0 + comp * (t2.x.0 - h2_proj.x.0), t1.y.0 + comp * (t2.y.0 - h2_proj.y.0));
-            (clamp_handle_length(p0, h1_comp, SEGMENT_DRAG_MAX_HANDLE_LEN_UPM), h2_proj)
+            let h1_comp = FontPoint::new(
+                t1.x.0 + comp * (t2.x.0 - h2_proj.x.0),
+                t1.y.0 + comp * (t2.y.0 - h2_proj.y.0),
+            );
+            (
+                clamp_handle_length(p0, h1_comp, SEGMENT_DRAG_MAX_HANDLE_LEN_UPM),
+                h2_proj,
+            )
         }
     };
 
@@ -255,161 +313,10 @@ pub fn apply_proportional_tension_handle_drag(
         let p_handle = contour[partner_h_idx].point;
         let vx = p_handle.x.0 - p_anchor.x.0;
         let vy = p_handle.y.0 - p_anchor.y.0;
-        contour[partner_h_idx].point = FontPoint::new(p_anchor.x.0 + vx * ratio, p_anchor.y.0 + vy * ratio);
+        contour[partner_h_idx].point =
+            FontPoint::new(p_anchor.x.0 + vx * ratio, p_anchor.y.0 + vy * ratio);
         let partner_id = contour[partner_h_idx].id;
         enforce_smooth_collinearity_on_handle_drag(contour, closed, partner_id, false);
         return;
     }
 }
-
-/// Reverses the winding direction of a contour while keeping the first `OnCurve` node as
-/// the starting anchor on closed contours (`SPEC-002 §5.3`).
-pub fn reverse_contour_nodes(contour: &mut [Node], closed: bool) {
-    if contour.len() <= 1 {
-        return;
-    }
-    if !closed {
-        contour.reverse();
-        return;
-    }
-    let first_on_id = contour
-        .iter()
-        .find(|n| n.node_type != NodeType::OffCurve)
-        .map(|n| n.id);
-    contour.reverse();
-    if let Some(target_id) = first_on_id {
-        if let Some(pos) = contour.iter().position(|n| n.id == target_id) {
-            contour.rotate_left(pos);
-        }
-    }
-}
-
-/// Rotates a closed contour so that the first selected `OnCurve` node becomes `contour[0]`
-/// (`Make Node First` / `Set Start Node`, `SPEC-002 §5.3`).
-pub fn make_selected_on_curve_node_first(
-    contour: &mut [Node],
-    closed: bool,
-    selected: &[NodeId],
-) -> bool {
-    if !closed || contour.len() < 2 {
-        return false;
-    }
-    if let Some(pos) = contour
-        .iter()
-        .position(|n| selected.contains(&n.id) && n.node_type != NodeType::OffCurve)
-    {
-        if pos > 0 {
-            contour.rotate_left(pos);
-            return true;
-        }
-    }
-    false
-}
-
-/// Slides a selected `OnCurve` node along its adjacent `Line` or `Cubic` segments while preserving
-/// curvature via De Casteljau subdivision (`SPEC-002 §3.1.3`).
-pub fn slide_on_curve_node_along_contour(
-    contour: &mut [Node],
-    closed: bool,
-    node_id: NodeId,
-    target_pt: FontPoint,
-) -> bool {
-    let Some(node_idx) = contour.iter().position(|n| n.id == node_id) else {
-        return false;
-    };
-    if contour[node_idx].node_type == NodeType::OffCurve {
-        return false;
-    }
-    let segments = extract_segments(contour, closed);
-    let seg_in = segments.iter().copied().find(|s| match s {
-        ContourSegment::Line { end_idx, .. } | ContourSegment::Cubic { end_idx, .. } => *end_idx == node_idx,
-    });
-    let seg_out = segments.iter().copied().find(|s| match s {
-        ContourSegment::Line { start_idx, .. } | ContourSegment::Cubic { start_idx, .. } => *start_idx == node_idx,
-    });
-    let target = Point::new(target_pt.x.0, target_pt.y.0);
-    let eval_seg = |s: ContourSegment| -> (f64, f64) {
-        let res = match s {
-            ContourSegment::Line { line, .. } => line.nearest(target, CURVE_SOLVE_ACCURACY),
-            ContourSegment::Cubic { cubic, .. } => cubic.nearest(target, CURVE_SOLVE_ACCURACY),
-        };
-        (res.distance_sq.sqrt(), res.t)
-    };
-
-    let in_cand = seg_in.map(eval_seg);
-    let out_cand = seg_out.map(eval_seg);
-    let use_in = match (in_cand, out_cand) {
-        (Some((d_in, _)), Some((d_out, _))) => d_in <= d_out,
-        (Some(_), None) => true,
-        (None, Some(_)) => false,
-        (None, None) => return false,
-    };
-
-    if use_in {
-        let ( Some(s_in), Some((_, raw_t)) ) = (seg_in, in_cand) else { return false; };
-        let u = raw_t.clamp(SPLIT_RATIO_MIN, 1.0);
-        match s_in {
-            ContourSegment::Line { line, .. } => {
-                let p = line.eval(u);
-                let old = contour[node_idx].point;
-                contour[node_idx].point = FontPoint::new(p.x, p.y);
-                if let Some(ContourSegment::Cubic { h1_idx, .. }) = seg_out {
-                    contour[h1_idx].point.x.0 += p.x - old.x.0;
-                    contour[h1_idx].point.y.0 += p.y - old.y.0;
-                }
-            }
-            ContourSegment::Cubic { h1_idx, h2_idx, cubic, .. } => {
-                let left = cubic.subsegment(0.0..u);
-                let rem = cubic.subsegment(u..1.0);
-                contour[h1_idx].point = FontPoint::new(left.p1.x, left.p1.y);
-                contour[h2_idx].point = FontPoint::new(left.p2.x, left.p2.y);
-                contour[node_idx].point = FontPoint::new(left.p3.x, left.p3.y);
-                if (1.0 - u) > COLLINEAR_MIN_LEN_EPSILON {
-                    if let Some(ContourSegment::Cubic { h1_idx: oh1, h2_idx: oh2, cubic: oc, .. }) = seg_out {
-                        let chain = [
-                            ContourSegment::Cubic { start_idx: 0, h1_idx: 1, h2_idx: 2, end_idx: 3, cubic: rem },
-                            ContourSegment::Cubic { start_idx: 3, h1_idx: 4, h2_idx: 5, end_idx: 6, cubic: oc },
-                        ];
-                        let (fh1, fh2) = fit_cubic_to_segment_chain(&chain);
-                        contour[oh1].point = fh1;
-                        contour[oh2].point = fh2;
-                    }
-                }
-            }
-        }
-    } else {
-        let ( Some(s_out), Some((_, raw_t)) ) = (seg_out, out_cand) else { return false; };
-        let v = raw_t.clamp(0.0, SPLIT_RATIO_MAX);
-        match s_out {
-            ContourSegment::Line { line, .. } => {
-                let p = line.eval(v);
-                let old = contour[node_idx].point;
-                contour[node_idx].point = FontPoint::new(p.x, p.y);
-                if let Some(ContourSegment::Cubic { h2_idx, .. }) = seg_in {
-                    contour[h2_idx].point.x.0 += p.x - old.x.0;
-                    contour[h2_idx].point.y.0 += p.y - old.y.0;
-                }
-            }
-            ContourSegment::Cubic { h1_idx, h2_idx, cubic, .. } => {
-                let rem = cubic.subsegment(0.0..v);
-                let right = cubic.subsegment(v..1.0);
-                contour[node_idx].point = FontPoint::new(right.p0.x, right.p0.y);
-                contour[h1_idx].point = FontPoint::new(right.p1.x, right.p1.y);
-                contour[h2_idx].point = FontPoint::new(right.p2.x, right.p2.y);
-                if v > COLLINEAR_MIN_LEN_EPSILON {
-                    if let Some(ContourSegment::Cubic { h1_idx: ih1, h2_idx: ih2, cubic: ic, .. }) = seg_in {
-                        let chain = [
-                            ContourSegment::Cubic { start_idx: 0, h1_idx: 1, h2_idx: 2, end_idx: 3, cubic: ic },
-                            ContourSegment::Cubic { start_idx: 3, h1_idx: 4, h2_idx: 5, end_idx: 6, cubic: rem },
-                        ];
-                        let (fh1, fh2) = fit_cubic_to_segment_chain(&chain);
-                        contour[ih1].point = fh1;
-                        contour[ih2].point = fh2;
-                    }
-                }
-            }
-        }
-    }
-    true
-}
-

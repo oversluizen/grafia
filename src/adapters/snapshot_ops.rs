@@ -3,7 +3,9 @@
 use crate::adapters::state::GrafiaCanvasState;
 use crate::adapters::v020_tools::V020DragState;
 use crate::adapters::v030_guides::GuideDragState;
-use crate::core::{ContourId, FontPoint, Glyph, GlyphContour, NodeId, NodeType, ScreenPoint, ShapeBooleanRole};
+use crate::core::{
+    ContourId, FontPoint, Glyph, GlyphContour, NodeId, NodeType, ScreenPoint, ShapeBooleanRole,
+};
 use crate::interaction::{CommandHistory, GlyphSnapshot, PenToolState, SelectToolState};
 use crate::snapping::GlyphMetrics;
 use crate::tokens::GlyphArchetype;
@@ -15,20 +17,20 @@ impl GrafiaCanvasState {
     /// `self.contours`, `self.paths`, and `self.glyph`, resetting selection/history, and
     /// verifying all structural invariants.
     pub fn load_glyph(&mut self, mut glyph: Glyph, metrics: GlyphMetrics) {
+        self.text_stream = crate::core::CanvasTextStream::new();
         let safe_upm = glyph.upm.max(1);
         glyph.upm = safe_upm;
         if glyph.height <= 0.0 {
             glyph.height = metrics.cap_height;
         }
         let mut seen_ids = HashSet::new();
-        let mut next_id = self.next_node_id.max(1);
-        for gc in &glyph.contours {
-            for n in &gc.nodes {
-                if n.id.0 >= next_id {
-                    next_id = n.id.0 + 1;
-                }
-            }
-        }
+        let max_existing = glyph
+            .contours
+            .iter()
+            .flat_map(|gc| gc.nodes.iter().map(|n| n.id.0 + 1))
+            .max()
+            .unwrap_or(1);
+        let mut next_id = self.next_node_id.max(max_existing);
         for (idx, gc) in glyph.contours.iter_mut().enumerate() {
             gc.id = ContourId(idx);
             for n in &mut gc.nodes {
@@ -47,10 +49,18 @@ impl GrafiaCanvasState {
                 gc.closed = false;
                 gc.nodes.retain(|n| n.node_type != NodeType::OffCurve);
             } else if !gc.closed {
-                while gc.nodes.first().is_some_and(|n| n.node_type == NodeType::OffCurve) {
+                while gc
+                    .nodes
+                    .first()
+                    .is_some_and(|n| n.node_type == NodeType::OffCurve)
+                {
                     gc.nodes.remove(0);
                 }
-                while gc.nodes.last().is_some_and(|n| n.node_type == NodeType::OffCurve) {
+                while gc
+                    .nodes
+                    .last()
+                    .is_some_and(|n| n.node_type == NodeType::OffCurve)
+                {
                     gc.nodes.pop();
                 }
             }
@@ -66,6 +76,10 @@ impl GrafiaCanvasState {
             }
         }
         self.v040.selected_annotations.clear();
+        self.background_contours = glyph.background_contours.clone();
+        self.anchors = glyph.anchors.clone();
+        self.editing_background_layer = false;
+        self.editing_background = false;
         self.glyph = glyph;
         self.selected_nodes.clear();
         self.history = CommandHistory::new();
@@ -118,6 +132,8 @@ impl GrafiaCanvasState {
             height: self.glyph.height,
             contours,
             annotations: self.glyph.annotations.clone(),
+            background_contours: self.background_contours.clone(),
+            anchors: self.anchors.clone(),
         }
     }
     pub fn try_begin_alt_select_node_press(
@@ -157,11 +173,7 @@ impl GrafiaCanvasState {
         }
         self.active_drag_before_snapshot = Some(before);
         self.record_drag_start();
-        crate::core::toggle_selected_on_curve_smooth(
-            &mut self.contours,
-            &closed_flags,
-            &[node_id],
-        );
+        crate::core::toggle_selected_on_curve_smooth(&mut self.contours, &closed_flags, &[node_id]);
         self.sync_paths_from_contours();
         self.select_state = SelectToolState::DraggingNodes {
             selected: self.selected_nodes.clone(),
@@ -176,15 +188,12 @@ impl GrafiaCanvasState {
     pub fn load_preset_a(&mut self) {
         self.load_glyph_archetype(GlyphArchetype::A);
     }
-
     pub fn load_preset_n(&mut self) {
         self.load_glyph_archetype(GlyphArchetype::N);
     }
-
     pub fn load_preset_o(&mut self) {
         self.load_glyph_archetype(GlyphArchetype::O);
     }
-
     pub fn load_preset_s(&mut self) {
         self.load_glyph_archetype(GlyphArchetype::S);
     }
@@ -244,9 +253,67 @@ impl GrafiaCanvasState {
             self.glyph.annotations.clone(),
             self.v040.selected_annotations.clone(),
         )
+        .with_text_stream(
+            self.glyph.name.clone(),
+            self.glyph.width,
+            self.glyph.height,
+            self.text_stream.slots.clone(),
+            self.text_stream.active_slot_index,
+            self.text_stream.caret_index,
+            self.text_stream.selection_range,
+        )
+        .with_v060_state(
+            self.background_contours.clone(),
+            self.editing_background_layer,
+            self.show_background,
+            self.anchors.clone(),
+            self.multi_selection_proportional,
+            self.transform_grid_anchor,
+            self.show_rulers,
+            self.center_in_width_count,
+        )
+        .with_v070_state(
+            self.components.clone(),
+            self.contour_strokes.clone(),
+            self.companion_master_layers.clone(),
+            self.selected_companion_nodes.clone(),
+            self.show_master_compatibility,
+        )
     }
 
     pub fn restore_snapshot(&mut self, snap: &GlyphSnapshot) {
+        self.components = snap.components.clone();
+        self.contour_strokes = snap.contour_strokes.clone();
+        self.companion_master_layers = snap.companion_master_layers.clone();
+        self.selected_companion_nodes = snap.selected_companion_nodes.clone();
+        self.show_master_compatibility = snap.show_master_compatibility;
+        self.pre_all_layers_select_snapshot = None;
+        self.background_contours = snap.background_contours.clone();
+        self.glyph.background_contours = self.background_contours.clone();
+        self.editing_background_layer = snap.editing_background_layer;
+        self.editing_background = snap.editing_background_layer;
+        self.show_background = snap.show_background;
+        self.anchors = snap.anchors.clone();
+        self.glyph.anchors = self.anchors.clone();
+        for a in &self.anchors {
+            if a.id.0 >= self.next_anchor_id {
+                self.next_anchor_id = a.id.0 + 1;
+            }
+        }
+        self.multi_selection_proportional = snap.multi_selection_proportional;
+        self.transform_grid_anchor = snap.transform_grid_anchor;
+        self.show_rulers = snap.show_rulers;
+        self.center_in_width_count = snap.center_in_width_count;
+        if snap.has_glyph_metrics {
+            self.glyph.name = snap.glyph_name.clone();
+            self.glyph.width = snap.glyph_width;
+            self.glyph.height = snap.glyph_height;
+            self.text_stream.slots = snap.text_stream_slots.clone();
+            self.text_stream.active_slot_index = snap.active_slot_index;
+            self.text_stream.caret_index = snap.caret_index;
+            self.text_stream.selection_range = snap.selection_range;
+            self.text_stream.recompute_origins();
+        }
         if !snap.contours.is_empty() || snap.paths.is_empty() {
             self.contours = snap.contours.clone();
             self.selected_nodes = snap.selected_nodes.clone();
@@ -277,16 +344,12 @@ impl GrafiaCanvasState {
         self.global_guides = snap.global_guides.clone();
         self.selected_guide = snap.selected_guide;
         for g in self.guides.iter().chain(self.global_guides.iter()) {
-            if g.id.0 >= self.next_guide_id {
-                self.next_guide_id = g.id.0 + 1;
-            }
+            self.next_guide_id = self.next_guide_id.max(g.id.0 + 1);
         }
         self.glyph.annotations = snap.annotations.clone();
         self.v040.selected_annotations = snap.selected_annotations.clone();
         for a in &self.glyph.annotations {
-            if a.id.0 >= self.v040.next_annotation_id {
-                self.v040.next_annotation_id = a.id.0 + 1;
-            }
+            self.v040.next_annotation_id = self.v040.next_annotation_id.max(a.id.0 + 1);
         }
         self.select_state = SelectToolState::Idle;
         self.pen_state = PenToolState::Idle;
@@ -311,12 +374,14 @@ impl GrafiaCanvasState {
         self.active_open_contour = (0..self.contours.len())
             .rev()
             .find(|&i| !self.is_contour_closed(i));
+        self.bump_content_generation();
     }
 
     pub fn record_mutation(&mut self, label: &'static str, before: GlyphSnapshot) {
         let after = self.snapshot();
         if before != after {
             self.history.record(label, before, after);
+            self.bump_content_generation();
         }
     }
 

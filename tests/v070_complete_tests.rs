@@ -1,5 +1,4 @@
 #![allow(unexpected_cfgs)]
-#![cfg(feature = "v070_red")]
 //! Normative COTS Verification Suite for `SPEC-008` (`grafia v0.7.0`):
 //! Background Layer (`Cmd+B`, `Cmd+J`, `Cmd+K`), 2D `CanvasAnchor` & Mark Cloud (`ghost_paths`),
 //! 2D Pre-Resolved `CanvasComponent` & Decompose (`Cmd+Shift+D`), Fit Curve (`Ctrl+Opt+1..8`),
@@ -11,46 +10,90 @@ use egui::{Event, Key, Modifiers as EguiModifiers, Pos2, RawInput, Rect, Vec2};
 use grafia::adapters::headless::rasterize_canvas_subregion;
 use grafia::adapters::input_dispatcher::InputDispatcher;
 use grafia::{
-    contour_signed_area, Affine2D, AnchorId, AppearanceMode, CanvasAnchor, CanvasComponent, CanvasHostRequest,
-    CompanionMasterLayer, ComponentId, ContourId, ContourStrokeStyle, FitCurveConfig, FontPoint, GhostMarkPath,
-    GlifoCanvasState, GlifoTheme, GlyphContour, Guide, GuideId, LineCapStyle, LineJoinStyle, Node, NodeId,
-    NodeType, StrokePosition, ANCHOR_DIAMOND_RADIUS_DP, ANCHOR_DIAMOND_SELECTED_RADIUS_DP,
-    BACKGROUND_STROKE_WIDTH_DP, FIT_CURVE_DEFAULT_MAX_RATIO, FIT_CURVE_DEFAULT_MIN_RATIO,
+    contour_signed_area, Affine2D, AnchorId, AppearanceMode, CanvasAnchor, CanvasComponent,
+    CanvasHostRequest, CompanionMasterLayer, ComponentId, ContourId, ContourStrokeStyle,
+    FitCurveConfig, FontPoint, GhostMarkPath, GlyphContour, GrafiaCanvasState, GrafiaTheme, Guide,
+    GuideId, LineCapStyle, LineJoinStyle, Node, NodeId, NodeType, StrokePosition,
+    ANCHOR_DIAMOND_RADIUS_DP, ANCHOR_DIAMOND_SELECTED_RADIUS_DP, BACKGROUND_STROKE_WIDTH_DP,
+    FIT_CURVE_DEFAULT_MAX_RATIO, FIT_CURVE_DEFAULT_MIN_RATIO,
 };
 use proptest::prelude::*;
 use rstest::rstest;
 
-fn default_canvas_rect() -> Rect { Rect::from_min_size(Pos2::ZERO, Vec2::new(960.0, 600.0)) }
+fn default_canvas_rect() -> Rect {
+    Rect::from_min_size(Pos2::ZERO, Vec2::new(960.0, 600.0))
+}
 
-fn make_rect_contour(id: usize, base_node: u64, x0: f64, y0: f64, x1: f64, y1: f64) -> GlyphContour {
-    GlyphContour::new(ContourId(id), vec![
-        Node::new(NodeId(base_node), x0, y0, NodeType::Corner), Node::new(NodeId(base_node + 1), x1, y0, NodeType::Corner),
-        Node::new(NodeId(base_node + 2), x1, y1, NodeType::Corner), Node::new(NodeId(base_node + 3), x0, y1, NodeType::Corner),
-    ])
+fn make_rect_contour(
+    id: usize,
+    base_node: u64,
+    x0: f64,
+    y0: f64,
+    x1: f64,
+    y1: f64,
+) -> GlyphContour {
+    GlyphContour::new(
+        ContourId(id),
+        vec![
+            Node::new(NodeId(base_node), x0, y0, NodeType::Corner),
+            Node::new(NodeId(base_node + 1), x1, y0, NodeType::Corner),
+            Node::new(NodeId(base_node + 2), x1, y1, NodeType::Corner),
+            Node::new(NodeId(base_node + 3), x0, y1, NodeType::Corner),
+        ],
+    )
 }
 
 fn make_quarter_arc_contour(id: usize, h1_y: f64, h2_x: f64) -> GlyphContour {
-    let mut gc = GlyphContour::new(ContourId(id), vec![
-        Node::new(NodeId(100), 0.0, 0.0, NodeType::Corner), Node::new(NodeId(101), 0.0, h1_y, NodeType::OffCurve),
-        Node::new(NodeId(102), h2_x, 100.0, NodeType::OffCurve), Node::new(NodeId(103), 100.0, 100.0, NodeType::Smooth),
-    ]);
+    let mut gc = GlyphContour::new(
+        ContourId(id),
+        vec![
+            Node::new(NodeId(100), 0.0, 0.0, NodeType::Corner),
+            Node::new(NodeId(101), 0.0, h1_y, NodeType::OffCurve),
+            Node::new(NodeId(102), h2_x, 100.0, NodeType::OffCurve),
+            Node::new(NodeId(103), 100.0, 100.0, NodeType::Smooth),
+        ],
+    );
     gc.closed = false;
     gc
 }
 
-fn set_layer_contours(state: &mut GlifoCanvasState, contours: Vec<GlyphContour>) {
+fn set_layer_contours(state: &mut GrafiaCanvasState, contours: Vec<GlyphContour>) {
     state.contours = contours.iter().map(|c| c.nodes.clone()).collect();
-    state.active_contour_closed = contours.last().map_or(true, |c| c.closed);
+    state.active_contour_closed = contours.last().is_none_or(|c| c.closed);
     state.glyph.contours = contours;
     state.sync_paths_from_contours();
 }
 
 #[allow(clippy::too_many_arguments)]
-fn dispatch_key(state: &mut GlifoCanvasState, key: Key, shift: bool, alt: bool, cmd: bool, ctrl: bool) {
+fn dispatch_key(
+    state: &mut GrafiaCanvasState,
+    key: Key,
+    shift: bool,
+    alt: bool,
+    cmd: bool,
+    ctrl: bool,
+) {
     let ctx = egui::Context::default();
-    let m = EguiModifiers { alt, ctrl, shift, mac_cmd: cmd, command: cmd };
-    let events = vec![Event::Key { key, physical_key: Some(key), pressed: true, repeat: false, modifiers: m }];
-    let raw = RawInput { screen_rect: Some(default_canvas_rect()), time: Some(1.0), events, ..Default::default() };
+    let m = EguiModifiers {
+        alt,
+        ctrl,
+        shift,
+        mac_cmd: cmd,
+        command: cmd,
+    };
+    let events = vec![Event::Key {
+        key,
+        physical_key: Some(key),
+        pressed: true,
+        repeat: false,
+        modifiers: m,
+    }];
+    let raw = RawInput {
+        screen_rect: Some(default_canvas_rect()),
+        time: Some(1.0),
+        events,
+        ..Default::default()
+    };
     ctx.input_mut(|i| i.modifiers = m);
     let theme = state.theme.clone();
     let mut out = ctx.run_ui(raw, |ui| {
@@ -64,8 +107,14 @@ fn dispatch_key(state: &mut GlifoCanvasState, key: Key, shift: bool, alt: bool, 
 #[test]
 fn tc_v070_001_and_002_selection_to_background_partial_append_and_all() {
     assert_relative_eq!(BACKGROUND_STROKE_WIDTH_DP, 1.0, epsilon = 1e-4);
-    let mut state = GlifoCanvasState::init_glyph_a();
-    set_layer_contours(&mut state, vec![make_rect_contour(1, 10, 0.0, 0.0, 100.0, 200.0), make_rect_contour(2, 20, 200.0, 0.0, 300.0, 200.0)]);
+    let mut state = GrafiaCanvasState::init_glyph_a();
+    set_layer_contours(
+        &mut state,
+        vec![
+            make_rect_contour(1, 10, 0.0, 0.0, 100.0, 200.0),
+            make_rect_contour(2, 20, 200.0, 0.0, 300.0, 200.0),
+        ],
+    );
     state.selected_nodes = vec![NodeId(10)];
     dispatch_key(&mut state, Key::J, false, false, true, false);
     assert_eq!(state.background_contours.len(), 1);
@@ -89,9 +138,15 @@ fn tc_v070_001_and_002_selection_to_background_partial_append_and_all() {
 // TC-V070-003 & TC-V070-004: Cmd+K (Swap with Background) and Cmd+B / Cmd+Opt+B (Background Editing & Visibility).
 #[test]
 fn tc_v070_003_and_004_swap_and_toggle_background_editing() {
-    let mut state = GlifoCanvasState::init_glyph_a();
-    set_layer_contours(&mut state, vec![make_rect_contour(1, 10, 0.0, 0.0, 100.0, 100.0)]);
-    state.background_contours = vec![make_rect_contour(2, 20, 50.0, 50.0, 150.0, 150.0), make_rect_contour(3, 30, 200.0, 50.0, 300.0, 150.0)];
+    let mut state = GrafiaCanvasState::init_glyph_a();
+    set_layer_contours(
+        &mut state,
+        vec![make_rect_contour(1, 10, 0.0, 0.0, 100.0, 100.0)],
+    );
+    state.background_contours = vec![
+        make_rect_contour(2, 20, 50.0, 50.0, 150.0, 150.0),
+        make_rect_contour(3, 30, 200.0, 50.0, 300.0, 150.0),
+    ];
     state.selected_nodes = vec![NodeId(10)];
     let snap_0 = state.snapshot();
 
@@ -113,7 +168,11 @@ fn tc_v070_003_and_004_swap_and_toggle_background_editing() {
     state.translate_node_upm(NodeId(10), FontPoint::new(25.0, 0.0));
     dispatch_key(&mut state, Key::B, false, false, true, false);
     assert!(!state.editing_background);
-    assert_relative_eq!(state.background_contours[0].nodes[0].point.x.0, 25.0, epsilon = 1e-4);
+    assert_relative_eq!(
+        state.background_contours[0].nodes[0].point.x.0,
+        25.0,
+        epsilon = 1e-4
+    );
     state.validate_invariants().unwrap();
 }
 
@@ -122,13 +181,31 @@ fn tc_v070_003_and_004_swap_and_toggle_background_editing() {
 fn tc_v070_005_to_007_anchors_tab_cycling_snap_delete_and_mark_cloud() {
     assert_relative_eq!(ANCHOR_DIAMOND_RADIUS_DP, 4.5, epsilon = 1e-4);
     assert_relative_eq!(ANCHOR_DIAMOND_SELECTED_RADIUS_DP, 6.0, epsilon = 1e-4);
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     state.set_anchors(vec![
-        CanvasAnchor { id: AnchorId(1), name: "top".into(), position: FontPoint::new(297.0, 720.0), selected: false },
-        CanvasAnchor { id: AnchorId(2), name: "bottom".into(), position: FontPoint::new(300.0, 0.0), selected: false },
-        CanvasAnchor { id: AnchorId(3), name: "ogonek".into(), position: FontPoint::new(420.0, 0.0), selected: false },
+        CanvasAnchor {
+            id: AnchorId(1),
+            name: "top".into(),
+            position: FontPoint::new(297.0, 720.0),
+            selected: false,
+        },
+        CanvasAnchor {
+            id: AnchorId(2),
+            name: "bottom".into(),
+            position: FontPoint::new(300.0, 0.0),
+            selected: false,
+        },
+        CanvasAnchor {
+            id: AnchorId(3),
+            name: "ogonek".into(),
+            position: FontPoint::new(420.0, 0.0),
+            selected: false,
+        },
     ]);
-    state.set_ghost_mark_paths(vec![GhostMarkPath { anchor_name: "top".into(), contours: vec![make_rect_contour(90, 900, -20.0, 0.0, 20.0, 60.0)] }]);
+    state.set_ghost_mark_paths(vec![GhostMarkPath {
+        anchor_name: "top".into(),
+        contours: vec![make_rect_contour(90, 900, -20.0, 0.0, 20.0, 60.0)],
+    }]);
     state.show_mark_cloud = true;
 
     assert!(state.select_anchor_at_upm(FontPoint::new(298.0, 720.0), false));
@@ -147,7 +224,12 @@ fn tc_v070_005_to_007_anchors_tab_cycling_snap_delete_and_mark_cloud() {
     dispatch_key(&mut state, Key::Tab, true, false, false, false);
     assert!(state.anchors[0].selected);
 
-    state.global_guides.push(Guide::new(GuideId(1), FontPoint::new(300.0, 500.0), 90.0, true));
+    state.global_guides.push(Guide::new(
+        GuideId(1),
+        FontPoint::new(300.0, 500.0),
+        90.0,
+        true,
+    ));
     state.drag_selected_anchors_to_upm(FontPoint::new(299.0, 720.0), false);
     assert_relative_eq!(state.anchors[0].position.x.0, 300.0, epsilon = 1e-4);
 
@@ -159,13 +241,44 @@ fn tc_v070_005_to_007_anchors_tab_cycling_snap_delete_and_mark_cloud() {
 // TC-V070-008, TC-V070-009 & TC-V070-010: CanvasComponent selection, locks, double-click & Cmd+Shift+D Decompose.
 #[test]
 fn tc_v070_008_to_010_components_locks_double_click_and_decompose() {
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     set_layer_contours(&mut state, Vec::new());
     let base_rect = vec![make_rect_contour(1, 1, 0.0, 0.0, 100.0, 200.0)];
     state.set_components(vec![
-        CanvasComponent { id: ComponentId(1), component_name: "acutecomb".into(), contours: base_rect.clone(), transform: Affine2D::translation(50.0, 500.0), locked: false, automatic_alignment: false, selected: false },
-        CanvasComponent { id: ComponentId(2), component_name: "gravecomb".into(), contours: base_rect.clone(), transform: Affine2D { a: -1.0, b: 0.0, c: 0.0, d: 1.0, tx: 300.0, ty: 500.0 }, locked: false, automatic_alignment: true, selected: false },
-        CanvasComponent { id: ComponentId(3), component_name: "lockedpart".into(), contours: base_rect, transform: Affine2D::translation(400.0, 0.0), locked: true, automatic_alignment: false, selected: false },
+        CanvasComponent {
+            id: ComponentId(1),
+            component_name: "acutecomb".into(),
+            contours: base_rect.clone(),
+            transform: Affine2D::translation(50.0, 500.0),
+            locked: false,
+            automatic_alignment: false,
+            selected: false,
+        },
+        CanvasComponent {
+            id: ComponentId(2),
+            component_name: "gravecomb".into(),
+            contours: base_rect.clone(),
+            transform: Affine2D {
+                a: -1.0,
+                b: 0.0,
+                c: 0.0,
+                d: 1.0,
+                tx: 300.0,
+                ty: 500.0,
+            },
+            locked: false,
+            automatic_alignment: true,
+            selected: false,
+        },
+        CanvasComponent {
+            id: ComponentId(3),
+            component_name: "lockedpart".into(),
+            contours: base_rect,
+            transform: Affine2D::translation(400.0, 0.0),
+            locked: true,
+            automatic_alignment: false,
+            selected: false,
+        },
     ]);
 
     assert!(!state.select_component_at_upm(FontPoint::new(450.0, 100.0), false));
@@ -178,14 +291,25 @@ fn tc_v070_008_to_010_components_locks_double_click_and_decompose() {
     assert_relative_eq!(state.components[1].transform.tx, 300.0, epsilon = 1e-4);
 
     state.double_click_component_at_upm(FontPoint::new(110.0, 620.0));
-    assert_eq!(state.drain_host_requests(), vec![CanvasHostRequest::OpenComponentSource { id: ComponentId(1), component_name: "acutecomb".into() }]);
+    assert_eq!(
+        state.drain_host_requests(),
+        vec![CanvasHostRequest::OpenComponentSource {
+            id: ComponentId(1),
+            component_name: "acutecomb".into()
+        }]
+    );
 
     let area_before = contour_signed_area(&state.components[0].contours[0].nodes).signum();
     dispatch_key(&mut state, Key::D, true, false, true, false);
     assert_eq!(state.components.len(), 1);
     assert_eq!(state.glyph.contours.len(), 2);
-    assert_relative_eq!(area_before, contour_signed_area(&state.glyph.contours[1].nodes).signum(), epsilon = 1e-4);
-    assert!(state.undo() && state.components.len() == 3);
+    assert_eq!(state.selected_nodes.len(), 8);
+    assert_relative_eq!(
+        area_before,
+        contour_signed_area(&state.glyph.contours[1].nodes).signum(),
+        epsilon = 1e-4
+    );
+    assert!(state.undo() && state.components.len() == 3 && state.selected_nodes.is_empty());
 }
 
 // TC-V070-011 & TC-V070-012: Fit Curve 8-step ladder (57%..92%), guards, shorter/longer & handle normalization.
@@ -198,63 +322,174 @@ fn tc_v070_008_to_010_components_locks_double_click_and_decompose() {
 #[case::step_6_82_pct(5, Key::Num6, 0.82)]
 #[case::step_7_87_pct(6, Key::Num7, 0.87)]
 #[case::step_8_92_pct(7, Key::Num8, 0.92)]
-fn tc_v070_011_and_012_fit_curve_ladder_and_handle_normalization(#[case] col: usize, #[case] key: Key, #[case] expected_ratio: f64) {
+fn tc_v070_011_and_012_fit_curve_ladder_and_handle_normalization(
+    #[case] col: usize,
+    #[case] key: Key,
+    #[case] expected_ratio: f64,
+) {
     assert_relative_eq!(FIT_CURVE_DEFAULT_MIN_RATIO, 0.57, epsilon = 1e-4);
     assert_relative_eq!(FIT_CURVE_DEFAULT_MAX_RATIO, 0.92, epsilon = 1e-4);
-    assert_relative_eq!(FitCurveConfig::default().ratio_for_column(col), expected_ratio, epsilon = 1e-4);
+    assert_relative_eq!(
+        FitCurveConfig::default().ratio_for_column(col),
+        expected_ratio,
+        epsilon = 1e-4
+    );
 
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     set_layer_contours(&mut state, vec![make_quarter_arc_contour(1, 50.0, 50.0)]);
     state.selected_nodes = vec![NodeId(100)];
 
     dispatch_key(&mut state, key, false, true, false, true);
-    assert_relative_eq!(state.glyph.contours[0].nodes[1].point.y.0, 100.0 * expected_ratio, epsilon = 1e-3);
-    assert_relative_eq!(state.glyph.contours[0].nodes[2].point.x.0, 100.0 * (1.0 - expected_ratio), epsilon = 1e-3);
+    assert_relative_eq!(
+        state.glyph.contours[0].nodes[1].point.y.0,
+        100.0 * expected_ratio,
+        epsilon = 1e-3
+    );
+    assert_relative_eq!(
+        state.glyph.contours[0].nodes[2].point.x.0,
+        100.0 * (1.0 - expected_ratio),
+        epsilon = 1e-3
+    );
 
     if col == 0 {
         state.fit_curve_step_delta(true);
-        assert_relative_eq!(state.glyph.contours[0].nodes[1].point.y.0, 61.375, epsilon = 1e-2);
+        assert_relative_eq!(
+            state.glyph.contours[0].nodes[1].point.y.0,
+            61.375,
+            epsilon = 1e-2
+        );
         state.fit_curve_step_delta(false);
-        assert_relative_eq!(state.glyph.contours[0].nodes[1].point.y.0, 57.0, epsilon = 1e-2);
+        assert_relative_eq!(
+            state.glyph.contours[0].nodes[1].point.y.0,
+            57.0,
+            epsilon = 1e-2
+        );
+        state.fit_curve_step_delta(false);
+        assert_relative_eq!(
+            state.glyph.contours[0].nodes[1].point.y.0,
+            57.0,
+            epsilon = 1e-2
+        );
 
         set_layer_contours(&mut state, vec![make_quarter_arc_contour(1, 60.0, 20.0)]);
         state.selected_nodes = vec![NodeId(100)];
         state.normalize_selected_cubic_handles();
-        assert_relative_eq!(state.glyph.contours[0].nodes[1].point.y.0, 70.0, epsilon = 1e-3);
-        assert_relative_eq!(state.glyph.contours[0].nodes[2].point.x.0, 30.0, epsilon = 1e-3);
+        assert_relative_eq!(
+            state.glyph.contours[0].nodes[1].point.y.0,
+            70.0,
+            epsilon = 1e-3
+        );
+        assert_relative_eq!(
+            state.glyph.contours[0].nodes[2].point.x.0,
+            30.0,
+            epsilon = 1e-3
+        );
 
-        let mut par = GlyphContour::new(ContourId(1), vec![
-            Node::new(NodeId(100), 0.0, 0.0, NodeType::Corner), Node::new(NodeId(101), 0.0, 50.0, NodeType::OffCurve),
-            Node::new(NodeId(102), 100.0, 150.0, NodeType::OffCurve), Node::new(NodeId(103), 100.0, 100.0, NodeType::Smooth),
-        ]);
+        let mut par = GlyphContour::new(
+            ContourId(1),
+            vec![
+                Node::new(NodeId(100), 0.0, 0.0, NodeType::Corner),
+                Node::new(NodeId(101), 0.0, 50.0, NodeType::OffCurve),
+                Node::new(NodeId(102), 100.0, 150.0, NodeType::OffCurve),
+                Node::new(NodeId(103), 100.0, 100.0, NodeType::Smooth),
+            ],
+        );
         par.closed = false;
         set_layer_contours(&mut state, vec![par]);
         state.selected_nodes = vec![NodeId(100)];
         state.apply_fit_curve_column(3);
-        assert_relative_eq!(state.glyph.contours[0].nodes[1].point.y.0, 50.0, epsilon = 1e-4);
+        assert_relative_eq!(
+            state.glyph.contours[0].nodes[1].point.y.0,
+            50.0,
+            epsilon = 1e-4
+        );
     }
 }
 
 // TC-V070-013, TC-V070-014 & TC-V070-015: Live Contour Stroke offset, Expand Outline & Light/Dark rendering.
 #[test]
 fn tc_v070_013_to_015_live_stroke_offset_expand_outline_and_rendering() {
-    let mut state = GlifoCanvasState::init_glyph_a();
-    let mut open_line = GlyphContour::new(ContourId(0), vec![
-        Node::new(NodeId(1), 100.0, 200.0, NodeType::Corner), Node::new(NodeId(2), 400.0, 200.0, NodeType::Corner),
-    ]);
+    let mut state = GrafiaCanvasState::init_glyph_a();
+    let mut open_line = GlyphContour::new(
+        ContourId(0),
+        vec![
+            Node::new(NodeId(1), 100.0, 200.0, NodeType::Corner),
+            Node::new(NodeId(2), 400.0, 200.0, NodeType::Corner),
+        ],
+    );
     open_line.closed = false;
-    set_layer_contours(&mut state, vec![open_line, make_rect_contour(1, 10, 100.0, 300.0, 300.0, 500.0)]);
-    state.set_contour_stroke(ContourId(0), ContourStrokeStyle { width: 40.0, height: 40.0, position: StrokePosition::Center, cap_start: LineCapStyle::Square, cap_end: LineCapStyle::Butt, join: LineJoinStyle::Miter });
-    state.set_contour_stroke(ContourId(1), ContourStrokeStyle { width: 20.0, height: 20.0, position: StrokePosition::Center, cap_start: LineCapStyle::Butt, cap_end: LineCapStyle::Butt, join: LineJoinStyle::Round });
+    set_layer_contours(
+        &mut state,
+        vec![
+            open_line,
+            make_rect_contour(1, 10, 100.0, 300.0, 300.0, 500.0),
+        ],
+    );
+    state.set_contour_stroke(
+        ContourId(0),
+        ContourStrokeStyle {
+            width: 40.0,
+            height: 40.0,
+            position: StrokePosition::Center,
+            cap_start: LineCapStyle::Square,
+            cap_end: LineCapStyle::Butt,
+            join: LineJoinStyle::Miter,
+        },
+    );
+    state.set_contour_stroke(
+        ContourId(1),
+        ContourStrokeStyle {
+            width: 20.0,
+            height: 20.0,
+            position: StrokePosition::Center,
+            cap_start: LineCapStyle::Butt,
+            cap_end: LineCapStyle::Butt,
+            join: LineJoinStyle::Round,
+        },
+    );
 
     let preview = state.compute_expanded_stroke_contours();
     assert_eq!(preview.len(), 3);
     assert!(preview.iter().all(|c| c.closed));
-    let min_x = preview[0].nodes.iter().map(|n| n.point.x.0).fold(f64::INFINITY, f64::min);
-    let max_x = preview[0].nodes.iter().map(|n| n.point.x.0).fold(f64::NEG_INFINITY, f64::max);
+    let min_x = preview[0]
+        .nodes
+        .iter()
+        .map(|n| n.point.x.0)
+        .fold(f64::INFINITY, f64::min);
+    let max_x = preview[0]
+        .nodes
+        .iter()
+        .map(|n| n.point.x.0)
+        .fold(f64::NEG_INFINITY, f64::max);
     assert_relative_eq!(min_x, 80.0, epsilon = 1e-2);
     assert_relative_eq!(max_x, 400.0, epsilon = 1e-2);
-    assert_relative_eq!(contour_signed_area(&preview[1].nodes).signum(), -contour_signed_area(&preview[2].nodes).signum(), epsilon = 1e-4);
+    let rect_outer_max_y = preview[1]
+        .nodes
+        .iter()
+        .filter(|n| n.node_type != NodeType::OffCurve)
+        .map(|n| n.point.y.0)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let rect_inner_max_y = preview[2]
+        .nodes
+        .iter()
+        .filter(|n| n.node_type != NodeType::OffCurve)
+        .map(|n| n.point.y.0)
+        .fold(f64::NEG_INFINITY, f64::max);
+    assert_relative_eq!(
+        rect_outer_max_y.max(rect_inner_max_y),
+        510.0,
+        epsilon = 1e-2
+    );
+    assert_relative_eq!(
+        rect_outer_max_y.min(rect_inner_max_y),
+        490.0,
+        epsilon = 1e-2
+    );
+    assert_relative_eq!(
+        contour_signed_area(&preview[1].nodes).signum(),
+        -contour_signed_area(&preview[2].nodes).signum(),
+        epsilon = 1e-4
+    );
 
     state.selected_nodes.clear();
     let snap_0 = state.snapshot();
@@ -266,14 +501,30 @@ fn tc_v070_013_to_015_live_stroke_offset_expand_outline_and_rendering() {
     assert!(state.redo() && state.snapshot() == snap_1 && state.undo());
 
     state.background_contours = vec![make_rect_contour(9, 90, 50.0, 50.0, 250.0, 250.0)];
-    state.set_anchors(vec![CanvasAnchor { id: AnchorId(1), name: "top".into(), position: FontPoint::new(200.0, 600.0), selected: true }]);
-    state.set_ghost_mark_paths(vec![GhostMarkPath { anchor_name: "top".into(), contours: vec![make_rect_contour(8, 80, -15.0, 0.0, 15.0, 40.0)] }]);
+    state.set_anchors(vec![CanvasAnchor {
+        id: AnchorId(1),
+        name: "top".into(),
+        position: FontPoint::new(200.0, 600.0),
+        selected: true,
+    }]);
+    state.set_ghost_mark_paths(vec![GhostMarkPath {
+        anchor_name: "top".into(),
+        contours: vec![make_rect_contour(8, 80, -15.0, 0.0, 15.0, 40.0)],
+    }]);
     state.show_mark_cloud = true;
-    state.set_components(vec![CanvasComponent { id: ComponentId(1), component_name: "part".into(), contours: vec![make_rect_contour(7, 70, 0.0, 0.0, 60.0, 120.0)], transform: Affine2D::translation(320.0, 100.0), locked: false, automatic_alignment: false, selected: false }]);
+    state.set_components(vec![CanvasComponent {
+        id: ComponentId(1),
+        component_name: "part".into(),
+        contours: vec![make_rect_contour(7, 70, 0.0, 0.0, 60.0, 120.0)],
+        transform: Affine2D::translation(320.0, 100.0),
+        locked: false,
+        automatic_alignment: false,
+        selected: false,
+    }]);
     state.set_appearance_mode(AppearanceMode::Light);
-    let light_px = rasterize_canvas_subregion(&state, &GlifoTheme::sonoma_default(), 320, 180);
+    let light_px = rasterize_canvas_subregion(&state, &GrafiaTheme::sonoma_default(), 320, 180);
     state.set_appearance_mode(AppearanceMode::Dark);
-    let dark_px = rasterize_canvas_subregion(&state, &GlifoTheme::sonoma_dark(), 320, 180);
+    let dark_px = rasterize_canvas_subregion(&state, &GrafiaTheme::sonoma_dark(), 320, 180);
     assert_ne!(light_px.data(), dark_px.data());
 }
 
@@ -290,45 +541,116 @@ proptest! {
 #[test]
 fn tc_v070_016_arbtest_stateful_background_anchors_components_fit_and_stroke() {
     arbtest(|u| {
-        let mut state = GlifoCanvasState::init_glyph_a();
+        let mut state = GrafiaCanvasState::init_glyph_a();
         set_layer_contours(&mut state, vec![make_quarter_arc_contour(0, 55.0, 45.0)]);
-        state.set_anchors(vec![CanvasAnchor { id: AnchorId(1), name: "top".into(), position: FontPoint::new(250.0, 700.0), selected: true }]);
-        state.set_components(vec![CanvasComponent { id: ComponentId(1), component_name: "stem".into(), contours: vec![make_rect_contour(10, 50, 0.0, 0.0, 80.0, 500.0)], transform: Affine2D::translation(100.0, 0.0), locked: false, automatic_alignment: false, selected: true }]);
+        state.set_anchors(vec![CanvasAnchor {
+            id: AnchorId(1),
+            name: "top".into(),
+            position: FontPoint::new(250.0, 700.0),
+            selected: true,
+        }]);
+        state.set_components(vec![CanvasComponent {
+            id: ComponentId(1),
+            component_name: "stem".into(),
+            contours: vec![make_rect_contour(10, 50, 0.0, 0.0, 80.0, 500.0)],
+            transform: Affine2D::translation(100.0, 0.0),
+            locked: false,
+            automatic_alignment: false,
+            selected: true,
+        }]);
         for _ in 0..u.int_in_range(10..=22)? {
             match u.int_in_range(0..=8)? {
                 0 => dispatch_key(&mut state, Key::J, false, u.arbitrary()?, true, false),
                 1 => dispatch_key(&mut state, Key::K, false, false, true, false),
                 2 => dispatch_key(&mut state, Key::B, false, false, true, false),
-                3 => state.drag_selected_anchors_to_upm(FontPoint::new(250.0 + f64::from(u.int_in_range(-40..=40)?), 700.0), true),
+                3 => state.drag_selected_anchors_to_upm(
+                    FontPoint::new(250.0 + f64::from(u.int_in_range(-40..=40)?), 700.0),
+                    true,
+                ),
                 4 => dispatch_key(&mut state, Key::Delete, false, false, false, false),
                 5 => dispatch_key(&mut state, Key::D, true, false, true, false),
-                6 => { state.selected_nodes = vec![NodeId(100)]; state.apply_fit_curve_column(u.int_in_range(0..=7)?); }
-                7 => if let Some(c) = state.glyph.contours.first() {
-                    state.set_contour_stroke(c.id, ContourStrokeStyle { width: 16.0, height: 16.0, position: StrokePosition::Center, cap_start: LineCapStyle::Butt, cap_end: LineCapStyle::Butt, join: LineJoinStyle::Miter });
-                    state.expand_selected_strokes();
-                },
-                _ => if state.undo() { state.validate_invariants().unwrap(); let _ = state.redo(); },
+                6 => {
+                    state.selected_nodes = vec![NodeId(100)];
+                    state.apply_fit_curve_column(u.int_in_range(0..=7)?);
+                }
+                7 => {
+                    if let Some(c) = state.glyph.contours.first() {
+                        state.set_contour_stroke(
+                            c.id,
+                            ContourStrokeStyle {
+                                width: 16.0,
+                                height: 16.0,
+                                position: StrokePosition::Center,
+                                cap_start: LineCapStyle::Butt,
+                                cap_end: LineCapStyle::Butt,
+                                join: LineJoinStyle::Miter,
+                            },
+                        );
+                        state.expand_selected_strokes();
+                    }
+                }
+                _ => {
+                    if state.undo() {
+                        state.validate_invariants().unwrap();
+                        let _ = state.redo();
+                    }
+                }
             }
             state.validate_invariants().unwrap();
         }
         Ok(())
-    }).budget_ms(250);
+    })
+    .budget_ms(250);
 }
 
 // TC-V070-017: CompanionMasterLayer, Master Compatibility (Ctrl+Opt+Cmd+N) & SelectAllLayers multi-layer node editing.
 #[test]
 fn tc_v070_017_companion_master_layer_compatibility_and_select_all_layers() {
-    let mut state = GlifoCanvasState::init_glyph_a();
-    set_layer_contours(&mut state, vec![make_rect_contour(0, 10, 100.0, 0.0, 200.0, 700.0)]);
-    state.set_anchors(vec![CanvasAnchor { id: AnchorId(1), name: "top".into(), position: FontPoint::new(150.0, 720.0), selected: false }]);
+    let mut state = GrafiaCanvasState::init_glyph_a();
+    set_layer_contours(
+        &mut state,
+        vec![make_rect_contour(0, 10, 100.0, 0.0, 200.0, 700.0)],
+    );
+    state.set_anchors(vec![CanvasAnchor {
+        id: AnchorId(1),
+        name: "top".into(),
+        position: FontPoint::new(150.0, 720.0),
+        selected: false,
+    }]);
 
     let bold_nodes = make_rect_contour(0, 50, 80.0, 0.0, 240.0, 700.0).nodes;
     let cond_nodes = make_rect_contour(0, 80, 110.0, 0.0, 180.0, 700.0).nodes;
-    let top_b = CanvasAnchor { id: AnchorId(10), name: "top".into(), position: FontPoint::new(160.0, 730.0), selected: false };
-    let top_c = CanvasAnchor { id: AnchorId(20), name: "top".into(), position: FontPoint::new(145.0, 720.0), selected: false };
+    let top_b = CanvasAnchor {
+        id: AnchorId(10),
+        name: "top".into(),
+        position: FontPoint::new(160.0, 730.0),
+        selected: false,
+    };
+    let top_c = CanvasAnchor {
+        id: AnchorId(20),
+        name: "top".into(),
+        position: FontPoint::new(145.0, 720.0),
+        selected: false,
+    };
     state.set_companion_master_layers(vec![
-        CompanionMasterLayer { id: 1, name: "Bold".into(), color_rgba: [220, 60, 80, 180], contours: vec![bold_nodes], closed_flags: vec![true], anchors: vec![top_b], editable: true },
-        CompanionMasterLayer { id: 2, name: "Condensed".into(), color_rgba: [60, 140, 220, 180], contours: vec![cond_nodes], closed_flags: vec![true], anchors: vec![top_c], editable: false },
+        CompanionMasterLayer {
+            id: 1,
+            name: "Bold".into(),
+            color_rgba: [220, 60, 80, 180],
+            contours: vec![bold_nodes],
+            closed_flags: vec![true],
+            anchors: vec![top_b],
+            editable: true,
+        },
+        CompanionMasterLayer {
+            id: 2,
+            name: "Condensed".into(),
+            color_rgba: [60, 140, 220, 180],
+            contours: vec![cond_nodes],
+            closed_flags: vec![true],
+            anchors: vec![top_c],
+            editable: false,
+        },
     ]);
 
     dispatch_key(&mut state, Key::N, false, true, true, true);
@@ -347,8 +669,211 @@ fn tc_v070_017_companion_master_layer_compatibility_and_select_all_layers() {
     let snap_before = state.snapshot();
     state.select_nodes_in_rect_all_layers(FontPoint::new(70.0, -10.0), FontPoint::new(120.0, 20.0));
     state.translate_selected_across_all_layers(FontPoint::new(15.0, 5.0));
-    assert_relative_eq!(state.glyph.contours[0].nodes[0].point.x.0, 115.0, epsilon = 1e-4);
-    assert_relative_eq!(state.companion_master_layers[0].contours[0][0].point.x.0, 95.0, epsilon = 1e-4);
-    assert_relative_eq!(state.companion_master_layers[1].contours[0][0].point.x.0, 110.0, epsilon = 1e-4);
+    assert_relative_eq!(
+        state.glyph.contours[0].nodes[0].point.x.0,
+        115.0,
+        epsilon = 1e-4
+    );
+    assert_relative_eq!(
+        state.companion_master_layers[0].contours[0][0].point.x.0,
+        95.0,
+        epsilon = 1e-4
+    );
+    assert_relative_eq!(
+        state.companion_master_layers[1].contours[0][0].point.x.0,
+        110.0,
+        epsilon = 1e-4
+    );
     assert!(state.undo() && state.snapshot() == snap_before);
+}
+
+// TC-V070-018: VC-stekkers for Anchors, Components, CanvasHostRequest & visual proof artifacts (frame_58 & frame_59).
+#[test]
+fn tc_v070_018_vc_stekkers_for_anchors_components_and_host_requests() {
+    use grafia::adapters::headless::pixmap_to_rgba_image;
+    use grafia::SelectionInfoAction;
+
+    let mut state = GrafiaCanvasState::init_glyph_a();
+    state.set_anchors_with_undo(vec![
+        CanvasAnchor {
+            id: AnchorId(1),
+            name: "top".into(),
+            position: FontPoint::new(300.0, 720.0),
+            selected: true,
+        },
+        CanvasAnchor {
+            id: AnchorId(2),
+            name: "bottom".into(),
+            position: FontPoint::new(300.0, 0.0),
+            selected: false,
+        },
+    ]);
+    state.set_ghost_mark_paths(vec![GhostMarkPath {
+        anchor_name: "top".into(),
+        contours: vec![make_rect_contour(90, 900, -45.0, 20.0, 45.0, 110.0)],
+    }]);
+    state.show_mark_cloud = true;
+
+    let a_info = state.selected_anchor_info().expect("selected anchor info");
+    assert_eq!(a_info.id, AnchorId(1));
+    assert_eq!(a_info.name, "top");
+    assert_relative_eq!(a_info.x, 300.0, epsilon = 1e-4);
+
+    assert!(
+        state.apply_selection_info_action(SelectionInfoAction::SetAnchorPosition(FontPoint::new(
+            310.0, 735.0
+        )))
+    );
+    assert_relative_eq!(state.anchors[0].position.x.0, 310.0, epsilon = 1e-4);
+    assert_relative_eq!(state.anchors[0].position.y.0, 735.0, epsilon = 1e-4);
+
+    assert!(
+        state.apply_selection_info_action(SelectionInfoAction::SetAnchorName("top_acute".into()))
+    );
+    assert_eq!(state.anchors[0].name, "top_acute");
+    assert!(state.undo());
+    assert_eq!(state.anchors[0].name, "top");
+
+    let comp_rect = vec![make_rect_contour(5, 50, 0.0, 0.0, 90.0, 140.0)];
+    state.set_components(vec![
+        CanvasComponent {
+            id: ComponentId(1),
+            component_name: "acutecomb".into(),
+            contours: comp_rect.clone(),
+            transform: Affine2D::translation(460.0, 560.0),
+            locked: false,
+            automatic_alignment: false,
+            selected: true,
+        },
+        CanvasComponent {
+            id: ComponentId(2),
+            component_name: "ogonekcomb".into(),
+            contours: comp_rect,
+            transform: Affine2D::translation(460.0, -120.0),
+            locked: true,
+            automatic_alignment: true,
+            selected: false,
+        },
+    ]);
+
+    let c_info = state
+        .selected_component_info()
+        .expect("selected component info");
+    assert_eq!(c_info.id, ComponentId(1));
+    assert_eq!(c_info.component_name, "acutecomb");
+    assert!(!c_info.locked);
+
+    assert!(
+        state.apply_selection_info_action(SelectionInfoAction::SetComponentTransform(
+            Affine2D::translation(480.0, 570.0)
+        ))
+    );
+    assert_relative_eq!(state.components[0].transform.tx, 480.0, epsilon = 1e-4);
+    assert!(state.apply_selection_info_action(SelectionInfoAction::SetComponentAutoAlignment(true)));
+    assert!(state.components[0].automatic_alignment);
+    assert!(state.apply_selection_info_action(SelectionInfoAction::SetComponentLocked(true)));
+    assert!(state.components[0].locked);
+    assert!(state.apply_selection_info_action(SelectionInfoAction::SetComponentLocked(false)));
+
+    let _ = state.drain_host_requests();
+    assert!(state.apply_selection_info_action(SelectionInfoAction::ResetDefaultAnchors));
+    assert_eq!(
+        state.drain_host_requests(),
+        vec![CanvasHostRequest::ResetDefaultAnchors {
+            glyph_name: state.glyph.name.clone(),
+        }]
+    );
+
+    let out_dir = std::path::Path::new(
+        r"C:\Users\jhove\.gemini\antigravity-cli\brain\fccb9142-9217-4702-a2ca-95303b541ee0",
+    );
+    if out_dir.exists() {
+        state.fit_viewport_to_glyph(960.0, 600.0);
+        let pm58 = rasterize_canvas_subregion(&state, &GrafiaTheme::sonoma_default(), 960, 600);
+        pixmap_to_rgba_image(pm58)
+            .save(out_dir.join("frame_58_v070_anchors_mark_cloud_and_components.png"))
+            .expect("save frame_58");
+
+        let mut stroke_state = GrafiaCanvasState::init_glyph_a();
+        stroke_state.fit_viewport_to_glyph(960.0, 600.0);
+        let mut spine = GlyphContour::new(
+            ContourId(0),
+            vec![
+                Node::new(NodeId(1), 120.0, 150.0, NodeType::Corner),
+                Node::new(NodeId(2), 300.0, 680.0, NodeType::Corner),
+                Node::new(NodeId(3), 480.0, 150.0, NodeType::Corner),
+            ],
+        );
+        spine.closed = false;
+        set_layer_contours(&mut stroke_state, vec![spine]);
+        stroke_state.set_contour_stroke(
+            ContourId(0),
+            ContourStrokeStyle {
+                width: 48.0,
+                height: 48.0,
+                position: StrokePosition::Center,
+                cap_start: LineCapStyle::Square,
+                cap_end: LineCapStyle::Round,
+                join: LineJoinStyle::Miter,
+            },
+        );
+        stroke_state.set_anchors(vec![CanvasAnchor {
+            id: AnchorId(1),
+            name: "top".into(),
+            position: FontPoint::new(300.0, 720.0),
+            selected: false,
+        }]);
+        stroke_state.set_companion_master_layers(vec![CompanionMasterLayer {
+            id: 1,
+            name: "Bold".into(),
+            color_rgba: [220, 60, 80, 200],
+            contours: vec![vec![
+                Node::new(NodeId(11), 80.0, 140.0, NodeType::Corner),
+                Node::new(NodeId(12), 300.0, 710.0, NodeType::Corner),
+                Node::new(NodeId(13), 520.0, 140.0, NodeType::Corner),
+            ]],
+            closed_flags: vec![false],
+            anchors: vec![CanvasAnchor {
+                id: AnchorId(10),
+                name: "top".into(),
+                position: FontPoint::new(320.0, 760.0),
+                selected: false,
+            }],
+            editable: true,
+        }]);
+        stroke_state.show_master_compatibility = true;
+        let pm59 =
+            rasterize_canvas_subregion(&stroke_state, &GrafiaTheme::sonoma_default(), 960, 600);
+        pixmap_to_rgba_image(pm59)
+            .save(out_dir.join("frame_59_v070_live_stroke_and_master_compatibility.png"))
+            .expect("save frame_59");
+    }
+
+    state.selected_nodes.clear();
+    dispatch_key(&mut state, Key::ArrowRight, false, false, false, false);
+    assert_relative_eq!(state.anchors[0].position.x.0, 311.0, epsilon = 1e-4);
+    assert!(state.apply_selection_info_action(SelectionInfoAction::DecomposeComponents));
+    assert_eq!(state.components.len(), 1);
+    assert!(!state.selected_nodes.is_empty());
+    dispatch_key(&mut state, Key::Escape, false, false, false, false);
+    assert!(state.selected_nodes.is_empty() && !state.anchors[0].selected);
+    state.validate_invariants().unwrap();
+}
+
+// TC-V070-019: Direct zero-clone `GlyphContour` slice tessellation parity.
+#[test]
+fn tc_v070_019_direct_glyph_contour_tessellation_without_node_cloning() {
+    use grafia::render::{tessellate_closed_contours_nonzero, tessellate_glyph_contours_nonzero};
+
+    let state = GrafiaCanvasState::init_glyph_o();
+    let vp = state.active_slot_viewport();
+    let col = egui::Color32::from_rgba_unmultiplied(120, 140, 180, 160);
+
+    let mesh_direct = tessellate_glyph_contours_nonzero(&state.glyph.contours, &vp, col);
+    let closed_flags = state.closed_flags();
+    let mesh_legacy = tessellate_closed_contours_nonzero(&state.contours, &closed_flags, &vp, col);
+
+    assert!(!mesh_direct.is_empty());
+    assert_eq!(mesh_direct.vertices.len(), mesh_legacy.vertices.len());
+    assert_eq!(mesh_direct.indices, mesh_legacy.indices);
 }

@@ -1,20 +1,31 @@
-//! Core mathematical, coordinate, and bezier types for glifo.
+//! Core mathematical, coordinate, and bezier types for grafia.
 
+pub mod align_and_connect;
+pub mod anchors_components;
 pub mod annotations;
 pub mod bezier_ops;
+pub mod boolean_geom;
 pub mod boolean_ops;
 pub mod clipboard_ops;
 pub mod coordinates;
 pub mod curve_manipulation;
+pub mod fit_and_stroke;
 pub mod glyph_model;
 pub mod handle_constraints;
+pub mod inflection_ops;
 pub mod knife_ops;
 pub mod lasso_and_zoom;
+pub mod master_compatibility;
 pub mod measurement_ops;
 pub mod nudge_ops;
 pub mod path_ops;
 pub mod primitives_ops;
 pub mod segment_ops;
+pub mod segment_slide;
+pub mod selection_info;
+pub mod selection_info_ops;
+pub mod stroke_expand;
+pub mod text_stream_ops;
 pub mod tidy_align_connect;
 pub mod transform_ops;
 
@@ -23,6 +34,12 @@ pub use annotations::{
     AnnotationSubTool, CanvasAnnotation,
 };
 
+pub use crate::render::compute_ruler_tick_steps_upm;
+pub use anchors_components::{
+    compute_mark_cloud_contours, hit_test_component_upm, Affine2D, AnchorSelectionInfo,
+    CanvasComponent, CanvasHostRequest, ComponentId, ComponentSelectionInfo, GhostMarkPath,
+    TextStreamEditKind, TextStreamEditRequest,
+};
 pub use bezier_ops::{
     align_collinear_opposite, compute_signed_area, snap_vector_45_degrees, Node, NodeId, NodeType,
 };
@@ -36,6 +53,12 @@ pub use coordinates::{FontPoint, FontUnit, ScreenDp, ScreenPoint, ViewportTransf
 pub use curve_manipulation::{
     cut_open_delete_nodes, cut_open_delete_nodes_in_contour, extract_segments, heal_delete_nodes,
     hit_test_segments, split_contour_segment, ContourSegment, SegmentHit,
+};
+pub use fit_and_stroke::{
+    apply_fit_curve_delta_to_contours, apply_fit_curve_ratio_to_contours,
+    expand_single_contour_stroke, expand_stroked_contours_preview,
+    normalize_cubic_handles_in_contours, solve_cubic_tangent_triangle, ContourStrokeStyle,
+    FitCurveConfig, LineCapStyle, LineJoinStyle, StrokePosition,
 };
 pub use glyph_model::{
     ContourId, Glyph, GlyphContour, GlyphHierarchy, Shape, ShapeBooleanRole, ShapeId,
@@ -53,6 +76,10 @@ pub use lasso_and_zoom::{
     compute_marquee_zoom, next_zoom_step, point_in_polygon, prev_zoom_step,
     select_nodes_in_lasso_polygon, select_nodes_in_slanted_marquee,
     slanted_marquee_parallelogram_screen,
+};
+pub use master_compatibility::{
+    compute_master_compatibility_report, select_nodes_in_rect_across_layers, CompanionMasterLayer,
+    MasterCompatibilityReport,
 };
 pub use measurement_ops::{
     compute_layer_measurement_labels, compute_measurement_ray_intersections,
@@ -79,9 +106,23 @@ pub use segment_ops::{
     make_selected_on_curve_node_first, remove_off_curve_segment_handles, reverse_contour_nodes,
     slide_on_curve_node_along_contour,
 };
+pub use selection_info::{
+    align_oncurve_nodes_to_background, collect_adjacent_offcurve_positions,
+    compute_radially_scaled_handle_pos, enforce_smooth_collinearity_around_oncurve,
+    find_first_offcurve_node_id, find_first_oncurve_with_adjacent_offcurve,
+    project_point_to_background_contours, resolve_tethered_oncurve_for_offcurve,
+    translate_oncurve_with_adjacent_handles, update_offcurve_with_smooth_constraint, AnchorId,
+    CanvasAnchor, GlyphBaseInfo, GuideAlignment, GuideInfo, MultiNodeInfo, SelectionInfo,
+    SelectionInfoAction, SingleOffCurveInfo, SingleOnCurveInfo,
+};
+pub use text_stream_ops::{
+    compute_glyph_lsb_and_rsb, intersect_contours_at_horizontal_y, CanvasTextStream, GlyphSlot,
+    KerningDelta, KerningIndicatorQuad, SlotScanlineMeasurement, SpacingDelta,
+};
 pub use tidy_align_connect::{
-    align_selected_nodes, close_open_contours_in_layer, connect_selected_open_endpoints_in_contours,
-    find_duplicate_warning_nodes, tidy_up_contours, DuplicateWarningKind,
+    align_selected_nodes, close_open_contours_in_layer,
+    connect_selected_open_endpoints_in_contours, find_duplicate_warning_nodes, tidy_up_contours,
+    DuplicateWarningKind,
 };
 pub use transform_ops::{
     apply_mode_nodes_transform, compute_bbox_rotate_or_slant_affine, compute_bbox_scale_affine,

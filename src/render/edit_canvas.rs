@@ -3,7 +3,7 @@
 use crate::core::coordinates::{FontPoint, ScreenPoint, ViewportTransform};
 use crate::core::{extract_segments, ContourSegment, Node, NodeType};
 use crate::tokens::{
-    COLLINEAR_MIN_LEN_EPSILON, EditCanvasTokens, OPEN_ENDPOINT_TICK_HALF_LEN_DP,
+    EditCanvasTokens, COLLINEAR_MIN_LEN_EPSILON, OPEN_ENDPOINT_TICK_HALF_LEN_DP,
     START_NODE_ARROW_HALF_WIDTH_DP, START_NODE_ARROW_LEN_DP, START_NODE_ARROW_OFFSET_DP,
 };
 use kurbo::Rect;
@@ -18,7 +18,13 @@ pub struct ProjectedNode {
 
 impl ProjectedNode {
     #[must_use]
-    pub fn new(font_pt: FontPoint, node_type: NodeType, is_selected: bool, vp: &ViewportTransform, tokens: &EditCanvasTokens) -> Self {
+    pub fn new(
+        font_pt: FontPoint,
+        node_type: NodeType,
+        is_selected: bool,
+        vp: &ViewportTransform,
+        tokens: &EditCanvasTokens,
+    ) -> Self {
         let screen_pos = vp.to_screen(font_pt);
         let half = (tokens.node_size_dp * 0.5) as f64;
         let bounds = Rect::new(
@@ -38,7 +44,8 @@ impl ProjectedNode {
 
     #[must_use]
     pub fn contains_screen_pt(&self, pt: ScreenPoint) -> bool {
-        self.bounds.contains(kurbo::Point::new(pt.x.0 as f64, pt.y.0 as f64))
+        self.bounds
+            .contains(kurbo::Point::new(pt.x.0 as f64, pt.y.0 as f64))
     }
 }
 

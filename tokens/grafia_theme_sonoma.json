@@ -1,0 +1,63 @@
+{
+  "theme_name": "Grafia Default Light",
+  "edit_canvas": {
+    "node_size_dp": 7.0,
+    "bcp_handle_size_dp": 6.0,
+    "bcp_line_width_dp": 1.0,
+    "contour_stroke_width_dp": 1.0,
+    "corner_node_color": "#2B78E4",
+    "smooth_node_color": "#3CAD66",
+    "bcp_handle_color": "#8C6845",
+    "bcp_line_color": "#B49A80",
+    "selected_glow_color": "#007AFF",
+    "rubberband_fill_color": "#007AFF26",
+    "rubberband_stroke_color": "#007AFF",
+    "rubberband_stroke_width_dp": 1.0
+  },
+  "preview_canvas": {
+    "fill_color": "#000000",
+    "baseline_color": "#CCCCCC",
+    "baseline_stroke_width_dp": 1.0
+  },
+  "shape_canvas": {
+    "row_height_dp": 20.0,
+    "header_height_dp": 22.0,
+    "thumbnail_width_dp": 24.0,
+    "thumbnail_height_dp": 16.0,
+    "thumbnail_padding_dp": 2.0,
+    "accent_selection_color": "#007AFF",
+    "selection_corner_radius_dp": 4.0,
+    "text_active_color": "#FFFFFF",
+    "text_inactive_color": "#1C1C1E",
+    "winding_icon_size_dp": 12.0
+  },
+  "snapping": {
+    "snap_threshold_dp": 8.0,
+    "angle_constraint_step_deg": 45.0
+  },
+  "passive_glyph_fill": { "r": 28, "g": 28, "b": 30, "a": 255 },
+  "kerning_negative_fill": { "r": 28, "g": 158, "b": 209, "a": 51 },
+  "kerning_positive_fill": { "r": 242, "g": 219, "b": 51, "a": 51 },
+  "text_caret_color": { "r": 30, "g": 30, "b": 32, "a": 240 },
+  "text_selection_fill": { "r": 46, "g": 117, "b": 219, "a": 55 },
+  "text_measurement_line_color": { "r": 120, "g": 120, "b": 128, "a": 200 },
+  "text_measurement_knob_fill": { "r": 90, "g": 90, "b": 98, "a": 235 },
+  "text_metrics_number_color": { "r": 100, "g": 100, "b": 108, "a": 235 },
+  "preview_bg_normal": { "r": 250, "g": 248, "b": 245, "a": 255 },
+  "preview_fg_normal": { "r": 24, "g": 24, "b": 26, "a": 255 },
+  "preview_bg_inverted": { "r": 24, "g": 24, "b": 26, "a": 255 },
+  "preview_fg_inverted": { "r": 235, "g": 235, "b": 240, "a": 255 },
+  "ruler_bg_fill": { "r": 242, "g": 240, "b": 236, "a": 245 },
+  "ruler_border_stroke": { "r": 205, "g": 203, "b": 198, "a": 255 },
+  "ruler_tick_color": { "r": 115, "g": 115, "b": 122, "a": 255 },
+  "ruler_hairline_color": { "r": 46, "g": 117, "b": 219, "a": 220 },
+  "background_layer_stroke": { "r": 185, "g": 115, "b": 115, "a": 170 },
+  "anchor_fill": { "r": 196, "g": 84, "b": 52, "a": 235 },
+  "anchor_selected_fill": { "r": 255, "g": 185, "b": 40, "a": 255 },
+  "mark_cloud_fill": { "r": 120, "g": 110, "b": 145, "a": 72 },
+  "component_fill": { "r": 110, "g": 115, "b": 125, "a": 140 },
+  "component_selected_fill": { "r": 58, "g": 120, "b": 215, "a": 165 },
+  "component_locked_fill": { "r": 145, "g": 145, "b": 150, "a": 105 },
+  "master_compat_ray_color": { "r": 40, "g": 150, "b": 95, "a": 195 },
+  "master_incompat_highlight": { "r": 225, "g": 55, "b": 55, "a": 215 }
+}

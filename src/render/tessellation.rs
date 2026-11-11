@@ -26,24 +26,19 @@ impl FillVertexConstructor<Vertex> for EguiFillVertexCtor {
     }
 }
 
-/// Tessellates closed glyph contours into an `egui::Mesh` using `FillRule::NonZero` (`SPEC-002 §5.2`).
-///
-/// Open contours (`closed_flags[i] == false`) are excluded from the filled silhouette, matching
-/// `GlyphLayer::completeBezierPath`. Inner counter-holes with opposite winding direction (`CW` inside `CCW`)
-/// are naturally subtracted by the topological Non-Zero winding rule, while same-winding contours fill solid.
-#[must_use]
-pub fn tessellate_closed_contours_nonzero(
-    contours: &[Vec<Node>],
-    closed_flags: &[bool],
+fn tessellate_node_slices_nonzero<'a, I>(
+    contours: I,
     viewport: &ViewportTransform,
     fill_color: egui::Color32,
-) -> egui::Mesh {
+) -> egui::Mesh
+where
+    I: IntoIterator<Item = (&'a [Node], bool)>,
+{
     let mut mesh = Mesh::default();
     let mut builder = LyonPath::builder();
     let mut has_geometry = false;
 
-    for (c_idx, contour) in contours.iter().enumerate() {
-        let is_closed = closed_flags.get(c_idx).copied().unwrap_or(true);
+    for (contour, is_closed) in contours {
         if !is_closed {
             continue;
         }
@@ -102,6 +97,40 @@ pub fn tessellate_closed_contours_nonzero(
     }
 
     mesh
+}
+
+/// Tessellates closed glyph contours into an `egui::Mesh` using `FillRule::NonZero` (`SPEC-002 §5.2`).
+///
+/// Open contours (`closed_flags[i] == false`) are excluded from the filled silhouette, matching
+/// `GlyphLayer::completeBezierPath`. Inner counter-holes with opposite winding direction (`CW` inside `CCW`)
+/// are naturally subtracted by the topological Non-Zero winding rule, while same-winding contours fill solid.
+#[must_use]
+pub fn tessellate_closed_contours_nonzero(
+    contours: &[Vec<Node>],
+    closed_flags: &[bool],
+    viewport: &ViewportTransform,
+    fill_color: egui::Color32,
+) -> egui::Mesh {
+    let iter = contours.iter().enumerate().map(|(c_idx, contour)| {
+        let is_closed = closed_flags.get(c_idx).copied().unwrap_or(true);
+        (contour.as_slice(), is_closed)
+    });
+    tessellate_node_slices_nonzero(iter, viewport, fill_color)
+}
+
+/// Tessellates a slice of `GlyphContour` directly into an `egui::Mesh` using `FillRule::NonZero`
+/// without heap-cloning `Vec<Node>` buffers (`SPEC-008`).
+#[must_use]
+pub fn tessellate_glyph_contours_nonzero(
+    contours: &[crate::core::GlyphContour],
+    viewport: &ViewportTransform,
+    fill_color: egui::Color32,
+) -> egui::Mesh {
+    let iter = contours
+        .iter()
+        .filter(|c| c.visible)
+        .map(|c| (c.nodes.as_slice(), c.closed));
+    tessellate_node_slices_nonzero(iter, viewport, fill_color)
 }
 
 /// Tessellates multiple closed glyph contours into an `egui::Mesh` using `FillRule::NonZero` (`SPEC-002 §5.2`).
@@ -203,7 +232,10 @@ pub fn tessellate_bez_path_nonzero(
 pub fn is_polygon_convex(points: &[egui::Pos2]) -> bool {
     let mut clean: Vec<egui::Pos2> = Vec::with_capacity(points.len());
     for &p in points {
-        if clean.last().is_none_or(|last| (*last - p).length_sq() > 0.5) {
+        if clean
+            .last()
+            .is_none_or(|last| (*last - p).length_sq() > 0.5)
+        {
             clean.push(p);
         }
     }
@@ -247,4 +279,3 @@ pub fn is_polygon_convex(points: &[egui::Pos2]) -> bool {
     }
     true
 }
-

@@ -10,17 +10,17 @@
 //! 5. `TC-1241`: Whole Contour Selection on Double-Click near path segment in SelectTool.
 
 use egui::{pos2, Context, Event, Key, Modifiers, PointerButton, RawInput};
-use grafia::adapters::{CanvasTool, CanvasViewMode, GlifoCanvasState, GlifoCanvasWidget};
+use grafia::adapters::{CanvasTool, CanvasViewMode, GrafiaCanvasState, GrafiaCanvasWidget};
 use grafia::core::{
-    extract_segments, split_contour_segment, ContourSegment, FontPoint,
-    Node, NodeId, NodeType, ScreenPoint,
+    extract_segments, split_contour_segment, ContourSegment, FontPoint, Node, NodeId, NodeType,
+    ScreenPoint,
 };
-use grafia::tokens::GlifoTheme;
+use grafia::tokens::GrafiaTheme;
 use kurbo::{CubicBez, ParamCurve, PathEl, Point};
 
-fn frame(ctx: &Context, state: &mut GlifoCanvasState, theme: &GlifoTheme, raw_input: RawInput) {
+fn frame(ctx: &Context, state: &mut GrafiaCanvasState, theme: &GrafiaTheme, raw_input: RawInput) {
     let mut full_output = ctx.run_ui(raw_input, |ui| {
-        GlifoCanvasWidget::new(state, theme).show(ui);
+        GrafiaCanvasWidget::new(state, theme).show(ui);
     });
     full_output.textures_delta.clear();
 }
@@ -55,16 +55,33 @@ fn test_tc_1238_curve_splitting_cubic_bezier_100_percent_shape_preservation() {
     let split_node_id = split_contour_segment(&mut contour, seg, split_t, &mut next_id);
 
     // After split: [Start, H1, in_h, Split, out_h, H2, End] -> 7 nodes
-    assert_eq!(contour.len(), 7, "Cubic split must produce exactly 7 nodes (2 on-curve, 4 off-curve, 1 split on-curve)");
-    let split_node = contour.iter().find(|n| n.id == split_node_id).expect("Split node must exist");
-    assert_eq!(split_node.node_type, NodeType::Smooth, "Split node must be Smooth");
+    assert_eq!(
+        contour.len(),
+        7,
+        "Cubic split must produce exactly 7 nodes (2 on-curve, 4 off-curve, 1 split on-curve)"
+    );
+    let split_node = contour
+        .iter()
+        .find(|n| n.id == split_node_id)
+        .expect("Split node must exist");
+    assert_eq!(
+        split_node.node_type,
+        NodeType::Smooth,
+        "Split node must be Smooth"
+    );
 
     // Extract the 2 resulting segments
     let new_segments = extract_segments(&contour, false);
-    assert_eq!(new_segments.len(), 2, "Contour must now have 2 cubic segments");
+    assert_eq!(
+        new_segments.len(),
+        2,
+        "Contour must now have 2 cubic segments"
+    );
 
     let (c1, c2) = match (new_segments[0], new_segments[1]) {
-        (ContourSegment::Cubic { cubic: c1, .. }, ContourSegment::Cubic { cubic: c2, .. }) => (c1, c2),
+        (ContourSegment::Cubic { cubic: c1, .. }, ContourSegment::Cubic { cubic: c2, .. }) => {
+            (c1, c2)
+        }
         _ => panic!("Both segments must be cubic"),
     };
 
@@ -78,22 +95,28 @@ fn test_tc_1238_curve_splitting_cubic_bezier_100_percent_shape_preservation() {
         let orig_t1 = u * split_t;
         let pt_orig1 = original_cubic.eval(orig_t1);
         let err1 = (pt_c1.x - pt_orig1.x).hypot(pt_c1.y - pt_orig1.y);
-        assert!(err1 < 1e-10, "Curve segment 1 deviation {err1} exceeds threshold at u={u}");
+        assert!(
+            err1 < 1e-10,
+            "Curve segment 1 deviation {err1} exceeds threshold at u={u}"
+        );
 
         // Sample on c2 corresponds to original_cubic at (split_t + u * (1.0 - split_t))
         let pt_c2 = c2.eval(u);
         let orig_t2 = split_t + u * (1.0 - split_t);
         let pt_orig2 = original_cubic.eval(orig_t2);
         let err2 = (pt_c2.x - pt_orig2.x).hypot(pt_c2.y - pt_orig2.y);
-        assert!(err2 < 1e-10, "Curve segment 2 deviation {err2} exceeds threshold at u={u}");
+        assert!(
+            err2 < 1e-10,
+            "Curve segment 2 deviation {err2} exceeds threshold at u={u}"
+        );
     }
 }
 
 #[test]
 fn test_tc_1238_pen_tool_click_on_segment_splits_via_canvas_interaction() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     state.active_tool = CanvasTool::Pen;
 
     // Outer contour of glyph A is 8 corner nodes forming a polygon.
@@ -126,7 +149,9 @@ fn test_tc_1238_pen_tool_click_on_segment_splits_via_canvas_interaction() {
     // The newly inserted node must be selected
     assert_eq!(state.selected_nodes.len(), 1);
     let new_node_id = state.selected_nodes[0];
-    let inserted = state.find_node(new_node_id).expect("Inserted node must exist");
+    let inserted = state
+        .find_node(new_node_id)
+        .expect("Inserted node must exist");
     assert!((inserted.point.x.0 - 120.0).abs() < 1.0);
     assert!((inserted.point.y.0 - 0.0).abs() < 1.0);
 }
@@ -134,8 +159,8 @@ fn test_tc_1238_pen_tool_click_on_segment_splits_via_canvas_interaction() {
 #[test]
 fn test_tc_1238_pen_tool_click_outside_tolerance_places_new_node() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     state.active_tool = CanvasTool::Pen;
 
     let initial_contours = state.contours.len();
@@ -167,8 +192,8 @@ fn test_tc_1238_pen_tool_click_outside_tolerance_places_new_node() {
 #[test]
 fn test_tc_1237_spacebar_hold_shifts_node_position_during_pen_drag() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::new(theme.clone());
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::new(theme.clone());
     state.active_tool = CanvasTool::Pen;
 
     // Viewport with 1:1 zoom, pan (0, 0)
@@ -197,7 +222,10 @@ fn test_tc_1237_spacebar_hold_shifts_node_position_during_pen_drag() {
     frame(&ctx, &mut state, &theme, input);
 
     let node_pt_after_handle_drag = state.find_node(node_id).unwrap().point;
-    assert_eq!(node_pt_after_handle_drag.x.0, initial_pt.x.0, "Anchor must not move during normal handle drag");
+    assert_eq!(
+        node_pt_after_handle_drag.x.0, initial_pt.x.0,
+        "Anchor must not move during normal handle drag"
+    );
 
     // 3. Now press and hold Spacebar while continuing drag from (130, 100) to (180, 140) (+50, +40)
     let mut input = RawInput::default();
@@ -245,16 +273,29 @@ fn test_tc_1237_spacebar_hold_shifts_node_position_during_pen_drag() {
 
     // Handles must resume extruding from the relocated anchor
     match state.pen_state {
-        grafia::interaction::PenToolState::DraggingHandles { anchor, bcp_out, bcp_in, .. } => {
+        grafia::interaction::PenToolState::DraggingHandles {
+            anchor,
+            bcp_out,
+            bcp_in,
+            ..
+        } => {
             assert_eq!(anchor.x.0, final_anchor_pt.x.0);
             assert_eq!(anchor.y.0, final_anchor_pt.y.0);
             // Mouse is at (220, 140), anchor is at (150, 60 font space, delta = 70)
             let dx_out = bcp_out.x.0 - anchor.x.0;
-            assert!(dx_out > 65.0, "Handle must resume extrusion to match mouse cursor");
+            assert!(
+                dx_out > 65.0,
+                "Handle must resume extrusion to match mouse cursor"
+            );
             let dx_in = bcp_in.x.0 - anchor.x.0;
-            assert!((dx_in + dx_out).abs() < 1.0, "Opposite handle must remain symmetric");
+            assert!(
+                (dx_in + dx_out).abs() < 1.0,
+                "Opposite handle must remain symmetric"
+            );
         }
-        _ => panic!("PenTool must be in DraggingHandles after releasing Spacebar and moving pointer"),
+        _ => {
+            panic!("PenTool must be in DraggingHandles after releasing Spacebar and moving pointer")
+        }
     }
 }
 
@@ -265,8 +306,8 @@ fn test_tc_1237_spacebar_hold_shifts_node_position_during_pen_drag() {
 #[test]
 fn test_tc_1244_backspace_on_straight_line_contour_keeps_straight_line_without_brown_dots() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
 
     // Contour 0 of glyph A is closed and consists purely of 8 straight-line Corner nodes
     assert!(state.is_contour_closed(0));
@@ -288,26 +329,38 @@ fn test_tc_1244_backspace_on_straight_line_contour_keeps_straight_line_without_b
     frame(&ctx, &mut state, &theme, input);
 
     // 1. Selected node was removed
-    assert!(state.find_node(target_node_id).is_none(), "Target node must be deleted");
+    assert!(
+        state.find_node(target_node_id).is_none(),
+        "Target node must be deleted"
+    );
 
-    // 2. DEF-GLIFO-003: Deleting a corner node between two straight lines MUST keep a straight line (8 - 1 = 7 nodes, 0 OffCurve handles)
+    // 2. DEF-GRAFIA-003: Deleting a corner node between two straight lines MUST keep a straight line (8 - 1 = 7 nodes, 0 OffCurve handles)
     assert_eq!(
         state.contours[0].len(),
         initial_node_count - 1,
         "Deleting a corner node between straight segments must NOT insert spurious OffCurve handles"
     );
     assert!(state.is_contour_closed(0), "Contour must remain closed");
-    assert!(state.selected_nodes.is_empty(), "Selection must be cleared after deletion");
+    assert!(
+        state.selected_nodes.is_empty(),
+        "Selection must be cleared after deletion"
+    );
 
-    let off_curve_count = state.contours[0].iter().filter(|n| n.node_type == NodeType::OffCurve).count();
-    assert_eq!(off_curve_count, 0, "DEF-GLIFO-003: Straight-line node deletion must produce 0 brown OffCurve dots");
+    let off_curve_count = state.contours[0]
+        .iter()
+        .filter(|n| n.node_type == NodeType::OffCurve)
+        .count();
+    assert_eq!(
+        off_curve_count, 0,
+        "DEF-GRAFIA-003: Straight-line node deletion must produce 0 brown OffCurve dots"
+    );
 }
 
 #[test]
 fn test_tc_1244_backspace_heals_curve_and_keeps_contour_closed() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::new(theme.clone());
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::new(theme.clone());
 
     // Closed cubic contour with 3 Smooth on-curve nodes and 6 OffCurve handles (9 nodes total)
     state.contours = vec![vec![
@@ -341,22 +394,34 @@ fn test_tc_1244_backspace_heals_curve_and_keeps_contour_closed() {
 
     // 1. Target Smooth node and inner handles removed, replaced by 1 healed cubic segment (2 OffCurve handles)
     // Remaining: 2 Smooth on-curve nodes + 4 OffCurve handles = 6 nodes
-    assert!(state.find_node(target_node_id).is_none(), "Target curve node must be deleted");
+    assert!(
+        state.find_node(target_node_id).is_none(),
+        "Target curve node must be deleted"
+    );
     assert_eq!(
         state.contours[0].len(),
         6,
         "Curve healing must merge two cubic segments into one cubic segment (6 nodes total)"
     );
-    assert!(state.is_contour_closed(0), "Contour must remain closed after curve healing");
-    let off_curve_count = state.contours[0].iter().filter(|n| n.node_type == NodeType::OffCurve).count();
-    assert_eq!(off_curve_count, 4, "Two closed cubic segments must have 4 OffCurve handles");
+    assert!(
+        state.is_contour_closed(0),
+        "Contour must remain closed after curve healing"
+    );
+    let off_curve_count = state.contours[0]
+        .iter()
+        .filter(|n| n.node_type == NodeType::OffCurve)
+        .count();
+    assert_eq!(
+        off_curve_count, 4,
+        "Two closed cubic segments must have 4 OffCurve handles"
+    );
 }
 
 #[test]
 fn test_tc_1245_alt_backspace_cuts_contour_open_without_healing() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
 
     assert!(state.is_contour_closed(0));
     let initial_node_count = state.contours[0].len(); // 8
@@ -394,7 +459,9 @@ fn test_tc_1245_alt_backspace_cuts_contour_open_without_healing() {
 
     // 4. BezPath must not end in ClosePath
     let path_elements = state.paths[0].elements();
-    let has_close = path_elements.iter().any(|el| matches!(el, kurbo::PathEl::ClosePath));
+    let has_close = path_elements
+        .iter()
+        .any(|el| matches!(el, kurbo::PathEl::ClosePath));
     assert!(
         !has_close,
         "Bezier path for cut-open contour must NOT contain ClosePath element"
@@ -408,8 +475,8 @@ fn test_tc_1245_alt_backspace_cuts_contour_open_without_healing() {
 #[test]
 fn test_tc_1241_double_click_near_path_segment_selects_entire_contour() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     state.active_tool = CanvasTool::Select;
     state.selected_nodes.clear();
 
@@ -460,20 +527,26 @@ fn test_tc_1241_double_click_near_path_segment_selects_entire_contour() {
         "Double click near segment must select all nodes in that contour"
     );
     for id in &outer_node_ids {
-        assert!(state.selected_nodes.contains(id), "Node {id:?} must be in selected_nodes");
+        assert!(
+            state.selected_nodes.contains(id),
+            "Node {id:?} must be in selected_nodes"
+        );
     }
 
     // Inner contour 1 nodes MUST NOT be selected
     for id in &inner_node_ids {
-        assert!(!state.selected_nodes.contains(id), "Inner contour node {id:?} must NOT be selected");
+        assert!(
+            !state.selected_nodes.contains(id),
+            "Inner contour node {id:?} must NOT be selected"
+        );
     }
 }
 
 #[test]
 fn test_tc_1238_pen_tool_click_on_closing_segment_splits_without_corruption() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     state.active_tool = CanvasTool::Pen;
 
     // Segment 7 connects node 7 at (160, 0) to node 0 at (30, 0) (wrap-around segment)
@@ -497,13 +570,16 @@ fn test_tc_1238_pen_tool_click_on_closing_segment_splits_without_corruption() {
     let els = state.paths[0].elements();
     assert!(matches!(els.last(), Some(PathEl::ClosePath)));
     let has_quad = els.iter().any(|el| matches!(el, PathEl::QuadTo(..)));
-    assert!(!has_quad, "Splitting closing segment must not generate corrupt quad_to");
+    assert!(
+        !has_quad,
+        "Splitting closing segment must not generate corrupt quad_to"
+    );
 }
 
 #[test]
 fn test_tc_1238_extreme_zoom_tolerance() {
     for zoom in [0.01_f32, 100.0_f32] {
-        let mut state = GlifoCanvasState::init_glyph_a();
+        let mut state = GrafiaCanvasState::init_glyph_a();
         state.viewport.zoom = zoom;
         let tol_font = (grafia::tokens::SEGMENT_HIT_TOLERANCE_DP as f64) / (zoom as f64);
         let closed_flags: Vec<bool> = (0..state.contours.len())
@@ -511,18 +587,29 @@ fn test_tc_1238_extreme_zoom_tolerance() {
             .collect();
 
         // Target on segment 0 at (120, 0)
-        let hit = grafia::core::hit_test_segments(&state.contours, &closed_flags, FontPoint::new(120.0, 0.0), tol_font);
-        assert!(hit.is_some(), "Hit test must resolve within tolerance at zoom {zoom}");
+        let hit = grafia::core::hit_test_segments(
+            &state.contours,
+            &closed_flags,
+            FontPoint::new(120.0, 0.0),
+            tol_font,
+        );
+        assert!(
+            hit.is_some(),
+            "Hit test must resolve within tolerance at zoom {zoom}"
+        );
         let h = hit.unwrap();
-        assert!(h.t >= 0.0 && h.t <= 1.0, "Parameter t must be within [0, 1] at zoom {zoom}");
+        assert!(
+            h.t >= 0.0 && h.t <= 1.0,
+            "Parameter t must be within [0, 1] at zoom {zoom}"
+        );
     }
 }
 
 #[test]
 fn test_tc_1244_backspace_heals_closing_node_0_with_cubic_reconnection() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::new(theme.clone());
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::new(theme.clone());
 
     // Closed cubic contour where node 0 is a Smooth node at the wrap-around junction
     state.contours = vec![vec![
@@ -561,7 +648,10 @@ fn test_tc_1244_backspace_heals_closing_node_0_with_cubic_reconnection() {
     // In state.paths[0], closing segment must be CurveTo + ClosePath, NOT QuadTo
     let els = state.paths[0].elements();
     let has_quad = els.iter().any(|el| matches!(el, PathEl::QuadTo(..)));
-    assert!(!has_quad, "Closing curve healing must emit CurveTo, never QuadTo");
+    assert!(
+        !has_quad,
+        "Closing curve healing must emit CurveTo, never QuadTo"
+    );
 
     let has_curve = els.iter().any(|el| matches!(el, PathEl::CurveTo(..)));
     assert!(has_curve, "Path must contain CurveTo reconnection element");
@@ -570,8 +660,8 @@ fn test_tc_1244_backspace_heals_closing_node_0_with_cubic_reconnection() {
 #[test]
 fn test_tc_1244_backspace_on_open_contour_endpoint_does_not_loop() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::new(theme.clone());
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::new(theme.clone());
 
     // Create an open contour of 3 nodes: (0, 0) -> (100, 0) -> (200, 0)
     let n1 = Node::new(NodeId(1), 0.0, 0.0, NodeType::Corner);
@@ -595,17 +685,27 @@ fn test_tc_1244_backspace_on_open_contour_endpoint_does_not_loop() {
     frame(&ctx, &mut state, &theme, input);
 
     // Must have 2 nodes left, NOT 4 (no healing handles wrapping to other end!)
-    assert_eq!(state.contours[0].len(), 2, "Deleting endpoint of open contour must not add wrap handles");
+    assert_eq!(
+        state.contours[0].len(),
+        2,
+        "Deleting endpoint of open contour must not add wrap handles"
+    );
     assert!(!state.is_contour_closed(0));
-    let has_close = state.paths[0].elements().iter().any(|el| matches!(el, PathEl::ClosePath));
-    assert!(!has_close, "Open contour must not be closed after endpoint deletion");
+    let has_close = state.paths[0]
+        .elements()
+        .iter()
+        .any(|el| matches!(el, PathEl::ClosePath));
+    assert!(
+        !has_close,
+        "Open contour must not be closed after endpoint deletion"
+    );
 }
 
 #[test]
 fn test_tc_1244_backspace_on_off_curve_node_removes_handle_only() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::new(theme.clone());
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::new(theme.clone());
 
     // Cubic segment: P0, H1, H2, P3
     let p0 = Node::new(NodeId(1), 0.0, 0.0, NodeType::Corner);
@@ -638,8 +738,8 @@ fn test_tc_1244_backspace_on_off_curve_node_removes_handle_only() {
 #[test]
 fn test_tc_1244_multi_node_simultaneous_deletion() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
 
     // Select node 2 in contour 0 and node 1 in contour 1
     let id1 = state.contours[0][2].id;
@@ -664,8 +764,8 @@ fn test_tc_1244_multi_node_simultaneous_deletion() {
 #[test]
 fn test_tc_1245_alt_backspace_cuts_open_contour_with_curves_prunes_handles() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::new(theme.clone());
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::new(theme.clone());
 
     // Closed contour with cubic curves: On0, H0_1, H0_2, On1, H1_1, H1_2, On2
     let on0 = Node::new(NodeId(1), 0.0, 0.0, NodeType::Corner);
@@ -697,15 +797,23 @@ fn test_tc_1245_alt_backspace_cuts_open_contour_with_curves_prunes_handles() {
     // The open contour must NEVER start or end on an OffCurve handle
     let first_node = state.contours[0].first().unwrap();
     let last_node = state.contours[0].last().unwrap();
-    assert_ne!(first_node.node_type, NodeType::OffCurve, "Open contour must not start on handle");
-    assert_ne!(last_node.node_type, NodeType::OffCurve, "Open contour must not end on handle");
+    assert_ne!(
+        first_node.node_type,
+        NodeType::OffCurve,
+        "Open contour must not start on handle"
+    );
+    assert_ne!(
+        last_node.node_type,
+        NodeType::OffCurve,
+        "Open contour must not end on handle"
+    );
 }
 
 #[test]
 fn test_tc_1241_shift_double_click_multi_contour_toggle() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     state.active_tool = CanvasTool::Select;
 
     // Start with contour 0 selected
@@ -750,12 +858,16 @@ fn test_tc_1241_shift_double_click_multi_contour_toggle() {
 
     // Both contours must now be selected
     let expected_total = initial_count + state.contours[1].len();
-    assert_eq!(state.selected_nodes.len(), expected_total, "Shift+double click must add contour to selection");
+    assert_eq!(
+        state.selected_nodes.len(),
+        expected_total,
+        "Shift+double click must add contour to selection"
+    );
 }
 
 #[test]
 fn test_heal_delete_marquee_selected_on_curve_and_attached_handles_matches_single_on_curve_heal() {
-    let state = GlifoCanvasState::init_glyph_o();
+    let state = GrafiaCanvasState::init_glyph_o();
     let base_contour = state.contours[0].clone();
 
     // Node 3 is Smooth OnCurve (510, 250); Node 2 is incoming OffCurve (510, 394); Node 4 is outgoing OffCurve (510, 106)
@@ -769,7 +881,12 @@ fn test_heal_delete_marquee_selected_on_curve_and_attached_handles_matches_singl
 
     let mut contour_single = base_contour.clone();
     let mut next_id_single = 1000;
-    grafia::core::heal_delete_nodes(&mut contour_single, true, &[id_on_curve], &mut next_id_single);
+    grafia::core::heal_delete_nodes(
+        &mut contour_single,
+        true,
+        &[id_on_curve],
+        &mut next_id_single,
+    );
 
     let mut contour_marquee = base_contour;
     let mut next_id_marquee = 1000;
@@ -801,7 +918,7 @@ fn test_heal_delete_marquee_selected_on_curve_and_attached_handles_matches_singl
 
 #[test]
 fn test_cut_open_delete_nodes_strips_orphaned_and_mismatched_interior_off_curve_handles() {
-    let state = GlifoCanvasState::init_glyph_o();
+    let state = GrafiaCanvasState::init_glyph_o();
     let base_contour = state.contours[0].clone();
 
     // Case (a): Delete right OnCurve node (index 3) + 1 OffCurve handle from bottom-left segment (index 7)
@@ -864,7 +981,10 @@ fn test_cut_open_delete_nodes_strips_orphaned_and_mismatched_interior_off_curve_
         &mut contour_c,
         &[base_contour[0].id, base_contour[3].id, base_contour[6].id],
     );
-    assert_eq!(contour_c.len(), 1, "Single surviving OnCurve node must have 0 OffCurve nodes");
+    assert_eq!(
+        contour_c.len(),
+        1,
+        "Single surviving OnCurve node must have 0 OffCurve nodes"
+    );
     assert_ne!(contour_c[0].node_type, NodeType::OffCurve);
 }
-

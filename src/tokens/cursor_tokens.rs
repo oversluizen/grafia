@@ -25,7 +25,7 @@ pub const PEN_CLOSE_HALO_RADIUS_FACTOR: f32 = 1.65;
 
 /// Authentic Vector Canvas tool cursor variants rendered in Pass 5 (`SPEC-002 §3.2.4.4`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum GlifoCursorKind {
+pub enum GrafiaCursorKind {
     /// Standard macOS/Vector Canvas sharp black selection arrow with white border (`[NSCursor arrowCursor]`).
     SelectArrow,
     /// Selection arrow + bottom-right `6x6 dp` white-bordered / `4x4 dp` black square node badge
@@ -141,20 +141,12 @@ pub const HAND_CURSOR_DIMENSIONS_DP: [f32; 3] = [5.5, 1.5, 3.5];
 pub const ZOOM_CURSOR_LENS_RADII_DP: [f32; 3] = [6.5, 5.2, 3.6];
 
 /// `ZoomIn` / `ZoomOut` magnifier angled handle outer white border polygon (`SPEC-003 §2.4`).
-pub const ZOOM_CURSOR_HANDLE_OUTER_POLYGON_DP: &[(f32, f32)] = &[
-    (3.0, 4.8),
-    (4.8, 3.0),
-    (11.2, 9.4),
-    (9.4, 11.2),
-];
+pub const ZOOM_CURSOR_HANDLE_OUTER_POLYGON_DP: &[(f32, f32)] =
+    &[(3.0, 4.8), (4.8, 3.0), (11.2, 9.4), (9.4, 11.2)];
 
 /// `ZoomIn` / `ZoomOut` magnifier angled handle inner black fill polygon (`SPEC-003 §2.4`).
-pub const ZOOM_CURSOR_HANDLE_INNER_POLYGON_DP: &[(f32, f32)] = &[
-    (3.6, 4.6),
-    (4.6, 3.6),
-    (10.2, 9.2),
-    (9.2, 10.2),
-];
+pub const ZOOM_CURSOR_HANDLE_INNER_POLYGON_DP: &[(f32, f32)] =
+    &[(3.6, 4.6), (4.6, 3.6), (10.2, 9.2), (9.2, 10.2)];
 
 /// Horizontal `-` bar `[min_x, min_y, max_x, max_y]` inside the `ZoomIn` / `ZoomOut` magnifier lens.
 pub const ZOOM_CURSOR_HBAR_RECT_DP: [f32; 4] = [-2.4, -0.8, 2.4, 0.8];
@@ -169,18 +161,12 @@ pub const ROTATE_CURSOR_RING_RADII_DP: [f32; 3] = [7.0, 5.6, 3.4];
 pub const ROTATE_CURSOR_GAP_RECT_DP: [f32; 4] = [1.5, 0.5, 7.5, 6.5];
 
 /// `Rotate` cursor arrowhead outer white border polygon.
-pub const ROTATE_CURSOR_HEAD_OUTER_POLYGON_DP: &[(f32, f32)] = &[
-    (1.0, -7.8),
-    (8.2, -5.2),
-    (3.8, 0.2),
-];
+pub const ROTATE_CURSOR_HEAD_OUTER_POLYGON_DP: &[(f32, f32)] =
+    &[(1.0, -7.8), (8.2, -5.2), (3.8, 0.2)];
 
 /// `Rotate` cursor arrowhead inner black fill polygon.
-pub const ROTATE_CURSOR_HEAD_INNER_POLYGON_DP: &[(f32, f32)] = &[
-    (2.0, -6.6),
-    (6.8, -4.8),
-    (3.8, -1.0),
-];
+pub const ROTATE_CURSOR_HEAD_INNER_POLYGON_DP: &[(f32, f32)] =
+    &[(2.0, -6.6), (6.8, -4.8), (3.8, -1.0)];
 
 /// `Scale` cursor horizontal shaft outer white rect `[min_x, min_y, max_x, max_y]` (`SPEC-003 §2.1.3 & §2.2`).
 pub const SCALE_CURSOR_SHAFT_OUTER_RECT_DP: [f32; 4] = [-6.5, -2.0, 6.5, 2.0];
@@ -189,32 +175,18 @@ pub const SCALE_CURSOR_SHAFT_OUTER_RECT_DP: [f32; 4] = [-6.5, -2.0, 6.5, 2.0];
 pub const SCALE_CURSOR_SHAFT_INNER_RECT_DP: [f32; 4] = [-5.0, -0.9, 5.0, 0.9];
 
 /// `Scale` cursor left arrowhead outer white polygon.
-pub const SCALE_CURSOR_LEFT_HEAD_OUTER_DP: &[(f32, f32)] = &[
-    (-9.2, 0.0),
-    (-3.8, -5.0),
-    (-3.8, 5.0),
-];
+pub const SCALE_CURSOR_LEFT_HEAD_OUTER_DP: &[(f32, f32)] =
+    &[(-9.2, 0.0), (-3.8, -5.0), (-3.8, 5.0)];
 
 /// `Scale` cursor left arrowhead inner black polygon.
-pub const SCALE_CURSOR_LEFT_HEAD_INNER_DP: &[(f32, f32)] = &[
-    (-7.8, 0.0),
-    (-4.6, -3.4),
-    (-4.6, 3.4),
-];
+pub const SCALE_CURSOR_LEFT_HEAD_INNER_DP: &[(f32, f32)] =
+    &[(-7.8, 0.0), (-4.6, -3.4), (-4.6, 3.4)];
 
 /// `Scale` cursor right arrowhead outer white polygon.
-pub const SCALE_CURSOR_RIGHT_HEAD_OUTER_DP: &[(f32, f32)] = &[
-    (9.2, 0.0),
-    (3.8, -5.0),
-    (3.8, 5.0),
-];
+pub const SCALE_CURSOR_RIGHT_HEAD_OUTER_DP: &[(f32, f32)] = &[(9.2, 0.0), (3.8, -5.0), (3.8, 5.0)];
 
 /// `Scale` cursor right arrowhead inner black polygon.
-pub const SCALE_CURSOR_RIGHT_HEAD_INNER_DP: &[(f32, f32)] = &[
-    (7.8, 0.0),
-    (4.6, -3.4),
-    (4.6, 3.4),
-];
+pub const SCALE_CURSOR_RIGHT_HEAD_INNER_DP: &[(f32, f32)] = &[(7.8, 0.0), (4.6, -3.4), (4.6, 3.4)];
 
 /// `Lasso` cursor loop center and concentric radii `[cx, cy, outer_white_r, black_ring_r, inner_white_r]` (`SPEC-003 §2.3`).
 pub const LASSO_CURSOR_LOOP_CENTER_AND_RADII_DP: [f32; 5] = [4.0, -3.5, 6.2, 4.8, 3.0];
@@ -226,41 +198,21 @@ pub const LASSO_CURSOR_KNOT_OUTER_RECT_DP: [f32; 4] = [-2.2, -2.2, 2.2, 2.2];
 pub const LASSO_CURSOR_KNOT_INNER_RECT_DP: [f32; 4] = [-1.2, -1.2, 1.2, 1.2];
 
 /// `Lasso` cursor rope tail outer white polygon.
-pub const LASSO_CURSOR_TAIL_OUTER_POLYGON_DP: &[(f32, f32)] = &[
-    (-1.2, 1.0),
-    (1.2, 1.0),
-    (-2.8, 8.5),
-    (-5.2, 7.5),
-];
+pub const LASSO_CURSOR_TAIL_OUTER_POLYGON_DP: &[(f32, f32)] =
+    &[(-1.2, 1.0), (1.2, 1.0), (-2.8, 8.5), (-5.2, 7.5)];
 
 /// `Lasso` cursor rope tail inner black polygon.
-pub const LASSO_CURSOR_TAIL_INNER_POLYGON_DP: &[(f32, f32)] = &[
-    (-0.4, 1.2),
-    (0.6, 1.2),
-    (-3.2, 7.6),
-    (-4.2, 7.0),
-];
+pub const LASSO_CURSOR_TAIL_INNER_POLYGON_DP: &[(f32, f32)] =
+    &[(-0.4, 1.2), (0.6, 1.2), (-3.2, 7.6), (-4.2, 7.0)];
 
 /// `BBoxSlant` shear cursor outer white parallelogram polygon (`SPEC-003 §2.1.3`).
-pub const SLANT_CURSOR_OUTER_POLYGON_DP: &[(f32, f32)] = &[
-    (-5.5, -5.5),
-    (7.5, -5.5),
-    (5.5, 5.5),
-    (-7.5, 5.5),
-];
+pub const SLANT_CURSOR_OUTER_POLYGON_DP: &[(f32, f32)] =
+    &[(-5.5, -5.5), (7.5, -5.5), (5.5, 5.5), (-7.5, 5.5)];
 
 /// `BBoxSlant` shear cursor top inner black bar polygon.
-pub const SLANT_CURSOR_TOP_BAR_INNER_DP: &[(f32, f32)] = &[
-    (-4.0, -4.2),
-    (6.0, -4.2),
-    (5.2, -1.4),
-    (-4.8, -1.4),
-];
+pub const SLANT_CURSOR_TOP_BAR_INNER_DP: &[(f32, f32)] =
+    &[(-4.0, -4.2), (6.0, -4.2), (5.2, -1.4), (-4.8, -1.4)];
 
 /// `BBoxSlant` shear cursor bottom inner black bar polygon.
-pub const SLANT_CURSOR_BOT_BAR_INNER_DP: &[(f32, f32)] = &[
-    (-5.2, 1.4),
-    (4.8, 1.4),
-    (4.0, 4.2),
-    (-6.0, 4.2),
-];
+pub const SLANT_CURSOR_BOT_BAR_INNER_DP: &[(f32, f32)] =
+    &[(-5.2, 1.4), (4.8, 1.4), (4.0, 4.2), (-6.0, 4.2)];

@@ -305,7 +305,7 @@ pub fn build_superellipse_contour_nodes(
     exponent_n: f64,
 ) -> Vec<Node>;
 
-impl GlifoCanvasState {
+impl GrafiaCanvasState {
     // 2.1 Non-Destructive Smart Corners & Ink Traps
     pub fn set_smart_corner(&mut self, spec: SmartCornerSpec);
     pub fn remove_smart_corner(&mut self, node_id: NodeId);
@@ -366,7 +366,7 @@ All 16 test cases are implemented under `#![cfg(feature = "v090_red")]`:
 | **`TC-V090-004`** | Destructive `bake_smart_corners()` with Atomic Undo / Redo | Attach both a positive fillet (`+30.0`) and a negative ink trap (`-20.0`), invoke `bake_smart_corners()`, then `Undo` and `Redo`. | `bake_smart_corners()` commits the geometry into `state.glyph.contours` and clears `smart_corners`; `Undo` restores the 4-node sharp contour and `smart_corners` list bit-exactly. |
 | **`TC-V090-005`** | Calligraphic Brush Variable Pressure Width (`fit_calligraphic_brush_stroke`) | Feed a horizontal sample stream from $x=0$ (`pressure = 0.0`) to $x=300$ (`pressure = 1.0`) with `min_width_upm = 20.0`, `max_width_upm = 80.0`, `base_angle_deg = 90.0`. | Produces a closed cubic contour whose vertical thickness widens monotonically from $20.0\;\text{UPM}$ at $x=0$ to $80.0\;\text{UPM}$ at $x=300$. |
 | **`TC-V090-006`** | Calligraphic Brush Stylus Tilt Modulation (`tilt_x`, `tilt_y`) & Out-of-Bounds Pressure Clamp | Compare strokes with `(tilt_x: 30, tilt_y: 0)` vs. `(tilt_x: 0, tilt_y: 60)` under `tilt_influence = 0.5`, and test `pressure = -0.5` / `1.8`. | Stylus tilt rotates the nib cross-section envelope; out-of-range pressures clamp safely to $[0.0, 1.0]$ without NaN or self-intersection. |
-| **`TC-V090-007`** | `apply_calligraphic_brush_stroke` Canvas Integration & Atomic Undo | Call `apply_calligraphic_brush_stroke` on `GlifoCanvasState` and verify `Undo` / `Redo` and degenerate (< 2 sample) rejection. | Returns `Some(contour_id)` for $\ge 2$ samples, appends closed contour, round-trips `Undo`/`Redo`, and returns `None` for $< 2$ samples. |
+| **`TC-V090-007`** | `apply_calligraphic_brush_stroke` Canvas Integration & Atomic Undo | Call `apply_calligraphic_brush_stroke` on `GrafiaCanvasState` and verify `Undo` / `Redo` and degenerate (< 2 sample) rejection. | Returns `Some(contour_id)` for $\ge 2$ samples, appends closed contour, round-trips `Undo`/`Redo`, and returns `None` for $< 2$ samples. |
 | **`TC-V090-008`** | Curvature Comb Analytical Spines (`compute_curvature_comb_spines`) | Compute 16-sample curvature comb spines (`scale_upm2 = 5000.0`) on a radius-$100$ quarter-circle cubic segment. | Returns 17 spines whose `base_point` lies on the arc and whose spine length $\| \text{tip} - \text{base} \|_2 = 5000 \times 0.01 = 50.0\;\text{UPM}$ along the radial normal. |
 | **`TC-V090-009`** | Curvature Comb Inflection Sign Flip on S-Curve Cubic | Evaluate `compute_curvature_comb_spines` on a symmetric S-curve cubic with an inflection point at $t = 0.5$. | `signed_curvature` has opposite signs at $t = 0.0$ and $t = 1.0$, and vanishes ($\approx 0.0$) at the inflection midpoint $t = 0.5$. |
 | **`TC-V090-010`** | Pass-2 & Pass-4 Headless Light/Dark Rendering with Smart Corners & Curvature Comb | Render canvas with active Smart Corners, Ink Traps, Calligraphic Brush contour, and `show_curvature_comb = true` in Light and Dark modes. | Produces deterministic, distinct pixel buffers in Light vs. Dark modes with zero panics. |

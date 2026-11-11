@@ -2,6 +2,25 @@
 
 All notable changes to `grafia` are documented in this file in accordance with [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and Semantic Versioning (`SemVer 2.0.0`).
 
+## [0.7.0] - 2026-11-11
+
+### Added
+- **Background Layer, 2D Anchors, Pre-Resolved Components, Fit Curve, Live Contour Stroke & `CompanionMasterLayer` (`SPEC-008` / `v0.7.0`)**:
+  - Background layer editing (`selection_to_background` `Cmd/Ctrl + J`, `swap_with_background` `Cmd/Ctrl + K`, `toggle_editing_background`, `toggle_show_background`) with full `CommandHistory` Undo/Redo snapshots.
+  - 2D `CanvasAnchor` model (`add_anchor`, `delete_selected_anchors`, `Tab`/`Shift + Tab` cycling, magnetic `SnapTargetKind::Anchor`, and `GhostMarkPath` mark-to-base cloud preview).
+  - Pre-resolved `CanvasComponent` instances (`add_component`, `set_component_locked`, `set_component_alignment`, `decompose_selected_components` `Cmd/Ctrl + Shift + D`, and double-click `CanvasHostRequest::OpenComponentSource`).
+  - 8-step `fit_selected_curves_by_step` (`57%..92%` handle tension ladder) and `fit_selected_curves_by_ratio`.
+  - Non-destructive `ContourStrokeStyle` (`Center`, `Inside`, `Outside`, `Butt`/`Round`/`Square` caps, `Miter`/`Round`/`Bevel` joins) and destructive `expand_selected_contour_strokes`.
+  - `CompanionMasterLayer` compatibility overlay (green compatible vs. red incompatible contour/node badges and `select_all_layers`).
+- **Separable Gaussian Blur Preview, Pure 2D `SelectionInfo`, Rulers & Background Image (`SPEC-007` / `v0.6.0`)**:
+  - `render_preview_strip_rgba` (`tiny-skia` Non-Zero Winding + 3-pass separable box blur approximating Gaussian $\sigma \in [0, 20]$, invert toggle, and aspect-ratio containment).
+  - Battery-efficient `PreviewStripCache` and `GrafiaCanvasState::content_generation()` ensuring zero redundant CPU rasterization or GPU texture uploads on idle frames, hover, pan, zoom, or selection changes.
+  - Pure 2D `SelectionInfo` model (`Empty`, `SingleNode`, `SingleAnchor`, `SingleComponent`, `MultipleSelection`) and `apply_selection_info_action`, plus top/left canvas rulers (`toggle_rulers` `Cmd/Ctrl + R`) and `CanvasBackgroundImage`.
+- **Multi-Glyph Horizontal Text Stream, Caret Navigation & Interactive Spacing/Kerning (`SPEC-006` / `v0.5.0`)**:
+  - `CanvasTool::Text` (`T`), `GlyphSlot` horizontal strip layout, caret navigation, double-click slot activation, and live `SpacingDelta` / `KerningDelta` / `TextStreamEditRequest` host-port emissions.
+- **Hexagonal Host-Port ("Stekkers") Testbank (`examples/vector_canvas_demo.rs` & `examples/demo_host_shell/`)**:
+  - Interactive `MockFontHost` exercising all 10 Data-In / Event-Out ports (`CanvasHostRequest`, `SpacingDelta`, `KerningDelta`, `SelectionInfoAction`, `PreviewStripCache`, `CompanionMasterLayer`, `GhostMarkPath`, `CanvasComponent`, `CanvasAnchor`, and `Glyph`).
+
 ## [0.4.0] - 2026-11-11
 
 ### Added

@@ -9,22 +9,18 @@ use grafia::adapters::headless::{
     kurbo_to_tiny_skia_path, pixmap_to_rgba_image, rasterize_canvas_subregion,
     rasterize_full_window,
 };
-use grafia::adapters::state::{CanvasViewMode, GlifoCanvasState};
+use grafia::adapters::state::{CanvasViewMode, GrafiaCanvasState};
 use grafia::core::{FontPoint, Node, NodeId, NodeType, ScreenPoint};
 use grafia::tokens::{
-    GlifoTheme, GOLDEN_MASTER_CANVAS_WIDTH_DP,
-    GOLDEN_MASTER_SIDEBAR_WIDTH_DP, GOLDEN_MASTER_SPLITTER_WIDTH_DP,
-    GOLDEN_MASTER_WINDOW_HEIGHT_DP, GOLDEN_MASTER_WINDOW_WIDTH_DP, MIN_VIEWPORT_ZOOM,
+    GrafiaTheme, GOLDEN_MASTER_CANVAS_WIDTH_DP, GOLDEN_MASTER_SIDEBAR_WIDTH_DP,
+    GOLDEN_MASTER_SPLITTER_WIDTH_DP, GOLDEN_MASTER_WINDOW_HEIGHT_DP, GOLDEN_MASTER_WINDOW_WIDTH_DP,
+    MIN_VIEWPORT_ZOOM,
 };
 use kurbo::{BezPath, Point};
 use std::panic::catch_unwind;
 
 /// Helper to count pixels in a Pixmap matching a target RGBA color within a per-channel tolerance.
-fn count_matching_pixels(
-    pixmap: &tiny_skia::Pixmap,
-    target: [u8; 4],
-    tolerance: u8,
-) -> usize {
+fn count_matching_pixels(pixmap: &tiny_skia::Pixmap, target: [u8; 4], tolerance: u8) -> usize {
     let mut count = 0;
     for pixel in pixmap.pixels() {
         let dr = (pixel.red() as i16 - target[0] as i16).unsigned_abs() as u8;
@@ -44,8 +40,8 @@ fn count_matching_pixels(
 
 #[test]
 fn test_view_mode_edit_wireframe_all_node_types_and_contours_pixel_coverage() {
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::new(theme.clone());
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::new(theme.clone());
     state.view_mode = CanvasViewMode::EditWireframe;
 
     // Viewport: 1.0 zoom, pan at (200.0, 200.0)
@@ -92,11 +88,26 @@ fn test_view_mode_edit_wireframe_all_node_types_and_contours_pixel_coverage() {
     let bg_target = [bg_c.r(), bg_c.g(), bg_c.b(), bg_c.a()];
     let bg_pixels = count_matching_pixels(&pixmap, bg_target, 5);
 
-    assert!(corner_pixels > 0, "Corner nodes must have non-zero pixel coverage (got {corner_pixels})");
-    assert!(smooth_pixels > 0, "Smooth nodes must have non-zero pixel coverage (got {smooth_pixels})");
-    assert!(handle_pixels > 0, "BCP handles must have non-zero pixel coverage (got {handle_pixels})");
-    assert!(stroke_pixels > 0, "Contour stroke must have non-zero pixel coverage (got {stroke_pixels})");
-    assert!(bg_pixels > 0, "Canvas background must have non-zero pixel coverage (got {bg_pixels})");
+    assert!(
+        corner_pixels > 0,
+        "Corner nodes must have non-zero pixel coverage (got {corner_pixels})"
+    );
+    assert!(
+        smooth_pixels > 0,
+        "Smooth nodes must have non-zero pixel coverage (got {smooth_pixels})"
+    );
+    assert!(
+        handle_pixels > 0,
+        "BCP handles must have non-zero pixel coverage (got {handle_pixels})"
+    );
+    assert!(
+        stroke_pixels > 0,
+        "Contour stroke must have non-zero pixel coverage (got {stroke_pixels})"
+    );
+    assert!(
+        bg_pixels > 0,
+        "Canvas background must have non-zero pixel coverage (got {bg_pixels})"
+    );
 }
 
 // ============================================================================
@@ -105,8 +116,8 @@ fn test_view_mode_edit_wireframe_all_node_types_and_contours_pixel_coverage() {
 
 #[test]
 fn test_view_mode_preview_filled_even_odd_compound_path_subtraction() {
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     state.view_mode = CanvasViewMode::PreviewFilled;
 
     // In typography standards, compound paths represent contours + counter holes.
@@ -128,7 +139,9 @@ fn test_view_mode_preview_filled_even_odd_compound_path_subtraction() {
     let hx = counter_scr.x.0.round() as u32;
     let hy = counter_scr.y.0.round() as u32;
 
-    let hole_pixel = pixmap.pixel(hx, hy).expect("Counter hole pixel must be inside bounds");
+    let hole_pixel = pixmap
+        .pixel(hx, hy)
+        .expect("Counter hole pixel must be inside bounds");
     assert_eq!(
         hole_pixel.red(),
         255,
@@ -141,7 +154,9 @@ fn test_view_mode_preview_filled_even_odd_compound_path_subtraction() {
     let bx = body_scr.x.0.round() as u32;
     let by = body_scr.y.0.round() as u32;
 
-    let body_pixel = pixmap.pixel(bx, by).expect("Body pixel must be inside bounds");
+    let body_pixel = pixmap
+        .pixel(bx, by)
+        .expect("Body pixel must be inside bounds");
     assert_eq!(
         body_pixel.red(),
         0,
@@ -149,7 +164,9 @@ fn test_view_mode_preview_filled_even_odd_compound_path_subtraction() {
     );
 
     // 3. Point far outside the glyph (pure background)
-    let outside_pixel = pixmap.pixel(10, 10).expect("Outside pixel must be inside bounds");
+    let outside_pixel = pixmap
+        .pixel(10, 10)
+        .expect("Outside pixel must be inside bounds");
     assert_eq!(
         outside_pixel.red(),
         255,
@@ -159,12 +176,16 @@ fn test_view_mode_preview_filled_even_odd_compound_path_subtraction() {
 
 #[test]
 fn test_view_mode_preview_filled_glyph_a_counter_hole_empirical() {
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     state.view_mode = CanvasViewMode::PreviewFilled;
 
     // init_glyph_a has separate outer and inner paths in state.paths
-    assert_eq!(state.paths.len(), 2, "Glyph /A has disjoint outer and inner paths");
+    assert_eq!(
+        state.paths.len(),
+        2,
+        "Glyph /A has disjoint outer and inner paths"
+    );
 
     let width = 800;
     let height = 600;
@@ -176,7 +197,9 @@ fn test_view_mode_preview_filled_glyph_a_counter_hole_empirical() {
     let hx = counter_scr.x.0.round() as u32;
     let hy = counter_scr.y.0.round() as u32;
 
-    let hole_pixel = pixmap.pixel(hx, hy).expect("Counter hole pixel inside bounds");
+    let hole_pixel = pixmap
+        .pixel(hx, hy)
+        .expect("Counter hole pixel inside bounds");
     assert_eq!(
         hole_pixel.red(),
         255,
@@ -188,7 +211,11 @@ fn test_view_mode_preview_filled_glyph_a_counter_hole_empirical() {
 
     // Also assert direct pixel at (389, 306)
     let direct_hole = pixmap.pixel(389, 306).expect("Direct pixel (389, 306)");
-    assert_eq!(direct_hole.red(), 255, "Pixel at (389, 306) must be white canvas background");
+    assert_eq!(
+        direct_hole.red(),
+        255,
+        "Pixel at (389, 306) must be white canvas background"
+    );
     assert_eq!(direct_hole.green(), 255);
     assert_eq!(direct_hole.blue(), 255);
 
@@ -221,25 +248,33 @@ fn test_view_mode_preview_filled_glyph_a_counter_hole_empirical() {
 
 #[test]
 fn test_degenerate_empty_contours_list_produces_clean_background() {
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::new(theme.clone());
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::new(theme.clone());
     state.contours.clear();
     state.paths.clear();
 
-    for mode in [CanvasViewMode::EditWireframe, CanvasViewMode::PreviewFilled, CanvasViewMode::ShapeThumbnail] {
+    for mode in [
+        CanvasViewMode::EditWireframe,
+        CanvasViewMode::PreviewFilled,
+        CanvasViewMode::ShapeThumbnail,
+    ] {
         state.view_mode = mode;
         let pixmap = rasterize_canvas_subregion(&state, &theme, 200, 200);
         let bg_c = theme.canvas_background_color32();
         let bg_target = [bg_c.r(), bg_c.g(), bg_c.b(), bg_c.a()];
         let matching = count_matching_pixels(&pixmap, bg_target, 0);
-        assert_eq!(matching, 200 * 200, "Empty contours must produce 100% clean background in {mode:?}");
+        assert_eq!(
+            matching,
+            200 * 200,
+            "Empty contours must produce 100% clean background in {mode:?}"
+        );
     }
 }
 
 #[test]
 fn test_degenerate_single_point_contour_handles_gracefully() {
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::new(theme.clone());
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::new(theme.clone());
 
     // Single-point contour (MoveTo only)
     let contour = vec![Node::new(NodeId(1), 100.0, 100.0, NodeType::Corner)];
@@ -256,8 +291,8 @@ fn test_degenerate_single_point_contour_handles_gracefully() {
 
 #[test]
 fn test_degenerate_coincident_and_zero_length_segments() {
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::new(theme.clone());
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::new(theme.clone());
 
     // Coincident points: MoveTo(50, 50) -> LineTo(50, 50) -> LineTo(50, 50)
     let mut zero_len_path = BezPath::new();
@@ -281,8 +316,8 @@ fn test_degenerate_coincident_and_zero_length_segments() {
 
 #[test]
 fn test_degenerate_pixmap_dimensions_1x1_and_0x0() {
-    let state = GlifoCanvasState::init_glyph_a();
-    let theme = GlifoTheme::sonoma_default();
+    let state = GrafiaCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
 
     // 1x1 pixmap: must succeed and produce valid pixel
     let pixmap_1x1 = rasterize_canvas_subregion(&state, &theme, 1, 1);
@@ -291,10 +326,11 @@ fn test_degenerate_pixmap_dimensions_1x1_and_0x0() {
 
     // 0x0 pixmap: tiny-skia requires width > 0 and height > 0.
     // Verify that catch_unwind detects the expected panic without crashing the test runner.
-    let panic_result = catch_unwind(|| {
-        rasterize_canvas_subregion(&state, &theme, 0, 0)
-    });
-    assert!(panic_result.is_err(), "0x0 pixmap allocation is caught via catch_unwind");
+    let panic_result = catch_unwind(|| rasterize_canvas_subregion(&state, &theme, 0, 0));
+    assert!(
+        panic_result.is_err(),
+        "0x0 pixmap allocation is caught via catch_unwind"
+    );
 }
 
 // ============================================================================
@@ -303,8 +339,8 @@ fn test_degenerate_pixmap_dimensions_1x1_and_0x0() {
 
 #[test]
 fn test_viewport_extreme_zoom_and_large_translations() {
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
 
     // 1. Minimum zoom (0.01)
     state.viewport.zoom = MIN_VIEWPORT_ZOOM;
@@ -350,17 +386,24 @@ fn test_kurbo_to_tiny_skia_path_element_mapping() {
     full.move_to(Point::new(0.0, 0.0));
     full.line_to(Point::new(10.0, 0.0));
     full.quad_to(Point::new(15.0, 5.0), Point::new(20.0, 10.0));
-    full.curve_to(Point::new(25.0, 15.0), Point::new(30.0, 20.0), Point::new(35.0, 25.0));
+    full.curve_to(
+        Point::new(25.0, 15.0),
+        Point::new(30.0, 20.0),
+        Point::new(35.0, 25.0),
+    );
     full.close_path();
 
     let ts_path = kurbo_to_tiny_skia_path(&full);
-    assert!(ts_path.is_some(), "Complete kurbo BezPath must map to tiny_skia Path");
+    assert!(
+        ts_path.is_some(),
+        "Complete kurbo BezPath must map to tiny_skia Path"
+    );
 }
 
 #[test]
 fn test_pixmap_to_rgba_image_roundtrip() {
-    let state = GlifoCanvasState::init_glyph_a();
-    let theme = GlifoTheme::sonoma_default();
+    let state = GrafiaCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
     let pixmap = rasterize_canvas_subregion(&state, &theme, 100, 80);
 
     let img = pixmap_to_rgba_image(pixmap);
@@ -370,8 +413,8 @@ fn test_pixmap_to_rgba_image_roundtrip() {
 
 #[test]
 fn test_rasterize_full_window_layout_and_dimensions() {
-    let state = GlifoCanvasState::init_glyph_a();
-    let theme = GlifoTheme::sonoma_default();
+    let state = GrafiaCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
     let pixmap = rasterize_full_window(&state, &theme);
 
     let expected_w = GOLDEN_MASTER_WINDOW_WIDTH_DP as u32;
@@ -389,7 +432,9 @@ fn test_rasterize_full_window_layout_and_dimensions() {
 
     // Splitter line check (at GOLDEN_MASTER_SIDEBAR_WIDTH_DP = 250)
     let splitter_c = theme.splitter_color32();
-    let split_p = pixmap.pixel(GOLDEN_MASTER_SIDEBAR_WIDTH_DP as u32, 50).expect("Splitter pixel");
+    let split_p = pixmap
+        .pixel(GOLDEN_MASTER_SIDEBAR_WIDTH_DP as u32, 50)
+        .expect("Splitter pixel");
     assert_eq!(split_p.red(), splitter_c.r());
     assert_eq!(split_p.green(), splitter_c.g());
     assert_eq!(split_p.blue(), splitter_c.b());
@@ -408,7 +453,9 @@ fn test_rasterize_full_window_layout_and_dimensions() {
         + GOLDEN_MASTER_SPLITTER_WIDTH_DP
         + 20.0) as u32;
     let infobox_c = theme.infobox_background_color32();
-    let ip = pixmap.pixel(infobox_x, 50).expect("Infobox pixel inside bounds");
+    let ip = pixmap
+        .pixel(infobox_x, 50)
+        .expect("Infobox pixel inside bounds");
     assert_eq!(ip.red(), infobox_c.r());
     assert_eq!(ip.green(), infobox_c.g());
     assert_eq!(ip.blue(), infobox_c.b());
@@ -420,8 +467,8 @@ fn test_rasterize_full_window_layout_and_dimensions() {
 
 #[test]
 fn test_view_mode_preview_filled_glyph_b_two_counter_holes() {
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::new(theme.clone());
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::new(theme.clone());
     state.view_mode = CanvasViewMode::PreviewFilled;
     state.viewport.zoom = 1.0;
     state.viewport.pan_offset = ScreenPoint::new(0.0, 800.0);
@@ -456,13 +503,21 @@ fn test_view_mode_preview_filled_glyph_b_two_counter_holes() {
 
     // 1. Upper hole center: font (250, 520) -> screen (250, 280) must be white (255)
     let p_upper = pixmap.pixel(250, 280).expect("Upper hole pixel");
-    assert_eq!(p_upper.red(), 255, "Upper counter hole must be white (subtracted by EvenOdd)");
+    assert_eq!(
+        p_upper.red(),
+        255,
+        "Upper counter hole must be white (subtracted by EvenOdd)"
+    );
     assert_eq!(p_upper.green(), 255);
     assert_eq!(p_upper.blue(), 255);
 
     // 2. Lower hole center: font (250, 280) -> screen (250, 520) must be white (255)
     let p_lower = pixmap.pixel(250, 520).expect("Lower hole pixel");
-    assert_eq!(p_lower.red(), 255, "Lower counter hole must be white (subtracted by EvenOdd)");
+    assert_eq!(
+        p_lower.red(),
+        255,
+        "Lower counter hole must be white (subtracted by EvenOdd)"
+    );
     assert_eq!(p_lower.green(), 255);
     assert_eq!(p_lower.blue(), 255);
 
@@ -481,8 +536,8 @@ fn test_view_mode_preview_filled_glyph_b_two_counter_holes() {
 
 #[test]
 fn test_view_mode_preview_filled_accented_glyph_aacute_disjoint_contours() {
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::new(theme.clone());
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::new(theme.clone());
     state.view_mode = CanvasViewMode::PreviewFilled;
     state.viewport.zoom = 1.0;
     state.viewport.pan_offset = ScreenPoint::new(0.0, 800.0);
@@ -529,7 +584,11 @@ fn test_view_mode_preview_filled_accented_glyph_aacute_disjoint_contours() {
 
     // 4. /A counter hole: font (250, 350) -> screen (250, 450) must be white (255)
     let p_hole = pixmap.pixel(250, 450).expect("Counter hole pixel");
-    assert_eq!(p_hole.red(), 255, "/A counter hole must be white (subtracted by EvenOdd)");
+    assert_eq!(
+        p_hole.red(),
+        255,
+        "/A counter hole must be white (subtracted by EvenOdd)"
+    );
 
     // 5. Outside: font (50, 50) -> screen (50, 750) must be white (255)
     let p_out = pixmap.pixel(50, 750).expect("Outside pixel");
@@ -538,8 +597,8 @@ fn test_view_mode_preview_filled_accented_glyph_aacute_disjoint_contours() {
 
 #[test]
 fn test_view_mode_preview_filled_concentric_nested_even_odd_rings() {
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::new(theme.clone());
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::new(theme.clone());
     state.view_mode = CanvasViewMode::PreviewFilled;
     state.viewport.zoom = 1.0;
     state.viewport.pan_offset = ScreenPoint::new(0.0, 800.0);
@@ -578,13 +637,25 @@ fn test_view_mode_preview_filled_concentric_nested_even_odd_rings() {
 
     // 2. Middle band (2 crossings): font (230, 300) -> screen (230, 500) -> white (255)
     let p_mid = pixmap.pixel(230, 500).expect("Middle band pixel");
-    assert_eq!(p_mid.red(), 255, "Middle band (2 crossings) must be white (subtracted)");
+    assert_eq!(
+        p_mid.red(),
+        255,
+        "Middle band (2 crossings) must be white (subtracted)"
+    );
 
     // 3. Inner island (3 crossings): font (300, 300) -> screen (300, 500) -> black (0)
     let p_inner = pixmap.pixel(300, 500).expect("Inner center pixel");
-    assert_eq!(p_inner.red(), 0, "Inner center (3 crossings) must be black (filled again by EvenOdd)");
+    assert_eq!(
+        p_inner.red(),
+        0,
+        "Inner center (3 crossings) must be black (filled again by EvenOdd)"
+    );
 
     // 4. Outside (0 crossings): font (50, 50) -> screen (50, 750) -> white (255)
     let p_out = pixmap.pixel(50, 750).expect("Outside pixel");
-    assert_eq!(p_out.red(), 255, "Outside (0 crossings) must be white background");
+    assert_eq!(
+        p_out.red(),
+        255,
+        "Outside (0 crossings) must be white background"
+    );
 }

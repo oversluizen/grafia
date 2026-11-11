@@ -157,7 +157,11 @@ pub fn split_contour_segment(
 ) -> NodeId {
     let t_clamped = t.clamp(PARAM_CLAMP_MIN, PARAM_CLAMP_MAX);
     match segment {
-        ContourSegment::Line { start_idx, end_idx, line } => {
+        ContourSegment::Line {
+            start_idx,
+            end_idx,
+            line,
+        } => {
             let split_pt = line.eval(t_clamped);
             let new_id = NodeId(*next_node_id);
             *next_node_id += 1;
@@ -171,7 +175,12 @@ pub fn split_contour_segment(
             contour.insert(insert_pos, new_node);
             new_id
         }
-        ContourSegment::Cubic { h1_idx, h2_idx, cubic, .. } => {
+        ContourSegment::Cubic {
+            h1_idx,
+            h2_idx,
+            cubic,
+            ..
+        } => {
             let c1 = cubic.subsegment(0.0..t_clamped);
             let c2 = cubic.subsegment(t_clamped..1.0);
 
@@ -200,7 +209,32 @@ pub fn split_contour_segment(
     }
 }
 
-/// Deletes selected nodes with context-aware curve healing (SPEC-002 §3.1, DEF-GLIFO-003, TC-1244).
+fn sanitize_contour_handles(contour: &mut Vec<Node>, closed: bool) {
+    if !closed {
+        while contour
+            .first()
+            .is_some_and(|nd| nd.node_type == NodeType::OffCurve)
+        {
+            contour.remove(0);
+        }
+        while contour
+            .last()
+            .is_some_and(|nd| nd.node_type == NodeType::OffCurve)
+        {
+            contour.pop();
+        }
+    }
+    if contour
+        .iter()
+        .filter(|nd| nd.node_type != NodeType::OffCurve)
+        .count()
+        <= 1
+    {
+        contour.retain(|nd| nd.node_type != NodeType::OffCurve);
+    }
+}
+
+/// Deletes selected nodes with context-aware curve healing (SPEC-002 §3.1, DEF-GRAFIA-003, TC-1244).
 pub fn heal_delete_nodes(
     contour: &mut Vec<Node>,
     closed: bool,
@@ -209,9 +243,7 @@ pub fn heal_delete_nodes(
 ) {
     if contour.len() <= 2 {
         contour.retain(|n| !to_delete.contains(&n.id));
-        if contour.iter().filter(|nd| nd.node_type != NodeType::OffCurve).count() <= 1 {
-            contour.retain(|nd| nd.node_type != NodeType::OffCurve);
-        }
+        sanitize_contour_handles(contour, true);
         return;
     }
 
@@ -234,7 +266,9 @@ pub fn heal_delete_nodes(
                     break;
                 }
                 let idx = (del_idx + n - offset) % n;
-                if contour[idx].node_type != NodeType::OffCurve && !to_delete.contains(&contour[idx].id) {
+                if contour[idx].node_type != NodeType::OffCurve
+                    && !to_delete.contains(&contour[idx].id)
+                {
                     prev_on = Some(idx);
                     break;
                 }
@@ -246,7 +280,9 @@ pub fn heal_delete_nodes(
                     break;
                 }
                 let idx = (del_idx + offset) % n;
-                if contour[idx].node_type != NodeType::OffCurve && !to_delete.contains(&contour[idx].id) {
+                if contour[idx].node_type != NodeType::OffCurve
+                    && !to_delete.contains(&contour[idx].id)
+                {
                     next_on = Some(idx);
                     break;
                 }
@@ -268,7 +304,7 @@ pub fn heal_delete_nodes(
                         .iter()
                         .any(|nd| nd.node_type == NodeType::OffCurve);
 
-                    // DEF-GLIFO-003: When all segments in the deleted chain are straight lines, keep a straight line (0 OffCurve dots)
+                    // DEF-GRAFIA-003: When all segments in the deleted chain are straight lines, keep a straight line (0 OffCurve dots)
                     if !has_curve_in_chain {
                         indices_to_remove.sort_by(|a, b| b.cmp(a));
                         for r_idx in &indices_to_remove {
@@ -294,7 +330,8 @@ pub fn heal_delete_nodes(
                         contour.remove(*r_idx);
                     }
 
-                    let updated_p_idx = contour.iter().position(|node| node.id == p_id).unwrap_or(0);
+                    let updated_p_idx =
+                        contour.iter().position(|node| node.id == p_id).unwrap_or(0);
                     contour.insert(updated_p_idx + 1, h1);
                     contour.insert(updated_p_idx + 2, h2);
                     continue;
@@ -302,37 +339,20 @@ pub fn heal_delete_nodes(
             }
 
             contour.retain(|node| node.id != id);
-            if !closed {
-                while contour.first().is_some_and(|nd| nd.node_type == NodeType::OffCurve) {
-                    contour.remove(0);
-                }
-                while contour.last().is_some_and(|nd| nd.node_type == NodeType::OffCurve) {
-                    contour.pop();
-                }
-            }
-            if contour.iter().filter(|nd| nd.node_type != NodeType::OffCurve).count() <= 1 {
-                contour.retain(|nd| nd.node_type != NodeType::OffCurve);
-            }
+            sanitize_contour_handles(contour, closed);
         }
     }
 
     for &id in to_delete {
-        if contour.iter().any(|n| n.id == id && n.node_type == NodeType::OffCurve) {
+        if contour
+            .iter()
+            .any(|n| n.id == id && n.node_type == NodeType::OffCurve)
+        {
             crate::core::segment_ops::remove_off_curve_segment_handles(contour, closed, id);
         }
     }
 
-    if !closed {
-        while contour.first().is_some_and(|nd| nd.node_type == NodeType::OffCurve) {
-            contour.remove(0);
-        }
-        while contour.last().is_some_and(|nd| nd.node_type == NodeType::OffCurve) {
-            contour.pop();
-        }
-    }
-    if contour.iter().filter(|nd| nd.node_type != NodeType::OffCurve).count() <= 1 {
-        contour.retain(|nd| nd.node_type != NodeType::OffCurve);
-    }
+    sanitize_contour_handles(contour, closed);
 }
 
 /// Deletes selected nodes without healing, cutting a closed contour open (TC-1245).
@@ -353,7 +373,13 @@ pub fn cut_open_delete_nodes_in_contour(
     let original_cubics: Vec<(NodeId, NodeId, NodeId, NodeId)> = extract_segments(contour, closed)
         .into_iter()
         .filter_map(|seg| match seg {
-            ContourSegment::Cubic { start_idx, h1_idx, h2_idx, end_idx, .. } => Some((
+            ContourSegment::Cubic {
+                start_idx,
+                h1_idx,
+                h2_idx,
+                end_idx,
+                ..
+            } => Some((
                 contour[start_idx].id,
                 contour[h1_idx].id,
                 contour[h2_idx].id,
@@ -371,25 +397,18 @@ pub fn cut_open_delete_nodes_in_contour(
 
         if let Some(cut_idx) = cut_pos {
             let n = contour.len();
-            if let Some(next_idx) = (1..n)
-                .map(|off| (cut_idx + off) % n)
-                .find(|&idx| contour[idx].node_type != NodeType::OffCurve && !to_delete.contains(&contour[idx].id))
-            {
+            if let Some(next_idx) = (1..n).map(|off| (cut_idx + off) % n).find(|&idx| {
+                contour[idx].node_type != NodeType::OffCurve
+                    && !to_delete.contains(&contour[idx].id)
+            }) {
                 contour.rotate_left(next_idx);
             }
         }
     }
 
     contour.retain(|n| !to_delete.contains(&n.id));
-    while contour.first().is_some_and(|n| n.node_type == NodeType::OffCurve) {
-        contour.remove(0);
-    }
-    while contour.last().is_some_and(|n| n.node_type == NodeType::OffCurve) {
-        contour.pop();
-    }
-
-    if contour.iter().filter(|n| n.node_type != NodeType::OffCurve).count() <= 1 {
-        contour.retain(|n| n.node_type != NodeType::OffCurve);
+    sanitize_contour_handles(contour, false);
+    if contour.is_empty() {
         return;
     }
 

@@ -1,4 +1,4 @@
-//! Normative COTS Verification Suite for `SPEC-004` (`glifo v0.3.0`):
+//! Normative COTS Verification Suite for `SPEC-004` (`grafia v0.3.0`):
 //! Local & Global Guides (`CanvasGuide`), Magnetic `SnapEngine` (`SnapEngine`), & Alignment Zone Badges
 //! (`TC-V030-001` .. `TC-V030-007`).
 //!
@@ -8,7 +8,7 @@ use egui::{Event, Key, Modifiers as EguiModifiers, PointerButton, Pos2, RawInput
 use grafia::adapters::headless::rasterize_canvas_subregion;
 use grafia::adapters::input_dispatcher::InputDispatcher;
 use grafia::{
-    AlignmentBadgeMode, AlignmentZone, FontPoint, GlifoCanvasState, GlifoTheme, Node, NodeId,
+    AlignmentBadgeMode, AlignmentZone, FontPoint, GrafiaCanvasState, GrafiaTheme, Node, NodeId,
     NodeType, ScreenPoint, SelectedGuideRef,
 };
 
@@ -18,7 +18,7 @@ fn default_canvas_rect() -> Rect {
 
 #[allow(clippy::too_many_arguments)]
 fn run_dispatch(
-    state: &mut GlifoCanvasState,
+    state: &mut GrafiaCanvasState,
     events: Vec<Event>,
     shift: bool,
     alt: bool,
@@ -62,7 +62,7 @@ fn mods(shift: bool, alt: bool, cmd: bool, ctrl: bool) -> EguiModifiers {
 }
 
 fn press_key_v030(
-    state: &mut GlifoCanvasState,
+    state: &mut GrafiaCanvasState,
     key: Key,
     shift: bool,
     alt: bool,
@@ -87,7 +87,7 @@ fn press_key_v030(
 }
 
 fn pointer_press(
-    state: &mut GlifoCanvasState,
+    state: &mut GrafiaCanvasState,
     scr: ScreenPoint,
     shift: bool,
     alt: bool,
@@ -115,7 +115,7 @@ fn pointer_press(
 }
 
 fn pointer_move(
-    state: &mut GlifoCanvasState,
+    state: &mut GrafiaCanvasState,
     scr: ScreenPoint,
     shift: bool,
     alt: bool,
@@ -123,18 +123,11 @@ fn pointer_move(
     ctrl: bool,
 ) {
     let pos = Pos2::new(scr.x.0, scr.y.0);
-    let _ = run_dispatch(
-        state,
-        vec![Event::PointerMoved(pos)],
-        shift,
-        alt,
-        cmd,
-        ctrl,
-    );
+    let _ = run_dispatch(state, vec![Event::PointerMoved(pos)], shift, alt, cmd, ctrl);
 }
 
 fn pointer_release(
-    state: &mut GlifoCanvasState,
+    state: &mut GrafiaCanvasState,
     scr: ScreenPoint,
     shift: bool,
     alt: bool,
@@ -172,25 +165,72 @@ fn assert_pt_near(actual: FontPoint, expected_x: f64, expected_y: f64, tol: f64,
 // ============================================================================
 #[test]
 fn test_tc_v030_001_guide_creation_smart_two_node_rule_and_visibility_toggle() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 1.0;
     state.viewport.pan_offset = ScreenPoint::new(200.0, 400.0);
 
     // Verify exact empirical Reference Vector color tokens
     let c = &state.theme.edit_canvas;
-    assert_eq!((c.local_guide_color.r, c.local_guide_color.g, c.local_guide_color.b, c.local_guide_color.a), (62, 76, 207, 179));
-    assert_eq!((c.global_guide_color.r, c.global_guide_color.g, c.global_guide_color.b, c.global_guide_color.a), (207, 79, 62, 179));
-    assert_eq!((c.alignment_zone_fill.r, c.alignment_zone_fill.g, c.alignment_zone_fill.b, c.alignment_zone_fill.a), (206, 167, 124, 51));
-    assert_eq!((c.snap_indicator_color.r, c.snap_indicator_color.g, c.snap_indicator_color.b, c.snap_indicator_color.a), (153, 51, 51, 255));
+    assert_eq!(
+        (
+            c.local_guide_color.r,
+            c.local_guide_color.g,
+            c.local_guide_color.b,
+            c.local_guide_color.a
+        ),
+        (62, 76, 207, 179)
+    );
+    assert_eq!(
+        (
+            c.global_guide_color.r,
+            c.global_guide_color.g,
+            c.global_guide_color.b,
+            c.global_guide_color.a
+        ),
+        (207, 79, 62, 179)
+    );
+    assert_eq!(
+        (
+            c.alignment_zone_fill.r,
+            c.alignment_zone_fill.g,
+            c.alignment_zone_fill.b,
+            c.alignment_zone_fill.a
+        ),
+        (206, 167, 124, 51)
+    );
+    assert_eq!(
+        (
+            c.snap_indicator_color.r,
+            c.snap_indicator_color.g,
+            c.snap_indicator_color.b,
+            c.snap_indicator_color.a
+        ),
+        (153, 51, 51, 255)
+    );
 
     // Case 0: 0 selected nodes -> Add Local Guide creates horizontal (0.0 deg) guide at fallback/cursor position
     state.selected_nodes.clear();
     state.show_guides = false;
     let id0 = state.add_guide_from_selection(false, FontPoint::new(120.0, 250.0));
-    assert!(state.show_guides, "Adding a guide must automatically enable show_guides");
+    assert!(
+        state.show_guides,
+        "Adding a guide must automatically enable show_guides"
+    );
     assert_eq!(state.guides.len(), 1);
-    assert_eq!(state.selected_guide, Some(SelectedGuideRef { id: id0, is_global: false }));
-    assert_pt_near(state.guides[0].position, 120.0, 250.0, 1e-6, "Case 0 local guide pos");
+    assert_eq!(
+        state.selected_guide,
+        Some(SelectedGuideRef {
+            id: id0,
+            is_global: false
+        })
+    );
+    assert_pt_near(
+        state.guides[0].position,
+        120.0,
+        250.0,
+        1e-6,
+        "Case 0 local guide pos",
+    );
     assert!((state.guides[0].angle_deg - 0.0).abs() < 1e-6);
     assert!(!state.guides[0].is_global);
 
@@ -205,8 +245,20 @@ fn test_tc_v030_001_guide_creation_smart_two_node_rule_and_visibility_toggle() {
     state.selected_nodes = vec![node_a.id];
     let id1 = state.add_guide_from_selection(true, FontPoint::new(0.0, 0.0));
     assert_eq!(state.global_guides.len(), 1);
-    assert_eq!(state.selected_guide, Some(SelectedGuideRef { id: id1, is_global: true }));
-    assert_pt_near(state.global_guides[0].position, node_a.point.x.0, node_a.point.y.0, 1e-6, "Case 1 global guide pos");
+    assert_eq!(
+        state.selected_guide,
+        Some(SelectedGuideRef {
+            id: id1,
+            is_global: true
+        })
+    );
+    assert_pt_near(
+        state.global_guides[0].position,
+        node_a.point.x.0,
+        node_a.point.y.0,
+        1e-6,
+        "Case 1 global guide pos",
+    );
     assert!((state.global_guides[0].angle_deg - 0.0).abs() < 1e-6);
     assert!(state.global_guides[0].is_global);
 
@@ -220,14 +272,19 @@ fn test_tc_v030_001_guide_creation_smart_two_node_rule_and_visibility_toggle() {
     state.sync_paths_from_contours();
     state.selected_nodes = vec![NodeId(10), NodeId(11)];
     let id2 = state.add_guide_from_selection(false, FontPoint::new(0.0, 0.0));
-    let g2 = state.find_guide(id2).expect("Smart 2-node guide must exist");
+    let g2 = state
+        .find_guide(id2)
+        .expect("Smart 2-node guide must exist");
     assert_pt_near(g2.position, 200.0, 200.0, 1e-6, "Smart 2-Node midpoint");
     assert!(
         (g2.angle_deg - 45.0).abs() < 1e-6 || (g2.angle_deg - (-135.0)).abs() < 1e-6,
         "Smart 2-Node angle must pass through both nodes (45 deg), got {}",
         g2.angle_deg
     );
-    assert!(state.selected_nodes.is_empty(), "Adding a guide clears node selection and selects guide handle");
+    assert!(
+        state.selected_nodes.is_empty(),
+        "Adding a guide clears node selection and selects guide handle"
+    );
 
     // Cmd/Ctrl+Shift+L toggles `show_guides`
     assert!(state.show_guides);
@@ -243,7 +300,7 @@ fn test_tc_v030_001_guide_creation_smart_two_node_rule_and_visibility_toggle() {
 // ============================================================================
 #[test]
 fn test_tc_v030_002_guide_knob_move_duplicate_flip90_rotate_and_locks() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 1.0;
     state.viewport.pan_offset = ScreenPoint::new(200.0, 400.0);
     state.contours.clear();
@@ -258,13 +315,31 @@ fn test_tc_v030_002_guide_knob_move_duplicate_flip90_rotate_and_locks() {
     pointer_press(&mut state, knob_scr, false, false, false, true);
     pointer_move(&mut state, dest_scr, false, false, false, true);
     pointer_release(&mut state, dest_scr, false, false, false, true);
-    assert_pt_near(state.find_guide(gid).unwrap().position, 150.0, 180.0, 1e-4, "Dragged guide knob");
+    assert_pt_near(
+        state.find_guide(gid).unwrap().position,
+        150.0,
+        180.0,
+        1e-4,
+        "Dragged guide knob",
+    );
 
     // 2. Arrow-key nudge on selected guide (`1`, `10` with Shift, `100` with Cmd/Ctrl)
     press_key_v030(&mut state, Key::ArrowUp, false, false, false, false);
-    assert_pt_near(state.find_guide(gid).unwrap().position, 150.0, 181.0, 1e-4, "Nudge +1Y");
+    assert_pt_near(
+        state.find_guide(gid).unwrap().position,
+        150.0,
+        181.0,
+        1e-4,
+        "Nudge +1Y",
+    );
     press_key_v030(&mut state, Key::ArrowRight, true, false, false, false);
-    assert_pt_near(state.find_guide(gid).unwrap().position, 160.0, 181.0, 1e-4, "Nudge +10X");
+    assert_pt_near(
+        state.find_guide(gid).unwrap().position,
+        160.0,
+        181.0,
+        1e-4,
+        "Nudge +10X",
+    );
 
     // 3. Double-Click on Guide Knob flips angle by +90.0 deg perpendicular (0.0 -> 90.0 -> 180.0 -> -90.0)
     state.double_click_guide_knob(gid);
@@ -294,7 +369,9 @@ fn test_tc_v030_002_guide_knob_move_duplicate_flip90_rotate_and_locks() {
     let dx_italic = 100.0 * (79.5_f64.to_radians()).cos();
     let dy_italic = 100.0 * (79.5_f64.to_radians()).sin();
     let line_grab_45 = state.viewport.to_screen(FontPoint::new(260.0, 281.0));
-    let line_rot_italic = state.viewport.to_screen(FontPoint::new(160.0 + dx_italic, 181.0 + dy_italic));
+    let line_rot_italic = state
+        .viewport
+        .to_screen(FontPoint::new(160.0 + dx_italic, 181.0 + dy_italic));
     pointer_press(&mut state, line_grab_45, false, false, false, false);
     pointer_move(&mut state, line_rot_italic, true, false, false, false);
     pointer_release(&mut state, line_rot_italic, true, false, false, false);
@@ -309,7 +386,10 @@ fn test_tc_v030_002_guide_knob_move_duplicate_flip90_rotate_and_locks() {
     // 5. `lock_angle == true` prevents both double-click 90° flip and line-drag rotation
     state.find_guide_mut(gid).unwrap().lock_angle = true;
     state.double_click_guide_knob(gid);
-    assert!((state.find_guide(gid).unwrap().angle_deg - 45.0).abs() < 1e-6, "lock_angle must block 90 deg flip");
+    assert!(
+        (state.find_guide(gid).unwrap().angle_deg - 45.0).abs() < 1e-6,
+        "lock_angle must block 90 deg flip"
+    );
     state.find_guide_mut(gid).unwrap().lock_angle = false;
 
     // 6. Option/Alt-drag on guide knob duplicates the guide and drags the duplicate
@@ -318,13 +398,21 @@ fn test_tc_v030_002_guide_knob_move_duplicate_flip90_rotate_and_locks() {
     pointer_press(&mut state, knob_now_scr, false, true, false, true);
     pointer_move(&mut state, dup_dest_scr, false, true, false, true);
     pointer_release(&mut state, dup_dest_scr, false, true, false, true);
-    assert_eq!(state.guides.len(), 2, "Alt-dragging guide knob must duplicate the guide");
+    assert_eq!(
+        state.guides.len(),
+        2,
+        "Alt-dragging guide knob must duplicate the guide"
+    );
 
     // 7. `lock_guides == true` prevents moving or deleting guides
     state.lock_guides = true;
     let count_before = state.guides.len();
     press_key_v030(&mut state, Key::Backspace, false, false, false, false);
-    assert_eq!(state.guides.len(), count_before, "lock_guides must prevent deleting guides");
+    assert_eq!(
+        state.guides.len(),
+        count_before,
+        "lock_guides must prevent deleting guides"
+    );
 }
 
 // ============================================================================
@@ -332,7 +420,7 @@ fn test_tc_v030_002_guide_knob_move_duplicate_flip90_rotate_and_locks() {
 // ============================================================================
 #[test]
 fn test_tc_v030_003_measurement_guide_ray_contour_intersections_and_pass4_persistence() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.load_preset_o(); // `/o` has outer contour (50..550) and inner counter (140..460) at y = 250.0
     state.viewport.zoom = 0.8;
     state.viewport.pan_offset = ScreenPoint::new(140.0, 460.0);
@@ -356,9 +444,18 @@ fn test_tc_v030_003_measurement_guide_ray_contour_intersections_and_pass4_persis
     assert!((measurement.intersections[2].x.0 - 420.0).abs() < 1.0);
     assert!((measurement.intersections[3].x.0 - 510.0).abs() < 1.0);
     assert_eq!(measurement.segments.len(), 3);
-    assert!((measurement.segments[0].distance - 90.0).abs() < 1.5, "Left stem width ~ 90 UPM");
-    assert!((measurement.segments[1].distance - 280.0).abs() < 1.5, "Counter width ~ 280 UPM");
-    assert!((measurement.segments[2].distance - 90.0).abs() < 1.5, "Right stem width ~ 90 UPM");
+    assert!(
+        (measurement.segments[0].distance - 90.0).abs() < 1.5,
+        "Left stem width ~ 90 UPM"
+    );
+    assert!(
+        (measurement.segments[1].distance - 280.0).abs() < 1.5,
+        "Counter width ~ 280 UPM"
+    );
+    assert!(
+        (measurement.segments[2].distance - 90.0).abs() < 1.5,
+        "Right stem width ~ 90 UPM"
+    );
 }
 
 // ============================================================================
@@ -366,7 +463,7 @@ fn test_tc_v030_003_measurement_guide_ray_contour_intersections_and_pass4_persis
 // ============================================================================
 #[test]
 fn test_tc_v030_004_magnetic_snap_engine_nodes_metrics_guides_and_intersection() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 1.0; // snap_threshold = 5.0 dp = 5.0 UPM
     state.viewport.pan_offset = ScreenPoint::new(200.0, 400.0);
 
@@ -393,19 +490,37 @@ fn test_tc_v030_004_magnetic_snap_engine_nodes_metrics_guides_and_intersection()
 
     // Must snap to exact intersection (100.0, 500.0) and populate active_snappers (at most 2)!
     let snapped_pt = state.find_node(NodeId(2)).unwrap().point;
-    assert_pt_near(snapped_pt, 100.0, 500.0, 1e-4, "2-axis magnetic snap (Node X=100 + x-Height Y=500)");
-    assert!(!state.active_snappers.is_empty(), "Active magnetic snappers must be populated during drag");
-    assert!(state.active_snappers.len() <= 2, "SnapEngine caps active snappers at 2");
+    assert_pt_near(
+        snapped_pt,
+        100.0,
+        500.0,
+        1e-4,
+        "2-axis magnetic snap (Node X=100 + x-Height Y=500)",
+    );
+    assert!(
+        !state.active_snappers.is_empty(),
+        "Active magnetic snappers must be populated during drag"
+    );
+    assert!(
+        state.active_snappers.len() <= 2,
+        "SnapEngine caps active snappers at 2"
+    );
 
     // Drag near the vertical Local Guide at x = 400.0 (e.g., (397.5, 310.0))
     let near_guide_scr = state.viewport.to_screen(FontPoint::new(397.5, 310.0));
     pointer_move(&mut state, near_guide_scr, false, false, false, false);
     let snapped_guide_pt = state.find_node(NodeId(2)).unwrap().point;
-    assert!((snapped_guide_pt.x.0 - 400.0).abs() < 1e-4, "Must snap X to vertical guide at x=400.0");
+    assert!(
+        (snapped_guide_pt.x.0 - 400.0).abs() < 1e-4,
+        "Must snap X to vertical guide at x=400.0"
+    );
 
     // Releasing mouse clears active_snappers
     pointer_release(&mut state, near_guide_scr, false, false, false, false);
-    assert!(state.active_snappers.is_empty(), "Mouse release must clear active_snappers");
+    assert!(
+        state.active_snappers.is_empty(),
+        "Mouse release must clear active_snappers"
+    );
 
     // 4b. Italic-angle non-self-intersection: when `italic_angle_deg = 12.0`, dragging NodeId(2) to
     // `(100.0, 208.0)` (`8.0 UPM` vertically above NodeId(1) `(100.0, 200.0)`, outside its 5.0 UPM point radius)
@@ -435,7 +550,9 @@ fn test_tc_v030_004_magnetic_snap_engine_nodes_metrics_guides_and_intersection()
     let diag_gid = state.add_guide_from_selection(false, FontPoint::new(200.0, 200.0));
     state.set_guide_angle(diag_gid, 35.0);
     state.selected_guide = None;
-    let n2_start_scr = state.viewport.to_screen(state.find_node(NodeId(2)).unwrap().point);
+    let n2_start_scr = state
+        .viewport
+        .to_screen(state.find_node(NodeId(2)).unwrap().point);
     let near_knob_scr = state.viewport.to_screen(FontPoint::new(202.0, 202.0));
     pointer_press(&mut state, n2_start_scr, false, false, false, false);
     pointer_move(&mut state, near_knob_scr, false, false, false, false);
@@ -460,7 +577,7 @@ fn test_tc_v030_004_magnetic_snap_engine_nodes_metrics_guides_and_intersection()
 // ============================================================================
 #[test]
 fn test_tc_v030_005_control_key_bypasses_magnetic_snapper() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 1.0;
     state.viewport.pan_offset = ScreenPoint::new(200.0, 400.0);
 
@@ -479,12 +596,21 @@ fn test_tc_v030_005_control_key_bypasses_magnetic_snapper() {
     pointer_move(&mut state, raw_scr, false, false, false, true);
 
     let pt = state.find_node(NodeId(2)).unwrap().point;
-    assert_pt_near(pt, 102.0, 498.5, 1e-4, "Ctrl held must bypass magnetic snapping");
-    assert!(state.active_snappers.is_empty(), "Ctrl held must keep active_snappers empty");
+    assert_pt_near(
+        pt,
+        102.0,
+        498.5,
+        1e-4,
+        "Ctrl held must bypass magnetic snapping",
+    );
+    assert!(
+        state.active_snappers.is_empty(),
+        "Ctrl held must keep active_snappers empty"
+    );
     pointer_release(&mut state, raw_scr, false, false, false, true);
 
     // Also verify `PenTool` (`P`) magnetic snapping and `Ctrl` snap bypass (`SPEC-004 §1.2 & TC-V030-005`)
-    let mut pen_state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut pen_state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     pen_state.viewport.zoom = 1.0;
     pen_state.viewport.pan_offset = ScreenPoint::new(200.0, 400.0);
     pen_state.active_tool = grafia::CanvasTool::Pen;
@@ -501,7 +627,10 @@ fn test_tc_v030_005_control_key_bypasses_magnetic_snapper() {
         "PenTool point placement within snap tolerance must populate active_snappers"
     );
     pointer_release(&mut pen_state, pen_snap_scr, false, false, false, false);
-    let pen_contour = pen_state.contours.last().expect("PenTool must have created open contour");
+    let pen_contour = pen_state
+        .contours
+        .last()
+        .expect("PenTool must have created open contour");
     assert_pt_near(
         pen_contour.last().unwrap().point,
         100.0,
@@ -532,7 +661,7 @@ fn test_tc_v030_005_control_key_bypasses_magnetic_snapper() {
     );
     // 3. PenTool magnetic snapping to metrics & nodes even when `guides` and `global_guides` are EMPTY,
     // and subdivision grid rounding (`grid_step_upm = 50.0, grid_subdivisions = 5` -> `10.0 UPM` step).
-    let mut pen_no_guides = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut pen_no_guides = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     pen_no_guides.viewport.zoom = 1.0;
     pen_no_guides.viewport.pan_offset = ScreenPoint::new(200.0, 550.0);
     pen_no_guides.active_tool = grafia::CanvasTool::Pen;
@@ -542,9 +671,25 @@ fn test_tc_v030_005_control_key_bypasses_magnetic_snapper() {
     pen_no_guides.grid_subdivisions = 5; // effective_grid_step = 10.0 UPM
 
     // 3a. Click at (112.0, 211.0) (away from metrics/nodes) -> rounds to subdivision grid (110.0, 210.0), NOT main grid (100.0, 200.0)!
-    let pen_subgrid_scr = pen_no_guides.viewport.to_screen(FontPoint::new(112.0, 211.0));
-    pointer_press(&mut pen_no_guides, pen_subgrid_scr, false, false, false, false);
-    pointer_release(&mut pen_no_guides, pen_subgrid_scr, false, false, false, false);
+    let pen_subgrid_scr = pen_no_guides
+        .viewport
+        .to_screen(FontPoint::new(112.0, 211.0));
+    pointer_press(
+        &mut pen_no_guides,
+        pen_subgrid_scr,
+        false,
+        false,
+        false,
+        false,
+    );
+    pointer_release(
+        &mut pen_no_guides,
+        pen_subgrid_scr,
+        false,
+        false,
+        false,
+        false,
+    );
     assert_pt_near(
         pen_no_guides.contours.last().unwrap().last().unwrap().point,
         110.0,
@@ -554,13 +699,29 @@ fn test_tc_v030_005_control_key_bypasses_magnetic_snapper() {
     );
 
     // 3b. Click at (111.5, 498.5) with empty guides -> magnetically snaps to Node X = 110.0 and x-Height Y = 500.0!
-    let pen_metric_scr = pen_no_guides.viewport.to_screen(FontPoint::new(111.5, 498.5));
-    pointer_press(&mut pen_no_guides, pen_metric_scr, false, false, false, false);
+    let pen_metric_scr = pen_no_guides
+        .viewport
+        .to_screen(FontPoint::new(111.5, 498.5));
+    pointer_press(
+        &mut pen_no_guides,
+        pen_metric_scr,
+        false,
+        false,
+        false,
+        false,
+    );
     assert!(
         !pen_no_guides.active_snappers.is_empty(),
         "PenTool must magnetically snap to metrics and nodes even when guides are empty"
     );
-    pointer_release(&mut pen_no_guides, pen_metric_scr, false, false, false, false);
+    pointer_release(
+        &mut pen_no_guides,
+        pen_metric_scr,
+        false,
+        false,
+        false,
+        false,
+    );
     assert_pt_near(
         pen_no_guides.contours.last().unwrap().last().unwrap().point,
         110.0,
@@ -575,17 +736,23 @@ fn test_tc_v030_005_control_key_bypasses_magnetic_snapper() {
 // ============================================================================
 #[test]
 fn test_tc_v030_006_alignment_zone_bands_and_pass4_node_badges() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 1.0;
     state.viewport.pan_offset = ScreenPoint::new(200.0, 400.0);
 
     // Default metrics must include standard alignment zones (Cap Height 700/+16, x-Height 500/+16, Baseline 0/-16, Descender -200/-16)
     assert!(
-        state.metrics.alignment_zones.contains(&AlignmentZone { position: 500.0, size: 16.0 }),
+        state.metrics.alignment_zones.contains(&AlignmentZone {
+            position: 500.0,
+            size: 16.0
+        }),
         "Default metrics must include x-Height alignment zone (500, +16)"
     );
     assert!(
-        state.metrics.alignment_zones.contains(&AlignmentZone { position: 0.0, size: -16.0 }),
+        state.metrics.alignment_zones.contains(&AlignmentZone {
+            position: 0.0,
+            size: -16.0
+        }),
         "Default metrics must include Baseline alignment zone (0, -16)"
     );
 
@@ -667,7 +834,7 @@ fn test_tc_v030_006_alignment_zone_bands_and_pass4_node_badges() {
 // ============================================================================
 #[test]
 fn test_tc_v030_007_headless_rasterization_and_undo_redo_bit_exactness() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.load_preset_o();
     state.viewport.zoom = 0.75;
     state.viewport.pan_offset = ScreenPoint::new(160.0, 480.0);
@@ -702,8 +869,14 @@ fn test_tc_v030_007_headless_rasterization_and_undo_redo_bit_exactness() {
             saw_global_guide_red = true;
         }
     }
-    assert!(saw_local_guide_blue, "Headless rasterizer must render Local Guide blue pixels");
-    assert!(saw_global_guide_red, "Headless rasterizer must render Global Guide red pixels");
+    assert!(
+        saw_local_guide_blue,
+        "Headless rasterizer must render Local Guide blue pixels"
+    );
+    assert!(
+        saw_global_guide_red,
+        "Headless rasterizer must render Global Guide red pixels"
+    );
 
     // Verify `lock_guides = true` renders padlock shackle above padlock body in headless tiny_skia
     state.lock_guides = true;
@@ -724,7 +897,7 @@ fn test_tc_v030_007_headless_rasterization_and_undo_redo_bit_exactness() {
         let _ = img44.save(out_dir.join("frame_44_v030_local_global_and_measurement_guides.png"));
 
         // Build Frame 45 (Active Magnetic Snappers `#993333FF` + Modes 1..4 Alignment Badges on /n)
-        let mut state45 = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+        let mut state45 = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
         state45.load_preset_n();
         state45.viewport.zoom = 0.78;
         state45.viewport.pan_offset = ScreenPoint::new(150.0, 490.0);
@@ -746,7 +919,8 @@ fn test_tc_v030_007_headless_rasterization_and_undo_redo_bit_exactness() {
         ];
         let pixmap45 = rasterize_canvas_subregion(&state45, &state45.theme, 800, 600);
         let img45 = grafia::adapters::headless::pixmap_to_rgba_image(pixmap45);
-        let _ = img45.save(out_dir.join("frame_45_v030_magnetic_snapper_and_alignment_zone_badges.png"));
+        let _ = img45
+            .save(out_dir.join("frame_45_v030_magnetic_snapper_and_alignment_zone_badges.png"));
     }
 }
 
@@ -756,7 +930,7 @@ fn test_tc_v030_007_headless_rasterization_and_undo_redo_bit_exactness() {
 // ============================================================================
 #[test]
 fn test_tc_v030_008_canvas_grid_main_subdivisions_slope_and_zoom_thresholds() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.contours.clear();
     state.sync_paths_from_contours();
     state.show_metrics = false;
@@ -766,12 +940,22 @@ fn test_tc_v030_008_canvas_grid_main_subdivisions_slope_and_zoom_thresholds() {
     // 1. Verify exact empirical Reference Vector Grid Color Tokens (`ThemeColor` & `ThemeColor`)
     let c = &state.theme.edit_canvas;
     assert_eq!(
-        (c.grid_main_color.r, c.grid_main_color.g, c.grid_main_color.b, c.grid_main_color.a),
+        (
+            c.grid_main_color.r,
+            c.grid_main_color.g,
+            c.grid_main_color.b,
+            c.grid_main_color.a
+        ),
         (128, 115, 102, 102),
         "_GridMainColorDefault (0.5, 0.45, 0.4, 0.4) -> #80736666"
     );
     assert_eq!(
-        (c.grid_sub_color.r, c.grid_sub_color.g, c.grid_sub_color.b, c.grid_sub_color.a),
+        (
+            c.grid_sub_color.r,
+            c.grid_sub_color.g,
+            c.grid_sub_color.b,
+            c.grid_sub_color.a
+        ),
         (64, 89, 89, 64),
         "_GridSubColorDefault (0.25, 0.35, 0.35, 0.25) -> #40595940"
     );
@@ -868,14 +1052,17 @@ fn test_tc_v030_008_canvas_grid_main_subdivisions_slope_and_zoom_thresholds() {
         .iter()
         .filter(|px| px[0] != 255 || px[1] != 255 || px[2] != 255)
         .count();
-    assert_eq!(non_bg_hidden, 0, "show_grid = false must suppress all grid rendering");
+    assert_eq!(
+        non_bg_hidden, 0,
+        "show_grid = false must suppress all grid rendering"
+    );
 
     // Save Frame 46 (Canvas Grid Main + Subdivisions + Guides + Glyph /o)
     let out_dir = std::path::PathBuf::from(
         r"C:\Users\jhove\.gemini\antigravity-cli\brain\fccb9142-9217-4702-a2ca-95303b541ee0",
     );
     if out_dir.exists() {
-        let mut state46 = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+        let mut state46 = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
         state46.load_preset_o();
         state46.viewport.zoom = 0.78;
         state46.viewport.pan_offset = ScreenPoint::new(150.0, 490.0);
@@ -897,9 +1084,12 @@ fn test_tc_v030_009_appearance_mode_light_dark_system_and_dark_canvas_parity() {
     use grafia::AppearanceMode;
 
     // 1. Verify empirical Reference Vector Dark Mode tokens vs Light Mode tokens
-    let light = GlifoTheme::sonoma_default();
-    let dark = GlifoTheme::sonoma_dark();
-    assert!(!light.is_dark(), "sonoma_default must report is_dark() == false");
+    let light = GrafiaTheme::sonoma_default();
+    let dark = GrafiaTheme::sonoma_dark();
+    assert!(
+        !light.is_dark(),
+        "sonoma_default must report is_dark() == false"
+    );
     assert!(dark.is_dark(), "sonoma_dark must report is_dark() == true");
 
     // Canvas background: Light #FFFFFF vs Dark #1E1E1E (`NSColor::darkContentBackgroundColor` @ spec_ref)
@@ -950,27 +1140,27 @@ fn test_tc_v030_009_appearance_mode_light_dark_system_and_dark_canvas_parity() {
     );
 
     // 2. Verify 3-way `AppearanceMode::{Light, Dark, System}` resolution
-    assert!(!GlifoTheme::for_appearance(AppearanceMode::Light, false).is_dark());
+    assert!(!GrafiaTheme::for_appearance(AppearanceMode::Light, false).is_dark());
     assert!(
-        !GlifoTheme::for_appearance(AppearanceMode::Light, true).is_dark(),
+        !GrafiaTheme::for_appearance(AppearanceMode::Light, true).is_dark(),
         "Explicit AppearanceMode::Light must stay Light even when OS system_is_dark == true"
     );
     assert!(
-        GlifoTheme::for_appearance(AppearanceMode::Dark, false).is_dark(),
+        GrafiaTheme::for_appearance(AppearanceMode::Dark, false).is_dark(),
         "Explicit AppearanceMode::Dark must stay Dark even when OS system_is_dark == false"
     );
-    assert!(GlifoTheme::for_appearance(AppearanceMode::Dark, true).is_dark());
+    assert!(GrafiaTheme::for_appearance(AppearanceMode::Dark, true).is_dark());
     assert!(
-        !GlifoTheme::for_appearance(AppearanceMode::System, false).is_dark(),
+        !GrafiaTheme::for_appearance(AppearanceMode::System, false).is_dark(),
         "AppearanceMode::System must resolve to Light when OS system_is_dark == false"
     );
     assert!(
-        GlifoTheme::for_appearance(AppearanceMode::System, true).is_dark(),
+        GrafiaTheme::for_appearance(AppearanceMode::System, true).is_dark(),
         "AppearanceMode::System must resolve to Dark when OS system_is_dark == true"
     );
 
-    // 3. Verify `GlifoCanvasState` state transitions for `Light`, `Dark`, and `System`
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    // 3. Verify `GrafiaCanvasState` state transitions for `Light`, `Dark`, and `System`
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     assert_eq!(state.appearance_mode, AppearanceMode::Light);
     assert!(!state.theme.is_dark());
 
@@ -1008,16 +1198,16 @@ fn test_tc_v030_009_appearance_mode_light_dark_system_and_dark_canvas_parity() {
     );
     assert!(
         state.theme.is_dark(),
-        "load_glyph_archetype(GlyphArchetype::A) must preserve Dark GlifoTheme"
+        "load_glyph_archetype(GlyphArchetype::A) must preserve Dark GrafiaTheme"
     );
 
-    // 4. Verify `egui::Context` automatic synchronization & `GlifoCanvasWidget::from_state` / `new`
+    // 4. Verify `egui::Context` automatic synchronization & `GrafiaCanvasWidget::from_state` / `new`
     state.set_appearance_mode(AppearanceMode::System);
     let ctx = egui::Context::default();
     ctx.set_visuals(egui::Visuals::light());
     let mut out1 = ctx.run_ui(egui::RawInput::default(), |ui| {
         egui::CentralPanel::default().show(ui, |ui| {
-            grafia::GlifoCanvasWidget::from_state(&mut state).show(ui);
+            grafia::GrafiaCanvasWidget::from_state(&mut state).show(ui);
         });
     });
     out1.textures_delta.clear();
@@ -1029,7 +1219,7 @@ fn test_tc_v030_009_appearance_mode_light_dark_system_and_dark_canvas_parity() {
     ctx.set_visuals(egui::Visuals::dark());
     let mut out2 = ctx.run_ui(egui::RawInput::default(), |ui| {
         egui::CentralPanel::default().show(ui, |ui| {
-            grafia::GlifoCanvasWidget::from_state(&mut state).show(ui);
+            grafia::GrafiaCanvasWidget::from_state(&mut state).show(ui);
         });
     });
     out2.textures_delta.clear();
@@ -1038,13 +1228,13 @@ fn test_tc_v030_009_appearance_mode_light_dark_system_and_dark_canvas_parity() {
         "When AppearanceMode::System is active and egui Visuals::dark() is used, state.theme must sync to Dark"
     );
 
-    // Verify that when explicit `AppearanceMode::Dark` is set on `state`, `GlifoCanvasWidget::new(&mut state, &light)`
+    // Verify that when explicit `AppearanceMode::Dark` is set on `state`, `GrafiaCanvasWidget::new(&mut state, &light)`
     // still honors `state.theme` (Dark) AND emits the #1E1E1E canvas background rect into egui::Painter!
     ctx.set_visuals(egui::Visuals::light());
     state.set_appearance_mode(AppearanceMode::Dark);
     let mut out_explicit_dark = ctx.run_ui(egui::RawInput::default(), |ui| {
         egui::CentralPanel::default().show(ui, |ui| {
-            grafia::GlifoCanvasWidget::new(&mut state, &light).show(ui);
+            grafia::GrafiaCanvasWidget::new(&mut state, &light).show(ui);
         });
     });
     out_explicit_dark.textures_delta.clear();
@@ -1054,7 +1244,7 @@ fn test_tc_v030_009_appearance_mode_light_dark_system_and_dark_canvas_parity() {
     });
     assert!(
         has_dark_bg_rect,
-        "egui CanvasPainter in AppearanceMode::Dark must emit #1E1E1E canvas background rect even when caller passes &light to GlifoCanvasWidget::new"
+        "egui CanvasPainter in AppearanceMode::Dark must emit #1E1E1E canvas background rect even when caller passes &light to GrafiaCanvasWidget::new"
     );
 
     // Verify ShapeLocatorStyle::for_dark_mode(true) uses white-alpha context silhouette for dark sidebar contrast
@@ -1067,7 +1257,7 @@ fn test_tc_v030_009_appearance_mode_light_dark_system_and_dark_canvas_parity() {
     assert_eq!(loc_dark.context_color.to_srgba_unmultiplied()[0], 255);
 
     // 5. Verify Headless `tiny_skia` and `egui` Dark Mode rendering across all v0.1..v0.3 layers
-    let mut dark_state = GlifoCanvasState::new(GlifoTheme::sonoma_dark());
+    let mut dark_state = GrafiaCanvasState::new(GrafiaTheme::sonoma_dark());
     dark_state.load_preset_o();
     dark_state.viewport.zoom = 0.78;
     dark_state.viewport.pan_offset = ScreenPoint::new(420.0, 460.0);
@@ -1094,10 +1284,8 @@ fn test_tc_v030_009_appearance_mode_light_dark_system_and_dark_canvas_parity() {
         "Dark mode canvas background pixel must be #1E1E1E (30, 30, 30, 255)"
     );
 
-    let full_pix = grafia::adapters::headless::rasterize_full_window(
-        &dark_state,
-        &dark_state.theme,
-    );
+    let full_pix =
+        grafia::adapters::headless::rasterize_full_window(&dark_state, &dark_state.theme);
     // Verify that EVERY pixel in the left Sidebar (x in 10..240, y in 10..800) is pure #262626 (38, 38, 38)
     // with ZERO grid lines or infinite guide lines bleeding across the sidebar!
     for y in (10..800).step_by(5) {

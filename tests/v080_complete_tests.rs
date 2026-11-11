@@ -13,7 +13,7 @@ use grafia::adapters::headless::rasterize_canvas_subregion;
 use grafia::adapters::input_dispatcher::InputDispatcher;
 use grafia::{
     cubic_signed_curvature, AppearanceMode, CompanionMasterLayer, ContourId, FontPoint,
-    GlifoCanvasState, GlifoTheme, GlyphContour, MasterCompatibilityMode, Node, NodeId, NodeType,
+    GrafiaCanvasState, GrafiaTheme, GlyphContour, MasterCompatibilityMode, Node, NodeId, NodeType,
     OutlineAuditKind, TangentExtensionSnapKind, TUNNI_HIT_RADIUS_DP, TUNNI_MAX_RATIO,
     TUNNI_MIN_RATIO,
 };
@@ -42,7 +42,7 @@ fn make_tunni_arc_contour(h1_y: f64, h2_x: f64) -> GlyphContour {
     gc
 }
 
-fn set_layer_contours(state: &mut GlifoCanvasState, contours: Vec<GlyphContour>) {
+fn set_layer_contours(state: &mut GrafiaCanvasState, contours: Vec<GlyphContour>) {
     state.contours = contours.iter().map(|c| c.nodes.clone()).collect();
     state.active_contour_closed = contours.last().map_or(true, |c| c.closed);
     state.glyph.contours = contours;
@@ -50,7 +50,7 @@ fn set_layer_contours(state: &mut GlifoCanvasState, contours: Vec<GlyphContour>)
 }
 
 #[allow(clippy::too_many_arguments)]
-fn dispatch_key(state: &mut GlifoCanvasState, key: Key, shift: bool, alt: bool, cmd: bool, ctrl: bool) {
+fn dispatch_key(state: &mut GrafiaCanvasState, key: Key, shift: bool, alt: bool, cmd: bool, ctrl: bool) {
     let ctx = egui::Context::default();
     let m = EguiModifiers { alt, ctrl, shift, mac_cmd: cmd, command: cmd };
     let events = vec![Event::Key { key, physical_key: Some(key), pressed: true, repeat: false, modifiers: m }];
@@ -82,7 +82,7 @@ fn tc_v080_001_cubic_signed_curvature_quarter_circle_and_collinear() {
 // TC-V080-002, TC-V080-003 & TC-V080-004: Ctrl+Shift+H Romer/Henestrosa G2 Harmonize, handle-only harmonize & live G2 node.
 #[test]
 fn tc_v080_002_to_004_g2_harmonize_anchor_handles_and_live_genius_node() {
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     set_layer_contours(&mut state, vec![make_two_joined_cubics_contour(100.0, 25.0)]);
     state.selected_nodes = vec![NodeId(4)];
     dispatch_key(&mut state, Key::H, true, false, false, true);
@@ -115,7 +115,7 @@ fn tc_v080_005_to_007_tunni_lines_hit_test_clamp_and_balance(#[case] requested_r
     assert_relative_eq!(TUNNI_MAX_RATIO, 0.95, epsilon = 1e-4);
     assert_relative_eq!(TUNNI_HIT_RADIUS_DP, 6.0, epsilon = 1e-4);
 
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     set_layer_contours(&mut state, vec![make_tunni_arc_contour(60.0, 40.0)]);
     state.toggle_show_tunni_lines();
     let overlays = state.compute_tunni_overlays();
@@ -140,7 +140,7 @@ fn tc_v080_005_to_007_tunni_lines_hit_test_clamp_and_balance(#[case] requested_r
 // TC-V080-008, TC-V080-009, TC-V080-010 & TC-V080-011: Servo scaling, Neighbour Nudge (C), Undo/Redo & rendering.
 #[test]
 fn tc_v080_008_to_011_servo_scaling_power_nudge_undo_and_rendering() {
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     set_layer_contours(&mut state, vec![make_tunni_arc_contour(60.0, 40.0)]);
     let snap_0 = state.snapshot();
     state.servo_translate_on_curve_node(NodeId(10), FontPoint::new(-50.0, 0.0));
@@ -169,16 +169,16 @@ fn tc_v080_008_to_011_servo_scaling_power_nudge_undo_and_rendering() {
     state.set_node_genius(NodeId(4), true);
     state.show_tunni_lines = true;
     state.set_appearance_mode(AppearanceMode::Light);
-    let light_px = rasterize_canvas_subregion(&state, &GlifoTheme::sonoma_default(), 320, 180);
+    let light_px = rasterize_canvas_subregion(&state, &GrafiaTheme::sonoma_default(), 320, 180);
     state.set_appearance_mode(AppearanceMode::Dark);
-    let dark_px = rasterize_canvas_subregion(&state, &GlifoTheme::sonoma_dark(), 320, 180);
+    let dark_px = rasterize_canvas_subregion(&state, &GrafiaTheme::sonoma_dark(), 320, 180);
     assert_ne!(light_px.data(), dark_px.data());
 }
 
 // TC-V080-013: MasterCompatibilityMode::FullNodeTrajectories, trajectory crossing & smooth-node kink detector.
 #[test]
 fn tc_v080_013_master_full_trajectories_crossings_and_smooth_kink_detector() {
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     state.set_master_compatibility_mode(MasterCompatibilityMode::FullNodeTrajectories);
     set_layer_contours(&mut state, vec![make_two_joined_cubics_contour(100.0, 50.0)]);
     // Companion layer with rotated tangent angle (>1 deg) and unequal handle ratio (|r_A - r_B| > 0.05) at Smooth NodeId(4),
@@ -204,7 +204,7 @@ fn tc_v080_013_master_full_trajectories_crossings_and_smooth_kink_detector() {
 // TC-V080-014: Proactive Vector Outline Audit (MissingExtremum, QuasiOrthogonalStem, CrossedHandles, CollinearCubic).
 #[test]
 fn tc_v080_014_proactive_vector_outline_audit_four_defects() {
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     let missing_ext = GlyphContour::new(ContourId(0), vec![
         Node::new(NodeId(1), 0.0, 0.0, NodeType::Corner), Node::new(NodeId(2), 0.0, 160.0, NodeType::OffCurve),
         Node::new(NodeId(3), 100.0, 160.0, NodeType::OffCurve), Node::new(NodeId(4), 100.0, 20.0, NodeType::Corner),
@@ -244,7 +244,7 @@ fn tc_v080_014_proactive_vector_outline_audit_four_defects() {
 // TC-V080-015 & TC-V080-016: Off-axis handle warning, handle-ratio HUD, and diagonal tangent extension / virtual apex snap.
 #[test]
 fn tc_v080_015_and_016_angled_handle_hud_and_diagonal_virtual_apex_snap() {
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     // Quarter arc with P0=(0,0) Smooth, P1=(0,60), P2=(25,103) (tilted ~3 deg off horizontal at Smooth P3=(100,100)).
     let mut arc = make_tunni_arc_contour(60.0, 25.0);
     arc.nodes[0].node_type = NodeType::Smooth;
@@ -277,10 +277,72 @@ fn tc_v080_015_and_016_angled_handle_hud_and_diagonal_virtual_apex_snap() {
     assert_relative_eq!(ray_snap.snap_point.x.0, 150.0, epsilon = 1.0);
 }
 
+// TC-V080-017: Automatic cross-master contour order, winding & cyclic Node 0 matching (`auto_match_master_compatibility`).
+#[test]
+fn tc_v080_017_auto_match_master_compatibility_order_winding_and_cyclic_shift() {
+    let mut state = GrafiaCanvasState::init_glyph_a();
+    state.set_master_compatibility_mode(MasterCompatibilityMode::FullNodeTrajectories);
+
+    let ref_c0 = vec![
+        Node::new(NodeId(100), 0.0, 0.0, NodeType::Corner),
+        Node::new(NodeId(101), 0.0, 400.0, NodeType::Corner),
+        Node::new(NodeId(102), 200.0, 400.0, NodeType::Corner),
+        Node::new(NodeId(103), 200.0, 0.0, NodeType::Corner),
+    ];
+    let ref_c1 = vec![
+        Node::new(NodeId(200), 500.0, 100.0, NodeType::Corner),
+        Node::new(NodeId(201), 500.0, 300.0, NodeType::Corner),
+        Node::new(NodeId(202), 700.0, 300.0, NodeType::Corner),
+        Node::new(NodeId(203), 700.0, 100.0, NodeType::Corner),
+    ];
+    state.set_companion_master_layers(vec![CompanionMasterLayer {
+        id: 1,
+        name: "Bold".into(),
+        color_rgba: [220, 60, 80, 180],
+        contours: vec![ref_c0, ref_c1],
+        closed_flags: vec![true, true],
+        anchors: vec![],
+        editable: false,
+    }]);
+
+    // Foreground has contour 1 first (with Node 0 shifted by 2) and contour 0 second (with reversed winding).
+    let fg_first_shifted = GlyphContour::new(
+        ContourId(0),
+        vec![
+            Node::new(NodeId(1), 690.0, 310.0, NodeType::Corner),
+            Node::new(NodeId(2), 690.0, 90.0, NodeType::Corner),
+            Node::new(NodeId(3), 510.0, 90.0, NodeType::Corner),
+            Node::new(NodeId(4), 510.0, 310.0, NodeType::Corner),
+        ],
+    );
+    let fg_second_reversed = GlyphContour::new(
+        ContourId(1),
+        vec![
+            Node::new(NodeId(10), 0.0, 0.0, NodeType::Corner),
+            Node::new(NodeId(11), 210.0, 0.0, NodeType::Corner),
+            Node::new(NodeId(12), 210.0, 410.0, NodeType::Corner),
+            Node::new(NodeId(13), 0.0, 410.0, NodeType::Corner),
+        ],
+    );
+    set_layer_contours(&mut state, vec![fg_first_shifted, fg_second_reversed]);
+    let snap_before = state.snapshot();
+
+    assert!(state.auto_match_master_compatibility(1));
+    assert!(state.compute_master_kinks_and_crossings().crossings.is_empty());
+    assert_relative_eq!(state.glyph.contours[0].nodes[0].point.x.0, 0.0, epsilon = 1e-3);
+    assert_relative_eq!(state.glyph.contours[0].nodes[1].point.y.0, 410.0, epsilon = 1e-3);
+    assert_relative_eq!(state.glyph.contours[1].nodes[0].point.x.0, 510.0, epsilon = 1e-3);
+    assert_relative_eq!(state.glyph.contours[1].nodes[0].point.y.0, 90.0, epsilon = 1e-3);
+
+    let snap_after = state.snapshot();
+    assert!(state.undo() && state.snapshot() == snap_before);
+    assert!(state.redo() && state.snapshot() == snap_after);
+}
+
 proptest! {
     #[test]
     fn prop_v080_harmonize_equalizes_curvature(d_in in 20.0f64..160.0f64, d_out in 20.0f64..160.0f64) {
-        let mut state = GlifoCanvasState::init_glyph_a();
+        let mut state = GrafiaCanvasState::init_glyph_a();
         set_layer_contours(&mut state, vec![make_two_joined_cubics_contour(d_in, d_out)]);
         state.selected_nodes = vec![NodeId(4)];
         state.harmonize_selected_nodes();
@@ -295,7 +357,7 @@ proptest! {
 #[test]
 fn tc_v080_012_arbtest_stateful_genius_harmonize_tunni_servo_power_nudge() {
     arbtest(|u| {
-        let mut state = GlifoCanvasState::init_glyph_a();
+        let mut state = GrafiaCanvasState::init_glyph_a();
         set_layer_contours(&mut state, vec![make_two_joined_cubics_contour(90.0, 45.0)]);
         state.show_tunni_lines = true;
         for _ in 0..u.int_in_range(10..=20)? {

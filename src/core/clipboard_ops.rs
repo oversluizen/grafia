@@ -108,7 +108,10 @@ pub fn extract_clipboard_contours(
 }
 
 fn finalize_open_subpath(sub_path: &mut Vec<Node>, out: &mut Vec<ClipboardContour>) {
-    while sub_path.last().is_some_and(|n| n.node_type == NodeType::OffCurve) {
+    while sub_path
+        .last()
+        .is_some_and(|n| n.node_type == NodeType::OffCurve)
+    {
         sub_path.pop();
     }
     if let Some(first) = sub_path.first_mut() {
@@ -150,7 +153,9 @@ pub fn paste_clipboard_into_contours(
             let sel_on: Vec<usize> = contour
                 .iter()
                 .enumerate()
-                .filter(|(_, n)| n.node_type != NodeType::OffCurve && selected_nodes.contains(&n.id))
+                .filter(|(_, n)| {
+                    n.node_type != NodeType::OffCurve && selected_nodes.contains(&n.id)
+                })
                 .map(|(i, _)| i)
                 .collect();
             if !sel_on.is_empty() {
@@ -162,10 +167,9 @@ pub fn paste_clipboard_into_contours(
             let closed = closed_flags.get(c_idx).copied().unwrap_or(true);
             let mut working = contours[c_idx].clone();
             if closed {
-                if let Some(unsel_pos) = working
-                    .iter()
-                    .position(|n| n.node_type != NodeType::OffCurve && !selected_nodes.contains(&n.id))
-                {
+                if let Some(unsel_pos) = working.iter().position(|n| {
+                    n.node_type != NodeType::OffCurve && !selected_nodes.contains(&n.id)
+                }) {
                     working.rotate_left(unsel_pos);
                 }
             }
@@ -286,7 +290,12 @@ pub fn flatten_contour_points(
             crate::core::curve_manipulation::ContourSegment::Line { end_idx, .. } => {
                 path.line_to(unslanted(&contour[end_idx]));
             }
-            crate::core::curve_manipulation::ContourSegment::Cubic { h1_idx, h2_idx, end_idx, .. } => {
+            crate::core::curve_manipulation::ContourSegment::Cubic {
+                h1_idx,
+                h2_idx,
+                end_idx,
+                ..
+            } => {
                 path.curve_to(
                     unslanted(&contour[h1_idx]),
                     unslanted(&contour[h2_idx]),
@@ -299,9 +308,15 @@ pub fn flatten_contour_points(
         path.close_path();
     }
     let mut pts = Vec::new();
-    kurbo::flatten(path.iter(), crate::tokens::CURVE_FLATTEN_TOLERANCE, |el| match el {
-        kurbo::PathEl::MoveTo(p) | kurbo::PathEl::LineTo(p) => pts.push(FontPoint::new(p.x, p.y)),
-        _ => {}
-    });
+    kurbo::flatten(
+        path.iter(),
+        crate::tokens::CURVE_FLATTEN_TOLERANCE,
+        |el| match el {
+            kurbo::PathEl::MoveTo(p) | kurbo::PathEl::LineTo(p) => {
+                pts.push(FontPoint::new(p.x, p.y))
+            }
+            _ => {}
+        },
+    );
     pts
 }

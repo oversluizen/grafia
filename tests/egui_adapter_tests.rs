@@ -1,4 +1,4 @@
-//! Integration tests for `GlifoCanvasWidget` and `grafia::adapters` (STD-ARCH Verankeringswet).
+//! Integration tests for `GrafiaCanvasWidget` and `grafia::adapters` (STD-ARCH Verankeringswet).
 //!
 //! Tests:
 //! 1. Tool switching: `V` for SelectTool, `P` for PenTool.
@@ -10,29 +10,31 @@
 //! 6. View mode switching between `EditWireframe`, `PreviewFilled`, and `ShapeThumbnail`.
 
 use egui::{Context, Event, Key, Modifiers as EguiModifiers, PointerButton, Pos2, RawInput, Vec2};
-use grafia::adapters::{CanvasTool, CanvasViewMode, GlifoCanvasResponse, GlifoCanvasState, GlifoCanvasWidget};
+use grafia::adapters::{
+    CanvasTool, CanvasViewMode, GrafiaCanvasResponse, GrafiaCanvasState, GrafiaCanvasWidget,
+};
 use grafia::core::{FontPoint, NodeType};
-use grafia::tokens::GlifoTheme;
+use grafia::tokens::GrafiaTheme;
 
 fn run_canvas_frame(
     ctx: &Context,
-    state: &mut GlifoCanvasState,
-    theme: &GlifoTheme,
+    state: &mut GrafiaCanvasState,
+    theme: &GrafiaTheme,
     raw_input: RawInput,
-) -> GlifoCanvasResponse {
+) -> GrafiaCanvasResponse {
     let mut resp = None;
     let mut full_output = ctx.run_ui(raw_input, |ui| {
-        resp = Some(GlifoCanvasWidget::new(state, theme).show(ui));
+        resp = Some(GrafiaCanvasWidget::new(state, theme).show(ui));
     });
     full_output.textures_delta.clear();
-    resp.expect("GlifoCanvasWidget must return a response")
+    resp.expect("GrafiaCanvasWidget must return a response")
 }
 
 #[test]
 fn test_tool_switching_hotkeys_v_and_p() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
 
     assert_eq!(state.active_tool, CanvasTool::Select);
 
@@ -46,7 +48,11 @@ fn test_tool_switching_hotkeys_v_and_p() {
         modifiers: EguiModifiers::NONE,
     });
     let _ = run_canvas_frame(&ctx, &mut state, &theme, input);
-    assert_eq!(state.active_tool, CanvasTool::Pen, "P key must switch to Pen tool");
+    assert_eq!(
+        state.active_tool,
+        CanvasTool::Pen,
+        "P key must switch to Pen tool"
+    );
 
     // Press 'V' to switch back to Select tool
     let mut input = RawInput::default();
@@ -58,14 +64,18 @@ fn test_tool_switching_hotkeys_v_and_p() {
         modifiers: EguiModifiers::NONE,
     });
     let _ = run_canvas_frame(&ctx, &mut state, &theme, input);
-    assert_eq!(state.active_tool, CanvasTool::Select, "V key must switch to Select tool");
+    assert_eq!(
+        state.active_tool,
+        CanvasTool::Select,
+        "V key must switch to Select tool"
+    );
 }
 
 #[test]
 fn test_node_hit_testing_selection_and_drag_with_shift_snap() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
 
     // Verify initial node 0 position (outer contour start at font (30, 0))
     let first_node = &state.contours[0][0];
@@ -87,7 +97,11 @@ fn test_node_hit_testing_selection_and_drag_with_shift_snap() {
     });
     let _ = run_canvas_frame(&ctx, &mut state, &theme, input);
 
-    assert_eq!(state.selected_nodes, vec![node_id], "Clicking node must select it");
+    assert_eq!(
+        state.selected_nodes,
+        vec![node_id],
+        "Clicking node must select it"
+    );
 
     // 2. Drag the node with mouse move
     // Drag towards arbitrary angle (e.g. delta (+60, -35) px)
@@ -103,9 +117,11 @@ fn test_node_hit_testing_selection_and_drag_with_shift_snap() {
     );
 
     // 3. Drag with Shift held: displacement must be snapped to 45° angle increments
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     state.selected_nodes = vec![node_id];
-    let start_screen = state.viewport.to_screen(state.find_node(node_id).unwrap().point);
+    let start_screen = state
+        .viewport
+        .to_screen(state.find_node(node_id).unwrap().point);
     let start_pos = Pos2::new(start_screen.x.0, start_screen.y.0);
 
     // Move to 30 degrees direction (e.g. dx = 86.6, dy = -50.0).
@@ -160,8 +176,8 @@ fn test_node_hit_testing_selection_and_drag_with_shift_snap() {
 #[test]
 fn test_option_click_toggles_smooth_corner_node_type() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
 
     let node_id = state.contours[0][0].id;
     assert_eq!(
@@ -170,7 +186,9 @@ fn test_option_click_toggles_smooth_corner_node_type() {
         "Initial node must be Corner"
     );
 
-    let screen_pt = state.viewport.to_screen(state.find_node(node_id).unwrap().point);
+    let screen_pt = state
+        .viewport
+        .to_screen(state.find_node(node_id).unwrap().point);
     let click_pos = Pos2::new(screen_pt.x.0, screen_pt.y.0);
 
     // Option-click on the node
@@ -213,8 +231,8 @@ fn test_option_click_toggles_smooth_corner_node_type() {
 #[test]
 fn test_marquee_drag_selection_selects_intersecting_nodes() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
 
     // Verify initial selection is empty
     assert!(state.selected_nodes.is_empty());
@@ -280,8 +298,8 @@ fn test_marquee_drag_selection_selects_intersecting_nodes() {
 #[test]
 fn test_pen_tool_adds_node_and_drags_symmetric_handles() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::new(theme.clone());
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::new(theme.clone());
     state.active_tool = CanvasTool::Pen;
 
     let _initial_contour_count = state.contours.len();
@@ -347,8 +365,8 @@ fn test_pen_tool_adds_node_and_drags_symmetric_handles() {
 #[test]
 fn test_view_mode_switching() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
 
     assert_eq!(state.view_mode, CanvasViewMode::EditWireframe);
 
@@ -369,9 +387,9 @@ fn test_view_mode_switching() {
 }
 
 #[test]
-fn test_glifo_canvas_widget_zero_repaint_leak_at_rest() {
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+fn test_grafia_canvas_widget_zero_repaint_leak_at_rest() {
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
 
     for mode in [
         CanvasViewMode::EditWireframe,
@@ -386,7 +404,7 @@ fn test_glifo_canvas_widget_zero_repaint_leak_at_rest() {
                 ..Default::default()
             };
             let mut out = ctx.run_ui(input, |ui| {
-                let _ = GlifoCanvasWidget::new(&mut state, &theme).show(ui);
+                let _ = GrafiaCanvasWidget::new(&mut state, &theme).show(ui);
             });
             out.textures_delta.clear();
             out.viewport_output[&egui::ViewportId::ROOT].repaint_delay
@@ -398,7 +416,7 @@ fn test_glifo_canvas_widget_zero_repaint_leak_at_rest() {
         let repaint_delay = run_idle_frame(1.032);
         assert!(
             !repaint_delay.is_zero(),
-            "GlifoCanvasWidget in {mode:?} at rest must NOT trigger a 0ns repaint loop (got {repaint_delay:?})"
+            "GrafiaCanvasWidget in {mode:?} at rest must NOT trigger a 0ns repaint loop (got {repaint_delay:?})"
         );
     }
 }
@@ -410,10 +428,10 @@ fn test_glifo_canvas_widget_zero_repaint_leak_at_rest() {
 #[test]
 fn test_adversarial_view_modes_empty_and_degenerate_canvas() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
+    let theme = GrafiaTheme::sonoma_default();
 
     // 1. Completely empty canvas (zero contours, zero paths, zero nodes)
-    let mut empty_state = GlifoCanvasState::new(theme.clone());
+    let mut empty_state = GrafiaCanvasState::new(theme.clone());
     assert!(empty_state.contours.is_empty());
     assert!(empty_state.paths.is_empty());
 
@@ -424,16 +442,24 @@ fn test_adversarial_view_modes_empty_and_degenerate_canvas() {
     ] {
         empty_state.view_mode = mode;
         let resp = run_canvas_frame(&ctx, &mut empty_state, &theme, RawInput::default());
-        assert_eq!(resp.view_mode, mode, "Empty canvas must render in mode {mode:?} without panics");
+        assert_eq!(
+            resp.view_mode, mode,
+            "Empty canvas must render in mode {mode:?} without panics"
+        );
     }
 
     // 2. Degenerate contours: zero-node, single-node, two-node open, and coincident points
-    let mut degen_state = GlifoCanvasState::new(theme.clone());
+    let mut degen_state = GrafiaCanvasState::new(theme.clone());
     degen_state.contours = vec![
         // Contour 0: empty
         vec![],
         // Contour 1: single node
-        vec![grafia::core::Node::new(grafia::core::NodeId(101), 100.0, 100.0, NodeType::Corner)],
+        vec![grafia::core::Node::new(
+            grafia::core::NodeId(101),
+            100.0,
+            100.0,
+            NodeType::Corner,
+        )],
         // Contour 2: two-node open segment
         vec![
             grafia::core::Node::new(grafia::core::NodeId(102), 200.0, 200.0, NodeType::Smooth),
@@ -455,15 +481,18 @@ fn test_adversarial_view_modes_empty_and_degenerate_canvas() {
     ] {
         degen_state.view_mode = mode;
         let resp = run_canvas_frame(&ctx, &mut degen_state, &theme, RawInput::default());
-        assert_eq!(resp.view_mode, mode, "Degenerate contours must render in mode {mode:?} without panics");
+        assert_eq!(
+            resp.view_mode, mode,
+            "Degenerate contours must render in mode {mode:?} without panics"
+        );
     }
 }
 
 #[test]
 fn test_adversarial_extreme_zoom_and_pan_projections() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
 
     // Test zoom levels down to normative MIN_VIEWPORT_ZOOM (0.01) up to extreme zoom (100.0)
     let zoom_levels = [
@@ -523,14 +552,17 @@ fn test_adversarial_extreme_zoom_and_pan_projections() {
     ] {
         state.view_mode = mode;
         let resp = run_canvas_frame(&ctx, &mut state, &theme, RawInput::default());
-        assert_eq!(resp.view_mode, mode, "Rendering under extreme underflow zoom must never panic");
+        assert_eq!(
+            resp.view_mode, mode,
+            "Rendering under extreme underflow zoom must never panic"
+        );
     }
 }
 
 #[test]
 fn test_adversarial_kurbo_bezier_curve_flattening_and_thumbnail_projections() {
     use kurbo::{flatten, BezPath, Shape};
-    let theme = GlifoTheme::sonoma_default();
+    let theme = GrafiaTheme::sonoma_default();
 
     // 1. Stress-test kurbo BezPath curve flattening on diverse curves
     let mut path = BezPath::new();
@@ -566,7 +598,10 @@ fn test_adversarial_kurbo_bezier_curve_flattening_and_thumbnail_projections() {
         },
     );
 
-    assert!(!flattened_points.is_empty(), "Flattened points must not be empty");
+    assert!(
+        !flattened_points.is_empty(),
+        "Flattened points must not be empty"
+    );
     assert!(
         flattened_points.len() < 100_000,
         "Flattening must not cause memory explosion: got {} points",
@@ -574,7 +609,10 @@ fn test_adversarial_kurbo_bezier_curve_flattening_and_thumbnail_projections() {
     );
 
     for p in &flattened_points {
-        assert!(p.x.is_finite() && p.y.is_finite(), "Flattened points must all be finite");
+        assert!(
+            p.x.is_finite() && p.y.is_finite(),
+            "Flattened points must all be finite"
+        );
     }
 
     // 2. ShapeThumbnailProjection stress on edge-case paths
@@ -593,12 +631,8 @@ fn test_adversarial_kurbo_bezier_curve_flattening_and_thumbnail_projections() {
     // Case B: Single point MoveTo
     let mut single_pt = BezPath::new();
     single_pt.move_to((250.0, 250.0));
-    let single_thumb = grafia::render::ShapeThumbnailProjection::compute(
-        &single_pt,
-        &theme.shape_canvas,
-        1,
-        true,
-    );
+    let single_thumb =
+        grafia::render::ShapeThumbnailProjection::compute(&single_pt, &theme.shape_canvas, 1, true);
     assert!(single_thumb.scale.is_finite());
     assert!(single_thumb.offset_x.is_finite());
     assert!(single_thumb.offset_y.is_finite());
@@ -635,8 +669,8 @@ fn test_adversarial_kurbo_bezier_curve_flattening_and_thumbnail_projections() {
 
 #[test]
 fn test_adversarial_hit_testing_boundary_alignment_with_projections() {
-    let theme = GlifoTheme::sonoma_default();
-    let state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let state = GrafiaCanvasState::init_glyph_a();
 
     // Node 0 of contour 0 (Corner node at (30.0, 0.0))
     let node_id = state.contours[0][0].id;
@@ -733,8 +767,14 @@ fn test_adversarial_hit_testing_boundary_alignment_with_projections() {
         &theme.edit_canvas,
     );
     // Document exact metric: OffCurve projected bounds is 7x7 dp
-    assert_eq!(offcurve_proj.bounds.width(), theme.edit_canvas.node_size_dp as f64);
-    assert_eq!(offcurve_proj.bounds.height(), theme.edit_canvas.node_size_dp as f64);
+    assert_eq!(
+        offcurve_proj.bounds.width(),
+        theme.edit_canvas.node_size_dp as f64
+    );
+    assert_eq!(
+        offcurve_proj.bounds.height(),
+        theme.edit_canvas.node_size_dp as f64
+    );
 }
 
 fn point_in_triangle_2d(p: Pos2, a: Pos2, b: Pos2, c: Pos2) -> bool {
@@ -768,12 +808,12 @@ fn test_egui_canvas_painter_and_headless_v010_visual_affordance_parity() {
     use grafia::render::{compute_open_contour_endpoint_ticks, compute_start_node_arrow_triangle};
 
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
+    let theme = GrafiaTheme::sonoma_default();
 
     // =========================================================================
     // 1. PreviewFilled Non-Zero Winding Shape::Mesh & Headless Parity
     // =========================================================================
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     state.view_mode = CanvasViewMode::PreviewFilled;
 
     let hole_font = FontPoint::new(300.0, 320.0);
@@ -783,7 +823,7 @@ fn test_egui_canvas_painter_and_headless_v010_visual_affordance_parity() {
     let hy = hole_scr.y.0.round() as u32;
 
     let mut out_initial = ctx.run_ui(RawInput::default(), |ui| {
-        let _ = GlifoCanvasWidget::new(&mut state, &theme).show(ui);
+        let _ = GrafiaCanvasWidget::new(&mut state, &theme).show(ui);
     });
     out_initial.textures_delta.clear();
 
@@ -832,7 +872,7 @@ fn test_egui_canvas_painter_and_headless_v010_visual_affordance_parity() {
     assert!(state.reverse_selected_or_all_contours());
 
     let mut out_reversed = ctx.run_ui(RawInput::default(), |ui| {
-        let _ = GlifoCanvasWidget::new(&mut state, &theme).show(ui);
+        let _ = GrafiaCanvasWidget::new(&mut state, &theme).show(ui);
     });
     out_reversed.textures_delta.clear();
 
@@ -845,7 +885,9 @@ fn test_egui_canvas_painter_and_headless_v010_visual_affordance_parity() {
         })
         .expect("PreviewFilled after reverse must emit Shape::Mesh");
     let pix_reversed = rasterize_canvas_subregion(&state, &theme, 900, 700);
-    let p_hole_rev = pix_reversed.pixel(hx, hy).expect("hole pixel inside bounds");
+    let p_hole_rev = pix_reversed
+        .pixel(hx, hy)
+        .expect("hole pixel inside bounds");
 
     assert!(
         mesh_covers_point(mesh_reversed, hole_pos),
@@ -859,7 +901,7 @@ fn test_egui_canvas_painter_and_headless_v010_visual_affordance_parity() {
 
     // Self-intersecting figure-8 cubic contour in PreviewFilled: both lobes (winding +1 and -1)
     // must be filled identically by lyon FillRule::NonZero and tiny-skia FillRule::Winding.
-    let mut fig8_state = GlifoCanvasState::new(theme.clone());
+    let mut fig8_state = GrafiaCanvasState::new(theme.clone());
     fig8_state.viewport.pan_offset = grafia::core::ScreenPoint::new(0.0, 600.0);
     fig8_state.view_mode = CanvasViewMode::PreviewFilled;
     fig8_state.contours = vec![vec![
@@ -871,7 +913,7 @@ fn test_egui_canvas_painter_and_headless_v010_visual_affordance_parity() {
     fig8_state.set_contour_closed(0, true);
     fig8_state.sync_paths_from_contours();
     let mut out_fig8 = ctx.run_ui(RawInput::default(), |ui| {
-        let _ = GlifoCanvasWidget::new(&mut fig8_state, &theme).show(ui);
+        let _ = GrafiaCanvasWidget::new(&mut fig8_state, &theme).show(ui);
     });
     out_fig8.textures_delta.clear();
     let mesh_fig8 = out_fig8
@@ -902,7 +944,7 @@ fn test_egui_canvas_painter_and_headless_v010_visual_affordance_parity() {
     // =========================================================================
     // 2. EditWireframe Start-Node Direction Arrow (Flip on Reverse, Move on Make Node First)
     // =========================================================================
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     state.view_mode = CanvasViewMode::EditWireframe;
     let arrow_color = theme.start_node_arrow_color32();
 
@@ -911,7 +953,7 @@ fn test_egui_canvas_painter_and_headless_v010_visual_affordance_parity() {
             .expect("Contour 0 must have start arrow triangle");
 
     let mut out_wf0 = ctx.run_ui(RawInput::default(), |ui| {
-        let _ = GlifoCanvasWidget::new(&mut state, &theme).show(ui);
+        let _ = GrafiaCanvasWidget::new(&mut state, &theme).show(ui);
     });
     out_wf0.textures_delta.clear();
     let pix_wf0 = rasterize_canvas_subregion(&state, &theme, 900, 700);
@@ -920,9 +962,7 @@ fn test_egui_canvas_painter_and_headless_v010_visual_affordance_parity() {
         shapes
             .iter()
             .filter_map(|cs| match &cs.shape {
-                Shape::Path(poly)
-                    if poly.fill == arrow_color && poly.points.len() == 3 =>
-                {
+                Shape::Path(poly) if poly.fill == arrow_color && poly.points.len() == 3 => {
                     Some([poly.points[0], poly.points[1], poly.points[2]])
                 }
                 _ => None,
@@ -946,7 +986,10 @@ fn test_egui_canvas_painter_and_headless_v010_visual_affordance_parity() {
         (expected_tri_0[0].y.0 + expected_tri_0[1].y.0 + expected_tri_0[2].y.0) / 3.0,
     );
     let p_arrow_init = pix_wf0
-        .pixel(centroid_init.x.round() as u32, centroid_init.y.round() as u32)
+        .pixel(
+            centroid_init.x.round() as u32,
+            centroid_init.y.round() as u32,
+        )
         .expect("arrow centroid inside pixmap");
     assert!(
         p_arrow_init.blue() > 180 && p_arrow_init.red() < 50,
@@ -957,7 +1000,7 @@ fn test_egui_canvas_painter_and_headless_v010_visual_affordance_parity() {
     state.selected_nodes = vec![state.contours[0][0].id];
     assert!(state.reverse_selected_or_all_contours());
     let mut out_wf_rev = ctx.run_ui(RawInput::default(), |ui| {
-        let _ = GlifoCanvasWidget::new(&mut state, &theme).show(ui);
+        let _ = GrafiaCanvasWidget::new(&mut state, &theme).show(ui);
     });
     out_wf_rev.textures_delta.clear();
     let pix_wf_rev = rasterize_canvas_subregion(&state, &theme, 900, 700);
@@ -983,7 +1026,7 @@ fn test_egui_canvas_painter_and_headless_v010_visual_affordance_parity() {
     state.selected_nodes = vec![new_first_id];
     assert!(state.make_selected_node_first());
     let mut out_wf_first = ctx.run_ui(RawInput::default(), |ui| {
-        let _ = GlifoCanvasWidget::new(&mut state, &theme).show(ui);
+        let _ = GrafiaCanvasWidget::new(&mut state, &theme).show(ui);
     });
     out_wf_first.textures_delta.clear();
     let pix_wf_first = rasterize_canvas_subregion(&state, &theme, 900, 700);
@@ -993,10 +1036,7 @@ fn test_egui_canvas_painter_and_headless_v010_visual_affordance_parity() {
             .expect("Contour 0 must have start arrow at new first node");
     assert!(
         (arrows_new_first[0][0]
-            - Pos2::new(
-                expected_tri_new_first[0].x.0,
-                expected_tri_new_first[0].y.0
-            ))
+            - Pos2::new(expected_tri_new_first[0].x.0, expected_tri_new_first[0].y.0))
         .length()
             < 1e-3,
         "Make Node First must move the emitted start-node arrow to the new first node"
@@ -1006,11 +1046,20 @@ fn test_egui_canvas_painter_and_headless_v010_visual_affordance_parity() {
         "Start-node arrow must relocate across the glyph to the new start node"
     );
     let centroid_new_first = Pos2::new(
-        (expected_tri_new_first[0].x.0 + expected_tri_new_first[1].x.0 + expected_tri_new_first[2].x.0) / 3.0,
-        (expected_tri_new_first[0].y.0 + expected_tri_new_first[1].y.0 + expected_tri_new_first[2].y.0) / 3.0,
+        (expected_tri_new_first[0].x.0
+            + expected_tri_new_first[1].x.0
+            + expected_tri_new_first[2].x.0)
+            / 3.0,
+        (expected_tri_new_first[0].y.0
+            + expected_tri_new_first[1].y.0
+            + expected_tri_new_first[2].y.0)
+            / 3.0,
     );
     let p_arrow_new_first = pix_wf_first
-        .pixel(centroid_new_first.x.round() as u32, centroid_new_first.y.round() as u32)
+        .pixel(
+            centroid_new_first.x.round() as u32,
+            centroid_new_first.y.round() as u32,
+        )
         .expect("new first arrow centroid inside pixmap");
     assert!(
         p_arrow_new_first.blue() > 180 && p_arrow_new_first.red() < 50,
@@ -1033,14 +1082,18 @@ fn test_egui_canvas_painter_and_headless_v010_visual_affordance_parity() {
         },
     });
     let mut out_open = ctx.run_ui(shift_del_input, |ui| {
-        let _ = GlifoCanvasWidget::new(&mut state, &theme).show(ui);
+        let _ = GrafiaCanvasWidget::new(&mut state, &theme).show(ui);
     });
     out_open.textures_delta.clear();
     assert!(!state.is_contour_closed(0));
     let pix_open = rasterize_canvas_subregion(&state, &theme, 900, 700);
 
     let expected_ticks = compute_open_contour_endpoint_ticks(&state.contours[0], &state.viewport);
-    assert_eq!(expected_ticks.len(), 2, "Open contour must have 2 endpoint ticks");
+    assert_eq!(
+        expected_ticks.len(),
+        2,
+        "Open contour must have 2 endpoint ticks"
+    );
 
     let tick_color = theme.open_endpoint_color32();
     for (pa, pb) in &expected_ticks {
@@ -1072,7 +1125,7 @@ fn test_egui_canvas_painter_and_headless_v010_visual_affordance_parity() {
     // =========================================================================
     // 4. Single-Point Open Contour Cross 'X' (2 Diagonal Line Segments)
     // =========================================================================
-    let mut single_state = GlifoCanvasState::new(theme.clone());
+    let mut single_state = GrafiaCanvasState::new(theme.clone());
     single_state.viewport.pan_offset = grafia::core::ScreenPoint::new(0.0, 600.0);
     single_state.contours = vec![vec![grafia::core::Node::new(
         grafia::core::NodeId(1),
@@ -1085,12 +1138,14 @@ fn test_egui_canvas_painter_and_headless_v010_visual_affordance_parity() {
     single_state.sync_paths_from_contours();
 
     let mut out_single = ctx.run_ui(RawInput::default(), |ui| {
-        let _ = GlifoCanvasWidget::new(&mut single_state, &theme).show(ui);
+        let _ = GrafiaCanvasWidget::new(&mut single_state, &theme).show(ui);
     });
     out_single.textures_delta.clear();
     let pix_single = rasterize_canvas_subregion(&single_state, &theme, 900, 700);
 
-    let center_scr = single_state.viewport.to_screen(FontPoint::new(250.0, 300.0));
+    let center_scr = single_state
+        .viewport
+        .to_screen(FontPoint::new(250.0, 300.0));
     let half = theme.edit_canvas.node_size_dp * 0.5;
     let node_rect = egui::Rect::from_min_max(
         Pos2::new(center_scr.x.0 - half, center_scr.y.0 - half),
@@ -1121,15 +1176,18 @@ fn test_egui_canvas_painter_and_headless_v010_visual_affordance_parity() {
         .pixel(center_scr.x.0.round() as u32, center_scr.y.0.round() as u32)
         .expect("single-point cross center inside pixmap");
     assert!(
-        (p_single_center.red(), p_single_center.green(), p_single_center.blue())
-            != (bg_c.r(), bg_c.g(), bg_c.b()),
+        (
+            p_single_center.red(),
+            p_single_center.green(),
+            p_single_center.blue()
+        ) != (bg_c.r(), bg_c.g(), bg_c.b()),
         "Single-point open contour 'X' intersection center must be rendered in headless.rs"
     );
 
     // =========================================================================
     // 5. PenTool Hover Ghost-Node Circle when hovered_segment_hit.is_some()
     // =========================================================================
-    let mut pen_state = GlifoCanvasState::init_glyph_a();
+    let mut pen_state = GrafiaCanvasState::init_glyph_a();
     pen_state.active_tool = CanvasTool::Pen;
     let ghost_font = FontPoint::new(350.0, 700.0);
     let seg0 = grafia::core::extract_segments(&pen_state.contours[0], true)[1];
@@ -1142,7 +1200,7 @@ fn test_egui_canvas_painter_and_headless_v010_visual_affordance_parity() {
     });
 
     let mut out_ghost = ctx.run_ui(RawInput::default(), |ui| {
-        let _ = GlifoCanvasWidget::new(&mut pen_state, &theme).show(ui);
+        let _ = GrafiaCanvasWidget::new(&mut pen_state, &theme).show(ui);
     });
     out_ghost.textures_delta.clear();
     let pix_ghost = rasterize_canvas_subregion(&pen_state, &theme, 900, 700);
@@ -1185,8 +1243,8 @@ fn test_egui_canvas_painter_and_headless_v010_visual_affordance_parity() {
 #[test]
 fn test_v010_canvas_demo_full_ui_and_epaint_tessellation_no_panic() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
 
     for arch in grafia::tokens::GlyphArchetype::all() {
         state.load_glyph_archetype(arch);
@@ -1206,7 +1264,7 @@ fn test_v010_canvas_demo_full_ui_and_epaint_tessellation_no_panic() {
             let mut full_output = ctx.run_ui(raw_input, |ui| {
                 egui::Panel::top("top_toolbar").show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        ui.heading("glifo");
+                        ui.heading("grafia");
                         ui.add(egui::Separator::default().vertical());
                     });
                 });
@@ -1232,8 +1290,7 @@ fn test_v010_canvas_demo_full_ui_and_epaint_tessellation_no_panic() {
                 });
                 egui::CentralPanel::default().show(ui, |ui| {
                     let canvas_size = ui.available_size();
-                    let widget =
-                        GlifoCanvasWidget::new(&mut state, &theme).with_size(canvas_size);
+                    let widget = GrafiaCanvasWidget::new(&mut state, &theme).with_size(canvas_size);
                     widget.show(ui);
                 });
             });
@@ -1251,9 +1308,9 @@ fn test_v010_canvas_demo_full_ui_and_epaint_tessellation_no_panic() {
 
 #[test]
 fn test_open_contour_after_shift_delete_not_filled_in_preview_mode() {
-    let mut state = GlifoCanvasState::init_glyph_o();
+    let mut state = GrafiaCanvasState::init_glyph_o();
     state.fit_viewport_to_glyph(640.0, 480.0);
-    let theme = GlifoTheme::sonoma_default();
+    let theme = GrafiaTheme::sonoma_default();
 
     // Select the right-most Smooth OnCurve node (510, 250) on outer contour 0 of /o
     let right_node_id = state.contours[0]
@@ -1339,7 +1396,7 @@ fn test_open_contour_after_shift_delete_not_filled_in_preview_mode() {
     let inner_left_scr_x = state.viewport.to_screen(FontPoint::new(140.0, 250.0)).x.0;
     let ctx = Context::default();
     let mut out = ctx.run_ui(RawInput::default(), |ui| {
-        let _ = GlifoCanvasWidget::new(&mut state, &theme)
+        let _ = GrafiaCanvasWidget::new(&mut state, &theme)
             .with_size(Vec2::new(640.0, 480.0))
             .show(ui);
     });
@@ -1358,14 +1415,17 @@ fn test_open_contour_after_shift_delete_not_filled_in_preview_mode() {
             }
         }
     }
-    assert_eq!(mesh_count, 1, "Exactly 1 filled mesh for closed inner contour 1");
+    assert_eq!(
+        mesh_count, 1,
+        "Exactly 1 filled mesh for closed inner contour 1"
+    );
 }
 
 #[test]
 fn test_open_contour_in_shape_thumbnail_mode_renders_unclosed_stroked_path() {
-    let mut state = GlifoCanvasState::init_glyph_o();
+    let mut state = GrafiaCanvasState::init_glyph_o();
     state.fit_viewport_to_glyph(640.0, 480.0);
-    let theme = GlifoTheme::sonoma_default();
+    let theme = GrafiaTheme::sonoma_default();
 
     let right_node_id = state.contours[0]
         .iter()
@@ -1401,7 +1461,7 @@ fn test_open_contour_in_shape_thumbnail_mode_renders_unclosed_stroked_path() {
     // 1. Verify egui CanvasPainter emits closed: false and fill: TRANSPARENT for open contour 0
     let ctx = Context::default();
     let mut out = ctx.run_ui(RawInput::default(), |ui| {
-        let _ = GlifoCanvasWidget::new(&mut state, &theme)
+        let _ = GrafiaCanvasWidget::new(&mut state, &theme)
             .with_size(Vec2::new(640.0, 480.0))
             .show(ui);
     });
@@ -1467,12 +1527,12 @@ fn test_open_contour_in_shape_thumbnail_mode_renders_unclosed_stroked_path() {
 
 #[test]
 fn test_deleting_all_nodes_of_contour_0_preserves_contour_1_in_wireframe_and_preview() {
-    let theme = GlifoTheme::sonoma_default();
+    let theme = GrafiaTheme::sonoma_default();
     let canvas_rect = egui::Rect::from_min_size(Pos2::ZERO, Vec2::new(640.0, 480.0));
     let ctx = Context::default();
 
     for shift_held in [false, true] {
-        let mut state = GlifoCanvasState::init_glyph_o();
+        let mut state = GrafiaCanvasState::init_glyph_o();
         state.fit_viewport_to_glyph(640.0, 480.0);
 
         // Select all 12 nodes of outer contour 0
@@ -1521,7 +1581,7 @@ fn test_deleting_all_nodes_of_contour_0_preserves_contour_1_in_wireframe_and_pre
         // Check EditWireframe mode renders the surviving contour's closed curve
         state.view_mode = CanvasViewMode::EditWireframe;
         let mut out_wf = ctx.run_ui(RawInput::default(), |ui| {
-            let _ = GlifoCanvasWidget::new(&mut state, &theme)
+            let _ = GrafiaCanvasWidget::new(&mut state, &theme)
                 .with_size(Vec2::new(640.0, 480.0))
                 .show(ui);
         });
@@ -1542,10 +1602,7 @@ fn test_deleting_all_nodes_of_contour_0_preserves_contour_1_in_wireframe_and_pre
         let center_scr = state.viewport.to_screen(FontPoint::new(280.0, 250.0));
         let fill_col = theme.preview_canvas.fill_color32();
         let px = pixmap
-            .pixel(
-                center_scr.x.0.round() as u32,
-                center_scr.y.0.round() as u32,
-            )
+            .pixel(center_scr.x.0.round() as u32, center_scr.y.0.round() as u32)
             .expect("center pixel in bounds");
         assert_eq!(
             (px.red(), px.green(), px.blue()),
@@ -1560,7 +1617,7 @@ fn test_compound_multi_contour_delete_preserves_open_contour_role_and_single_poi
     let canvas_rect = egui::Rect::from_min_size(Pos2::ZERO, Vec2::new(640.0, 480.0));
 
     // 1. Compound Shift+Delete: cut contour 0 open (1 node selected) AND delete all 12 nodes of contour 1 simultaneously
-    let mut state = GlifoCanvasState::init_glyph_o();
+    let mut state = GrafiaCanvasState::init_glyph_o();
     state.glyph.contours[0].role = grafia::core::ShapeBooleanRole::Mask;
     let c0_right_id = state.contours[0]
         .iter()
@@ -1639,9 +1696,12 @@ fn test_compound_multi_contour_delete_preserves_open_contour_role_and_single_poi
     assert!(!state.is_contour_closed(0));
 
     // 4. Normal Delete reducing a closed contour to 1 node must mark it as open (!is_contour_closed)
-    let mut state_single = GlifoCanvasState::init_glyph_a();
+    let mut state_single = GrafiaCanvasState::init_glyph_a();
     // Delete 2 of the 3 nodes of inner contour 1 of /A using normal Delete
-    state_single.selected_nodes = vec![state_single.contours[1][0].id, state_single.contours[1][1].id];
+    state_single.selected_nodes = vec![
+        state_single.contours[1][0].id,
+        state_single.contours[1][1].id,
+    ];
     let normal_del = Event::Key {
         key: Key::Delete,
         physical_key: None,
@@ -1665,16 +1725,16 @@ fn test_compound_multi_contour_delete_preserves_open_contour_role_and_single_poi
 }
 
 /// Multi-view consistency verifier across all 4 rendering projections (`STD-ARCH`):
-/// 1. `CanvasViewMode::EditWireframe` (`GlifoCanvasWidget` + `rasterize_canvas_subregion`)
-/// 2. `CanvasViewMode::PreviewFilled` (`GlifoCanvasWidget` + `rasterize_canvas_subregion`)
-/// 3. `CanvasViewMode::ShapeThumbnail` (`GlifoCanvasWidget` + `rasterize_canvas_subregion`)
+/// 1. `CanvasViewMode::EditWireframe` (`GrafiaCanvasWidget` + `rasterize_canvas_subregion`)
+/// 2. `CanvasViewMode::PreviewFilled` (`GrafiaCanvasWidget` + `rasterize_canvas_subregion`)
+/// 3. `CanvasViewMode::ShapeThumbnail` (`GrafiaCanvasWidget` + `rasterize_canvas_subregion`)
 /// 4. `ShapeLocatorRenderer::render_locator` for each contour in `state.glyph.contours`
-pub fn assert_all_views_consistent(state: &GlifoCanvasState) {
+pub fn assert_all_views_consistent(state: &GrafiaCanvasState) {
     state.assert_invariants();
 
     let theme = state.theme.clone();
     let ctx = Context::default();
-    let mut working = GlifoCanvasState::new(theme.clone());
+    let mut working = GrafiaCanvasState::new(theme.clone());
     working.viewport = state.viewport;
     working.paths = state.paths.clone();
     working.contours = state.contours.clone();
@@ -1690,7 +1750,7 @@ pub fn assert_all_views_consistent(state: &GlifoCanvasState) {
     // 1. EditWireframe view
     working.view_mode = CanvasViewMode::EditWireframe;
     let mut out_wf = ctx.run_ui(RawInput::default(), |ui| {
-        let _ = GlifoCanvasWidget::new(&mut working, &theme)
+        let _ = GrafiaCanvasWidget::new(&mut working, &theme)
             .with_size(Vec2::new(320.0, 240.0))
             .show(ui);
     });
@@ -1701,7 +1761,7 @@ pub fn assert_all_views_consistent(state: &GlifoCanvasState) {
     // 2. PreviewFilled view
     working.view_mode = CanvasViewMode::PreviewFilled;
     let mut out_pf = ctx.run_ui(RawInput::default(), |ui| {
-        let _ = GlifoCanvasWidget::new(&mut working, &theme)
+        let _ = GrafiaCanvasWidget::new(&mut working, &theme)
             .with_size(Vec2::new(320.0, 240.0))
             .show(ui);
     });
@@ -1725,7 +1785,7 @@ pub fn assert_all_views_consistent(state: &GlifoCanvasState) {
     // 3. ShapeThumbnail view
     working.view_mode = CanvasViewMode::ShapeThumbnail;
     let mut out_st = ctx.run_ui(RawInput::default(), |ui| {
-        let _ = GlifoCanvasWidget::new(&mut working, &theme)
+        let _ = GrafiaCanvasWidget::new(&mut working, &theme)
             .with_size(Vec2::new(320.0, 240.0))
             .show(ui);
     });
@@ -1789,9 +1849,9 @@ fn test_multi_view_consistency_helper_across_closed_mixed_and_all_open_states() 
     };
 
     // 1. Closed /A and /o
-    let state_a = GlifoCanvasState::init_glyph_a();
+    let state_a = GrafiaCanvasState::init_glyph_a();
     assert_all_views_consistent(&state_a);
-    let mut state_o = GlifoCanvasState::init_glyph_o();
+    let mut state_o = GrafiaCanvasState::init_glyph_o();
     assert_all_views_consistent(&state_o);
 
     // 2. Mixed open outer contour 0 + closed inner contour 1 on /o
@@ -1836,7 +1896,7 @@ enum StatefulCanvasAction {
     Redo,
 }
 
-fn apply_stateful_action(state: &mut GlifoCanvasState, action: &StatefulCanvasAction) {
+fn apply_stateful_action(state: &mut GrafiaCanvasState, action: &StatefulCanvasAction) {
     use kurbo::ParamCurve;
     let canvas_rect = egui::Rect::from_min_size(Pos2::ZERO, Vec2::new(640.0, 480.0));
     let ctx = Context::default();
@@ -1949,7 +2009,12 @@ fn apply_stateful_action(state: &mut GlifoCanvasState, action: &StatefulCanvasAc
                 modifiers: EguiModifiers::NONE,
             };
             let _ = grafia::adapters::keyboard::dispatch_keyboard_event(
-                state, &ev, false, false, false, canvas_rect,
+                state,
+                &ev,
+                false,
+                false,
+                false,
+                canvas_rect,
             );
         }
         StatefulCanvasAction::ShiftDelete => {
@@ -1964,7 +2029,12 @@ fn apply_stateful_action(state: &mut GlifoCanvasState, action: &StatefulCanvasAc
                 },
             };
             let _ = grafia::adapters::keyboard::dispatch_keyboard_event(
-                state, &ev, true, false, false, canvas_rect,
+                state,
+                &ev,
+                true,
+                false,
+                false,
+                canvas_rect,
             );
         }
         StatefulCanvasAction::PenClick(x, y, dx, dy) => {
@@ -2005,7 +2075,12 @@ fn apply_stateful_action(state: &mut GlifoCanvasState, action: &StatefulCanvasAc
                 modifiers: EguiModifiers::NONE,
             };
             let _ = grafia::adapters::keyboard::dispatch_keyboard_event(
-                state, &ev, false, false, false, canvas_rect,
+                state,
+                &ev,
+                false,
+                false,
+                false,
+                canvas_rect,
             );
         }
         StatefulCanvasAction::Nudge(dir, shift, cmd) => {
@@ -2027,7 +2102,12 @@ fn apply_stateful_action(state: &mut GlifoCanvasState, action: &StatefulCanvasAc
                 },
             };
             let _ = grafia::adapters::keyboard::dispatch_keyboard_event(
-                state, &ev, shift, cmd, false, canvas_rect,
+                state,
+                &ev,
+                shift,
+                cmd,
+                false,
+                canvas_rect,
             );
         }
         StatefulCanvasAction::Undo => {
@@ -2059,7 +2139,12 @@ fn arb_stateful_action() -> impl proptest::strategy::Strategy<Value = StatefulCa
             }),
         Just(StatefulCanvasAction::Delete),
         Just(StatefulCanvasAction::ShiftDelete),
-        (40.0f32..580.0, 40.0f32..420.0, -40.0f32..40.0, -40.0f32..40.0)
+        (
+            40.0f32..580.0,
+            40.0f32..420.0,
+            -40.0f32..40.0,
+            -40.0f32..40.0
+        )
             .prop_map(|(x, y, dx, dy)| StatefulCanvasAction::PenClick(x, y, dx, dy)),
         Just(StatefulCanvasAction::Reverse),
         Just(StatefulCanvasAction::MakeFirst),
@@ -2078,7 +2163,7 @@ proptest::proptest! {
         actions_o in proptest::collection::vec(arb_stateful_action(), 1..=25),
         actions_a in proptest::collection::vec(arb_stateful_action(), 1..=25),
     ) {
-        let mut state_o = GlifoCanvasState::init_glyph_o();
+        let mut state_o = GrafiaCanvasState::init_glyph_o();
         state_o.fit_viewport_to_glyph(640.0, 480.0);
         state_o.assert_invariants();
         for action in &actions_o {
@@ -2087,7 +2172,7 @@ proptest::proptest! {
         }
         assert_all_views_consistent(&state_o);
 
-        let mut state_a = GlifoCanvasState::init_glyph_a();
+        let mut state_a = GrafiaCanvasState::init_glyph_a();
         state_a.fit_viewport_to_glyph(640.0, 480.0);
         state_a.assert_invariants();
         for action in &actions_a {
@@ -2144,6 +2229,7 @@ fn test_grafia_host_bridge_load_edit_export_roundtrip() {
         height: 1400.0,
         contours: vec![custom_contour, open_stroke],
         annotations: vec![annotation.clone()],
+        ..Default::default()
     };
     let custom_metrics = GlyphMetrics {
         ascender: 1600.0,
@@ -2228,6 +2314,7 @@ fn test_grafia_host_bridge_load_edit_export_roundtrip() {
         height: 0.0,
         contours: vec![single_node_contour, dup_id_contour],
         annotations: Vec::new(),
+        ..Default::default()
     };
     state.load_glyph(edge_glyph, custom_metrics);
     assert_eq!(state.viewport.upm, 1);
@@ -2241,10 +2328,3 @@ fn test_grafia_host_bridge_load_edit_export_roundtrip() {
         exported_edge.contours[1].nodes[1].id
     );
 }
-
-
-
-
-
-
-

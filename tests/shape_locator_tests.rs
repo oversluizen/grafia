@@ -6,12 +6,12 @@
 //! 3. Bounding box coordinates remain strictly within the requested size frame.
 
 use egui::{vec2, Pos2, Rect};
-use grafia::adapters::GlifoCanvasState;
+use grafia::adapters::GrafiaCanvasState;
 use grafia::locator::{ShapeLocatorRenderer, ShapeLocatorStyle};
 
 #[test]
 fn test_shape_locator_renders_two_layer_micro_viewport() {
-    let state = GlifoCanvasState::init_glyph_a();
+    let state = GrafiaCanvasState::init_glyph_a();
     let contour_ids = state.glyph.contour_ids();
     assert_eq!(contour_ids.len(), 2, "Glyph /A must have 2 contours");
 
@@ -30,7 +30,8 @@ fn test_shape_locator_renders_two_layer_micro_viewport() {
         "Context layer must render the full glyph"
     );
     assert_eq!(
-        context_mesh.indices.len() % 3, 0,
+        context_mesh.indices.len() % 3,
+        0,
         "Context mesh indices must form valid triangles"
     );
 
@@ -44,7 +45,10 @@ fn test_shape_locator_renders_two_layer_micro_viewport() {
     let bounds = Rect::from_min_size(Pos2::ZERO, size);
     for v in &context_mesh.vertices {
         assert!(
-            v.pos.x >= -1.0 && v.pos.x <= size.x + 1.0 && v.pos.y >= -1.0 && v.pos.y <= size.y + 1.0,
+            v.pos.x >= -1.0
+                && v.pos.x <= size.x + 1.0
+                && v.pos.y >= -1.0
+                && v.pos.y <= size.y + 1.0,
             "Context vertex {:?} must be within locator bounds {:?}",
             v.pos,
             bounds
@@ -52,7 +56,10 @@ fn test_shape_locator_renders_two_layer_micro_viewport() {
     }
     for v in &focus_mesh.vertices {
         assert!(
-            v.pos.x >= -1.0 && v.pos.x <= size.x + 1.0 && v.pos.y >= -1.0 && v.pos.y <= size.y + 1.0,
+            v.pos.x >= -1.0
+                && v.pos.x <= size.x + 1.0
+                && v.pos.y >= -1.0
+                && v.pos.y <= size.y + 1.0,
             "Focus vertex {:?} must be within locator bounds {:?}",
             v.pos,
             bounds
@@ -62,7 +69,7 @@ fn test_shape_locator_renders_two_layer_micro_viewport() {
 
 #[test]
 fn test_shape_locator_mask_role_renders_mask_color() {
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     let size = vec2(24.0, 16.0);
     let style = ShapeLocatorStyle::default();
 
@@ -82,7 +89,7 @@ fn test_shape_locator_mask_role_renders_mask_color() {
 
 #[test]
 fn test_shape_locator_respects_visibility_and_degenerate_contours() {
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     let size = vec2(24.0, 16.0);
     let style = ShapeLocatorStyle::default();
 
@@ -167,7 +174,7 @@ fn test_shape_locator_open_contour_renders_stroked_focus_mesh_not_filled_chord()
     );
 
     // 2. Open C-arc contour (left half of /o after Shift+Delete on right extremum (510, 250))
-    let mut state = GlifoCanvasState::init_glyph_o();
+    let mut state = GrafiaCanvasState::init_glyph_o();
     let right_node_id = state.contours[0]
         .iter()
         .find(|n| (n.point.x.0 - 510.0).abs() < 1.0 && (n.point.y.0 - 250.0).abs() < 1.0)
@@ -208,4 +215,3 @@ fn test_shape_locator_open_contour_renders_stroked_focus_mesh_not_filled_chord()
         "Open C-arc focus_mesh must be stroked, NOT filled across the interior chord cavity at {cavity_pt:?}"
     );
 }
-

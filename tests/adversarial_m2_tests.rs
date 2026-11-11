@@ -1,4 +1,4 @@
-//! Adversarial Challenge Test Suite for Milestone 2: GlifoCanvasWidget Interaction Engine.
+//! Adversarial Challenge Test Suite for Milestone 2: GrafiaCanvasWidget Interaction Engine.
 //!
 //! Empirically tests:
 //! 1. SelectTool state transitions & 2D marquee intersection accuracy.
@@ -8,33 +8,30 @@
 //! 5. 45° angle snapping constraints and Option-click smooth/corner toggling.
 
 use egui::{Context, Event, Key, Modifiers as EguiModifiers, PointerButton, Pos2, RawInput, Vec2};
-use grafia::adapters::{
-    CanvasTool, GlifoCanvasResponse, GlifoCanvasState, GlifoCanvasWidget,
-};
+use grafia::adapters::{CanvasTool, GrafiaCanvasResponse, GrafiaCanvasState, GrafiaCanvasWidget};
 use grafia::core::{snap_vector_45_degrees, FontPoint, NodeType};
 use grafia::interaction::{PenToolState, SelectToolState};
-use grafia::tokens::GlifoTheme;
-
+use grafia::tokens::GrafiaTheme;
 
 fn run_canvas_frame(
     ctx: &Context,
-    state: &mut GlifoCanvasState,
-    theme: &GlifoTheme,
+    state: &mut GrafiaCanvasState,
+    theme: &GrafiaTheme,
     raw_input: RawInput,
-) -> GlifoCanvasResponse {
+) -> GrafiaCanvasResponse {
     let mut resp = None;
     let mut full_output = ctx.run_ui(raw_input, |ui| {
-        resp = Some(GlifoCanvasWidget::new(state, theme).show(ui));
+        resp = Some(GrafiaCanvasWidget::new(state, theme).show(ui));
     });
     full_output.textures_delta.clear();
-    resp.expect("GlifoCanvasWidget must return a response")
+    resp.expect("GrafiaCanvasWidget must return a response")
 }
 
 #[test]
 fn test_adversarial_select_marquee_2d_bounds_isolation() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
 
     // Outer contour nodes in glyph A:
     // Apex nodes: (300, 700) and (400, 700)
@@ -104,8 +101,8 @@ fn test_adversarial_select_marquee_2d_bounds_isolation() {
 #[test]
 fn test_adversarial_pen_tool_anchor_click_and_hover_bug() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::new(theme.clone());
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::new(theme.clone());
     state.active_tool = CanvasTool::Pen;
 
     let click_pos = Pos2::new(300.0, 300.0);
@@ -164,8 +161,8 @@ fn test_adversarial_pen_tool_anchor_click_and_hover_bug() {
 #[test]
 fn test_adversarial_empty_marquee_cancellation() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
 
     // Click on empty space outside the glyph (e.g. at screen 10, 10)
     let p_empty = Pos2::new(10.0, 10.0);
@@ -181,7 +178,10 @@ fn test_adversarial_empty_marquee_cancellation() {
     let _ = run_canvas_frame(&ctx, &mut state, &theme, input);
 
     assert!(state.selected_nodes.is_empty());
-    assert!(matches!(state.select_state, SelectToolState::MarqueeSelecting { .. }));
+    assert!(matches!(
+        state.select_state,
+        SelectToolState::MarqueeSelecting { .. }
+    ));
 
     // Drag over empty space
     let mut input = RawInput::default();
@@ -199,14 +199,17 @@ fn test_adversarial_empty_marquee_cancellation() {
     let _ = run_canvas_frame(&ctx, &mut state, &theme, input);
 
     assert_eq!(state.select_state, SelectToolState::Idle);
-    assert!(state.selected_nodes.is_empty(), "Empty marquee must cancel cleanly with 0 nodes selected");
+    assert!(
+        state.selected_nodes.is_empty(),
+        "Empty marquee must cancel cleanly with 0 nodes selected"
+    );
 }
 
 #[test]
 fn test_adversarial_multi_node_drag_with_shift_snap() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
 
     let node1_id = state.contours[0][1].id;
     let node2_id = state.contours[0][2].id;
@@ -241,7 +244,6 @@ fn test_adversarial_multi_node_drag_with_shift_snap() {
     input.events.push(Event::PointerMoved(target_pos));
     let _ = run_canvas_frame(&ctx, &mut state, &theme, input);
 
-
     let new_pt1 = state.find_node(node1_id).unwrap().point;
     let new_pt2 = state.find_node(node2_id).unwrap().point;
 
@@ -249,15 +251,17 @@ fn test_adversarial_multi_node_drag_with_shift_snap() {
     let delta2 = (new_pt2.x.0 - init_pt2.x.0, new_pt2.y.0 - init_pt2.y.0);
 
     assert_ne!(delta1, (0.0, 0.0), "Selected nodes must move");
-    assert_eq!(delta1, delta2, "All selected nodes in multi-selection must move by identical delta");
+    assert_eq!(
+        delta1, delta2,
+        "All selected nodes in multi-selection must move by identical delta"
+    );
 }
-
 
 #[test]
 fn test_adversarial_rapid_tool_switching_resets_in_flight_states() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
 
     // Start a marquee drag in SelectTool
     state.select_state = SelectToolState::MarqueeSelecting {
@@ -277,14 +281,15 @@ fn test_adversarial_rapid_tool_switching_resets_in_flight_states() {
     let _ = run_canvas_frame(&ctx, &mut state, &theme, input);
 
     assert_eq!(state.active_tool, CanvasTool::Pen);
-    assert_eq!(state.select_state, SelectToolState::Idle, "Switching to Pen must reset select_state to Idle");
+    assert_eq!(
+        state.select_state,
+        SelectToolState::Idle,
+        "Switching to Pen must reset select_state to Idle"
+    );
 
     // Put Pen in DraggingHandles
-    state.pen_state = PenToolState::compute_symmetric_handles(
-        FontPoint::new(100.0, 100.0),
-        (50.0, 50.0),
-        false,
-    );
+    state.pen_state =
+        PenToolState::compute_symmetric_handles(FontPoint::new(100.0, 100.0), (50.0, 50.0), false);
 
     // Press 'V' mid-gesture
     let mut input = RawInput::default();
@@ -298,7 +303,11 @@ fn test_adversarial_rapid_tool_switching_resets_in_flight_states() {
     let _ = run_canvas_frame(&ctx, &mut state, &theme, input);
 
     assert_eq!(state.active_tool, CanvasTool::Select);
-    assert_eq!(state.pen_state, PenToolState::Idle, "Switching to Select must reset pen_state to Idle");
+    assert_eq!(
+        state.pen_state,
+        PenToolState::Idle,
+        "Switching to Select must reset pen_state to Idle"
+    );
 
     // Press Escape
     state.selected_nodes = vec![grafia::core::NodeId(1)];
@@ -312,7 +321,10 @@ fn test_adversarial_rapid_tool_switching_resets_in_flight_states() {
     });
     let _ = run_canvas_frame(&ctx, &mut state, &theme, input);
 
-    assert!(state.selected_nodes.is_empty(), "Escape must clear selection");
+    assert!(
+        state.selected_nodes.is_empty(),
+        "Escape must clear selection"
+    );
     assert_eq!(state.select_state, SelectToolState::Idle);
     assert_eq!(state.pen_state, PenToolState::Idle);
 }
@@ -320,8 +332,8 @@ fn test_adversarial_rapid_tool_switching_resets_in_flight_states() {
 #[test]
 fn test_adversarial_pen_tool_contour_closing() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::new(theme.clone());
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::new(theme.clone());
     state.active_tool = CanvasTool::Pen;
 
     // Place 3 points forming a triangle
@@ -346,9 +358,12 @@ fn test_adversarial_pen_tool_contour_closing() {
         let _ = run_canvas_frame(&ctx, &mut state, &theme, input);
     }
 
-    assert_eq!(state.contours[0].len(), 3, "Contour should have 3 nodes before closing");
+    assert_eq!(
+        state.contours[0].len(),
+        3,
+        "Contour should have 3 nodes before closing"
+    );
     let _start_node_id = state.contours[0][0].id;
-
 
     // Now click on the first node pt0 to CLOSE the contour
     let mut input = RawInput::default();
@@ -378,13 +393,18 @@ fn test_adversarial_pen_tool_contour_closing() {
 #[test]
 fn test_adversarial_option_click_toggle_and_empty_space() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
 
     let node_id = state.contours[0][0].id;
-    assert_eq!(state.find_node(node_id).unwrap().node_type, NodeType::Corner);
+    assert_eq!(
+        state.find_node(node_id).unwrap().node_type,
+        NodeType::Corner
+    );
 
-    let screen_pt = state.viewport.to_screen(state.find_node(node_id).unwrap().point);
+    let screen_pt = state
+        .viewport
+        .to_screen(state.find_node(node_id).unwrap().point);
     let click_pos = Pos2::new(screen_pt.x.0, screen_pt.y.0);
 
     // Option-click on node
@@ -400,7 +420,10 @@ fn test_adversarial_option_click_toggle_and_empty_space() {
         modifiers: alt_modifiers,
     });
     let _ = run_canvas_frame(&ctx, &mut state, &theme, input);
-    assert_eq!(state.find_node(node_id).unwrap().node_type, NodeType::Smooth);
+    assert_eq!(
+        state.find_node(node_id).unwrap().node_type,
+        NodeType::Smooth
+    );
 
     // Option-click again: back to Corner
     let mut input = RawInput::default();
@@ -411,7 +434,10 @@ fn test_adversarial_option_click_toggle_and_empty_space() {
         modifiers: alt_modifiers,
     });
     let _ = run_canvas_frame(&ctx, &mut state, &theme, input);
-    assert_eq!(state.find_node(node_id).unwrap().node_type, NodeType::Corner);
+    assert_eq!(
+        state.find_node(node_id).unwrap().node_type,
+        NodeType::Corner
+    );
 
     // Option-click on empty space: must be a no-op (no panic, no tool state change)
     let empty_pos = Pos2::new(10.0, 10.0);
@@ -432,14 +458,14 @@ fn test_adversarial_snap_vector_45_degrees_all_quadrants() {
     // Test all 8 cardinal and intercardinal angles: 0, 45, 90, 135, 180, 225, 270, 315
     let test_cases = [
         // (input_dx, input_dy, expected_angle_deg)
-        (100.0, 5.0, 0.0),       // close to 0° -> 0°
-        (100.0, 80.0, 45.0),     // close to 45° -> 45°
-        (10.0, 100.0, 90.0),     // close to 90° -> 90°
-        (-80.0, 100.0, 135.0),   // close to 135° -> 135°
-        (-100.0, 5.0, 180.0),    // close to 180° -> 180°
-        (-100.0, -90.0, 225.0),  // close to 225° -> 225°
-        (5.0, -100.0, 270.0),    // close to 270° -> 270°
-        (90.0, -100.0, 315.0),   // close to 315° -> 315°
+        (100.0, 5.0, 0.0),      // close to 0° -> 0°
+        (100.0, 80.0, 45.0),    // close to 45° -> 45°
+        (10.0, 100.0, 90.0),    // close to 90° -> 90°
+        (-80.0, 100.0, 135.0),  // close to 135° -> 135°
+        (-100.0, 5.0, 180.0),   // close to 180° -> 180°
+        (-100.0, -90.0, 225.0), // close to 225° -> 225°
+        (5.0, -100.0, 270.0),   // close to 270° -> 270°
+        (90.0, -100.0, 315.0),  // close to 315° -> 315°
     ];
 
     for (dx, dy, expected_deg) in test_cases {
@@ -461,4 +487,3 @@ fn test_adversarial_snap_vector_45_degrees_all_quadrants() {
     let (sub_x, sub_y) = snap_vector_45_degrees(1e-7, 1e-7);
     assert_eq!((sub_x, sub_y), (0.0, 0.0));
 }
-

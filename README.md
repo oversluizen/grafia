@@ -1,4 +1,4 @@
-# `grafia` — Universal Interactive Glyph & Cubic Bézier Vector Canvas Engine (`v0.4.0`)
+# `grafia` — Universal Interactive Glyph & Cubic Bézier Vector Canvas Engine (`v0.7.0`)
 
 `grafia` is a standalone, application-agnostic Rust 2D cubic Bézier contour, glyph, and vector canvas engine built on Linebender (`kurbo`), `lyon_tessellation`, `egui`, and `tiny-skia`.
 
@@ -6,10 +6,20 @@
 
 ## 1. Architecture & Scope (`SPEC-001` .. `SPEC-010`)
 
-`grafia` serves as a dedicated **2D Vector Canvas View & Controller** component (`GrafiaCanvasState`, `GrafiaCanvasWidget`, `GrafiaPreviewWidget`, `GrafiaTheme`) with a strict **Data-In / Event-Out Host Bridge** (`load_glyph`, `export_glyph`, `GrafiaCanvasResponse`).
+`grafia` serves as a dedicated **2D Vector Canvas View & Controller** component (`GrafiaCanvasState`, `GrafiaCanvasWidget`, `GrafiaPreviewWidget`, `PreviewStripCache`, `GrafiaTheme`) with a strict **Hexagonal Data-In / Event-Out Host Bridge** (`load_glyph`, `export_glyph`, `drain_host_requests`, `drain_spacing_deltas`, `drain_kerning_deltas`, `compute_selection_info`, `apply_selection_info_action`, `GrafiaCanvasResponse`).
 
-- **Implemented in `v0.1.0` through `v0.4.0`**:
-  - Interactive single-glyph vector editing with `Select` (`V`), `Pen` (`P`), `Rotate` (`R`), `Scale` (`S`), `CanvasTool::Lasso` (`Shift + V`), `Zoom` (`Z` / `Cmd/Ctrl + Space`), `Knife` (`E` / `Shift + E`), `Primitives` (`F` / `Shift + F`), `Measurement` (`L` / `Cmd + Ctrl + Opt`), `Annotation` (`A` / `Shift + A`), `Pencil` (`B`), and `Pixel` (`X`).
+- **Implemented in `v0.1.0` through `v0.7.0`**:
+  - **Background Layer, 2D Anchors, Pre-Resolved Components, Fit Curve, Live Contour Stroke & `CompanionMasterLayer` (`v0.7.0` — `SPEC-008`)**:
+    - Foreground/Background contour layer workflow (`Cmd/Ctrl + J` selection-to-background, `Cmd/Ctrl + K` layer swap, background editing toggle).
+    - 2D `CanvasAnchor` placement, `Tab` cycling, magnetic `SnapEngine` integration, `GhostMarkPath` mark cloud overlay, and `CanvasHostRequest::ResetDefaultAnchors`.
+    - Pre-resolved `CanvasComponent` rendering, locking, auto-alignment, `decompose_selected_components` (`Cmd/Ctrl + Shift + D`), and double-click `CanvasHostRequest::OpenComponentSource`.
+    - 8-step `fit_selected_curves_by_step` (`57%..92%`), live `ContourStrokeStyle` offset preview, destructive `expand_selected_contour_strokes`, and `CompanionMasterLayer` interpolation compatibility diagnostics.
+  - **Separable Blur Preview Strip, `PreviewStripCache`, Pure 2D `SelectionInfo`, Rulers & Background Image (`v0.6.0` — `SPEC-007`)**:
+    - `render_preview_strip_rgba` and generation-gated `PreviewStripCache` (`GrafiaCanvasState::content_generation()`) for zero-CPU / zero-GPU idle frame overhead.
+    - Pure 2D 5-mode `SelectionInfo` inspector projection, `SelectionInfoAction`, top/left UPM rulers (`Cmd/Ctrl + R`), and `CanvasBackgroundImage`.
+  - **Multi-Glyph Horizontal Text Stream, Caret Navigation & Interactive Spacing/Kerning (`v0.5.0` — `SPEC-006`)**:
+    - `CanvasTool::Text` (`T`), `GlyphSlot` horizontal text run, double-click slot activation, and `SpacingDelta` / `KerningDelta` / `TextStreamEditRequest` host ports.
+  - Interactive single-glyph vector editing with `Select` (`V`), `Pen` (`P`), `Rotate` (`R`), `Scale` (`S`), `CanvasTool::Lasso` (`Shift + V`), `Zoom` (`Z` / `Cmd/Ctrl + Space`), `Knife` (`E` / `Shift + E`), `Primitives` (`F` / `Shift + F`), `Measurement` (`L` / `Cmd + Ctrl + Opt`), `Annotation` (`A` / `Shift + A`), `Pencil` (`B`), `Pixel` (`X`), and `Text` (`T`).
   - **Specialized Edit View Tools, Boolean Path Operations & Canvas Annotations (`v0.4.0` — `SPEC-005`)**:
     - **Boolean Path Operations (`remove_overlap_in_contours` `Cmd/Ctrl + Shift + O`, `subtract_contours`, `intersect_contours`)**: Cubic Bézier and line segment intersection graph solver, cycle extraction, inner-segment pruning, and Non-Zero Winding outer/counter reconstruction.
     - **`Knife` (`E` / `Shift + E`)**: Recursive De Casteljau line-segment and line-cubic intersection solver, multi-hit and counter-ring closed-contour slicing (`knife_cut_paths_in_layer`), single-hit contour opening, `Alt/Option` node insertion without slicing (`knife_add_nodes_in_layer`), `Shift` $15^\circ$ angle constraint, and orange slice-line + intersection dot overlay (`r = 3.0 dp`).

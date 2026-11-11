@@ -1,6 +1,6 @@
 [package]
 name = "grafia"
-version = "0.4.0"
+version = "0.7.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 authors = ["Jaco Oversluizen", "grafia contributors"]
@@ -11,6 +11,7 @@ readme = "README.md"
 keywords = ["egui", "bezier", "glyph", "font-editor", "vector-canvas"]
 categories = ["gui", "graphics", "rendering::data-formats", "mathematics"]
 autotests = false
+autoexamples = false
 
 [dependencies]
 kurbo = { version = "0.13", features = ["serde"] }
@@ -117,6 +118,18 @@ path = "tests/v030_complete_tests.rs"
 [[test]]
 name = "v040_complete_tests"
 path = "tests/v040_complete_tests.rs"
+
+[[test]]
+name = "v050_complete_tests"
+path = "tests/v050_complete_tests.rs"
+
+[[test]]
+name = "v060_complete_tests"
+path = "tests/v060_complete_tests.rs"
+
+[[test]]
+name = "v070_complete_tests"
+path = "tests/v070_complete_tests.rs"
 
 [[example]]
 name = "vector_canvas_demo"

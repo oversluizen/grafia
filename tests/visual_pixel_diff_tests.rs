@@ -6,10 +6,10 @@
 use grafia::adapters::headless::{
     pixmap_to_rgba_image, rasterize_canvas_subregion, rasterize_full_window,
 };
-use grafia::adapters::state::{CanvasViewMode, GlifoCanvasState};
+use grafia::adapters::state::{CanvasViewMode, GrafiaCanvasState};
 use grafia::core::ScreenPoint;
 use grafia::tokens::{
-    GlifoTheme, GOLDEN_MASTER_CALIBRATED_ZOOM, GOLDEN_MASTER_CANVAS_EDIT_HEIGHT_DP,
+    GrafiaTheme, GOLDEN_MASTER_CALIBRATED_ZOOM, GOLDEN_MASTER_CANVAS_EDIT_HEIGHT_DP,
     GOLDEN_MASTER_CANVAS_WIDTH_DP, GOLDEN_MASTER_LOCAL_PAN_X, GOLDEN_MASTER_LOCAL_PAN_Y,
     GOLDEN_MASTER_WINDOW_HEIGHT_DP, GOLDEN_MASTER_WINDOW_WIDTH_DP,
 };
@@ -192,8 +192,8 @@ pub fn save_visual_diff_artifacts(
 }
 
 #[test]
-fn test_glifo_01_corner_node_pixel_metrics_parity() {
-    let theme = GlifoTheme::sonoma_default();
+fn test_grafia_01_corner_node_pixel_metrics_parity() {
+    let theme = GrafiaTheme::sonoma_default();
     assert_eq!(theme.edit_canvas.node_size_dp, 7.0);
     assert_eq!(theme.edit_canvas.corner_node_color, "#2B78E4");
 
@@ -208,8 +208,8 @@ fn test_glifo_01_corner_node_pixel_metrics_parity() {
 }
 
 #[test]
-fn test_glifo_02_smooth_node_pixel_metrics_parity() {
-    let theme = GlifoTheme::sonoma_default();
+fn test_grafia_02_smooth_node_pixel_metrics_parity() {
+    let theme = GrafiaTheme::sonoma_default();
     assert_eq!(theme.edit_canvas.node_size_dp, 7.0);
     assert_eq!(theme.edit_canvas.smooth_node_color, "#3CAD66");
 
@@ -221,8 +221,8 @@ fn test_glifo_02_smooth_node_pixel_metrics_parity() {
 }
 
 #[test]
-fn test_glifo_03_bcp_handle_pixel_metrics_parity() {
-    let theme = GlifoTheme::sonoma_default();
+fn test_grafia_03_bcp_handle_pixel_metrics_parity() {
+    let theme = GrafiaTheme::sonoma_default();
     assert_eq!(theme.edit_canvas.bcp_handle_size_dp, 6.0);
     assert_eq!(theme.edit_canvas.bcp_handle_color, "#8C6845");
     assert_eq!(theme.edit_canvas.bcp_line_color, "#B49A80");
@@ -235,8 +235,8 @@ fn test_glifo_03_bcp_handle_pixel_metrics_parity() {
 }
 
 #[test]
-fn test_glifo_04_shape_canvas_sidebar_row_height() {
-    let theme = GlifoTheme::sonoma_default();
+fn test_grafia_04_shape_canvas_sidebar_row_height() {
+    let theme = GrafiaTheme::sonoma_default();
     assert_eq!(theme.shape_canvas.row_height_dp, 20.0);
     assert_eq!(theme.shape_canvas.header_height_dp, 22.0);
     assert_eq!(theme.shape_canvas.accent_selection_color, "#007AFF");
@@ -245,10 +245,7 @@ fn test_glifo_04_shape_canvas_sidebar_row_height() {
     if let Some(path) = golden_master_path("01b_LeftSidebar_Panel_State2_LayersShapes.png") {
         let img = image::open(&path).expect("Load golden master State 2 sidebar");
         let (w, h) = img.dimensions();
-        assert!(
-            w >= 240,
-            "Sidebar width in golden master must be >= 240 px"
-        );
+        assert!(w >= 240, "Sidebar width in golden master must be >= 240 px");
         assert!(
             h >= 400,
             "Sidebar height in golden master must be >= 400 px"
@@ -257,8 +254,8 @@ fn test_glifo_04_shape_canvas_sidebar_row_height() {
 }
 
 #[test]
-fn test_glifo_05_thumbnail_aspect_ratio_containment() {
-    let theme = GlifoTheme::sonoma_default();
+fn test_grafia_05_thumbnail_aspect_ratio_containment() {
+    let theme = GrafiaTheme::sonoma_default();
     assert_eq!(theme.shape_canvas.thumbnail_width_dp, 24.0);
     assert_eq!(theme.shape_canvas.thumbnail_height_dp, 16.0);
     assert_eq!(theme.shape_canvas.thumbnail_padding_dp, 2.0);
@@ -273,9 +270,9 @@ fn test_glifo_05_thumbnail_aspect_ratio_containment() {
 }
 
 #[test]
-fn test_glifo_06_golden_master_vector_a_visual_pixel_diff_parity() {
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+fn test_grafia_06_golden_master_vector_a_visual_pixel_diff_parity() {
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
 
     let canvas_w = GOLDEN_MASTER_CANVAS_WIDTH_DP as u32;
     let canvas_h = GOLDEN_MASTER_CANVAS_EDIT_HEIGHT_DP as u32;
@@ -312,12 +309,23 @@ fn test_glifo_06_golden_master_vector_a_visual_pixel_diff_parity() {
             metrics_px += 1;
         }
     }
-    assert!(corner_px >= 100, "Must render corner node squares at calibrated zoom, got {corner_px}");
-    assert!(metrics_px >= 50, "Must render metrics box at calibrated zoom, got {metrics_px}");
+    assert!(
+        corner_px >= 100,
+        "Must render corner node squares at calibrated zoom, got {corner_px}"
+    );
+    assert!(
+        metrics_px >= 50,
+        "Must render metrics box at calibrated zoom, got {metrics_px}"
+    );
 
     let mut reversed_state = state;
     reversed_state.reverse_selected_or_all_contours();
-    let reversed_img = pixmap_to_rgba_image(rasterize_canvas_subregion(&reversed_state, &theme, canvas_w, canvas_h));
+    let reversed_img = pixmap_to_rgba_image(rasterize_canvas_subregion(
+        &reversed_state,
+        &theme,
+        canvas_w,
+        canvas_h,
+    ));
     let arrow_diff_px = rendered_img
         .pixels()
         .zip(reversed_img.pixels())
@@ -330,9 +338,9 @@ fn test_glifo_06_golden_master_vector_a_visual_pixel_diff_parity() {
 }
 
 #[test]
-fn test_glifo_07_ssim_and_pmr_identity_validation() {
-    let theme = GlifoTheme::sonoma_default();
-    let state = GlifoCanvasState::init_glyph_a();
+fn test_grafia_07_ssim_and_pmr_identity_validation() {
+    let theme = GrafiaTheme::sonoma_default();
+    let state = GrafiaCanvasState::init_glyph_a();
     let pixmap = rasterize_canvas_subregion(&state, &theme, 200, 200);
     let img = DynamicImage::ImageRgba8(pixmap_to_rgba_image(pixmap));
 
@@ -347,9 +355,9 @@ fn test_glifo_07_ssim_and_pmr_identity_validation() {
 }
 
 #[test]
-fn test_glifo_08_headless_full_window_layout_and_splitters() {
-    let theme = GlifoTheme::sonoma_default();
-    let state = GlifoCanvasState::init_glyph_a();
+fn test_grafia_08_headless_full_window_layout_and_splitters() {
+    let theme = GrafiaTheme::sonoma_default();
+    let state = GrafiaCanvasState::init_glyph_a();
 
     let pixmap = rasterize_full_window(&state, &theme);
     assert_eq!(pixmap.width(), GOLDEN_MASTER_WINDOW_WIDTH_DP as u32);

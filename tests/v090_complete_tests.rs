@@ -13,7 +13,7 @@ use grafia::{
     build_superellipse_contour_nodes, compute_contour_area_and_centroid, contour_signed_area,
     find_cubic_inflection_points, fit_calligraphic_brush_stroke, AppearanceMode,
     CalligraphicNibSpec, CalligraphicSample, ContourId, CurvatureCombStyle, FontPoint,
-    GlifoCanvasState, GlifoTheme, GlyphContour, Node, NodeId, NodeType, SmartCornerSpec,
+    GrafiaCanvasState, GrafiaTheme, GlyphContour, Node, NodeId, NodeType, SmartCornerSpec,
     StemGaugeMatch, SymmetryOverlayMode,
 };
 use proptest::prelude::*;
@@ -51,7 +51,7 @@ fn make_quarter_circle_contour(id: usize) -> GlyphContour {
     gc
 }
 
-fn set_layer_contours(state: &mut GlifoCanvasState, contours: Vec<GlyphContour>) {
+fn set_layer_contours(state: &mut GrafiaCanvasState, contours: Vec<GlyphContour>) {
     state.contours = contours.iter().map(|c| c.nodes.clone()).collect();
     state.active_contour_closed = contours.last().map_or(true, |c| c.closed);
     state.glyph.contours = contours;
@@ -64,7 +64,7 @@ fn set_layer_contours(state: &mut GlifoCanvasState, contours: Vec<GlyphContour>)
 #[case::fillet_50(50.0, 50.0)]
 #[case::fillet_clamped(500.0, 96.0)]
 fn tc_v090_001_and_002_smart_corner_fillet_and_edge_clamp(#[case] radius_upm: f64, #[case] expected_trim: f64) {
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     set_layer_contours(&mut state, vec![make_square_contour(0, 10, 200.0)]);
     state.set_smart_corner(SmartCornerSpec { node_id: NodeId(10), radius_upm });
     assert_eq!(state.glyph.contours[0].nodes.len(), 4);
@@ -79,7 +79,7 @@ fn tc_v090_001_and_002_smart_corner_fillet_and_edge_clamp(#[case] radius_upm: f6
 // TC-V090-003 & TC-V090-004: Non-destructive Ink Trap notch (radius < 0) and destructive bake_smart_corners() with Undo.
 #[test]
 fn tc_v090_003_and_004_ink_trap_notch_and_bake_smart_corners_with_undo() {
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     set_layer_contours(&mut state, vec![make_square_contour(0, 10, 200.0)]);
     let sharp_area = contour_signed_area(&state.glyph.contours[0].nodes).abs();
 
@@ -128,7 +128,7 @@ fn tc_v090_005_to_007_calligraphic_brush_pressure_tilt_and_undo() {
     assert_ne!(c0.nodes[0].point, c_tilt.nodes[0].point);
     assert!(fit_calligraphic_brush_stroke(nib, &samples[..1]).is_none());
 
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     let base_count = state.glyph.contours.len();
     let snap_0 = state.snapshot();
     assert!(state.apply_calligraphic_brush_stroke(nib, &samples).is_some());
@@ -140,7 +140,7 @@ fn tc_v090_005_to_007_calligraphic_brush_pressure_tilt_and_undo() {
 // TC-V090-008, TC-V090-009, TC-V090-010 & TC-V090-013: Curvature Comb spines, Heatmap Envelope, inflection markers & rendering.
 #[test]
 fn tc_v090_008_to_010_and_013_curvature_comb_heatmap_inflections_and_rendering() {
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     set_layer_contours(&mut state, vec![make_quarter_circle_contour(0)]);
     state.toggle_show_curvature_comb();
     let combs = state.compute_curvature_comb_spines(16, 5000.0);
@@ -175,16 +175,16 @@ fn tc_v090_008_to_010_and_013_curvature_comb_heatmap_inflections_and_rendering()
     state.set_smart_corner(SmartCornerSpec { node_id: NodeId(30), radius_upm: 25.0 });
     state.set_smart_corner(SmartCornerSpec { node_id: NodeId(31), radius_upm: -20.0 });
     state.set_appearance_mode(AppearanceMode::Light);
-    let light_px = rasterize_canvas_subregion(&state, &GlifoTheme::sonoma_default(), 320, 180);
+    let light_px = rasterize_canvas_subregion(&state, &GrafiaTheme::sonoma_default(), 320, 180);
     state.set_appearance_mode(AppearanceMode::Dark);
-    let dark_px = rasterize_canvas_subregion(&state, &GlifoTheme::sonoma_dark(), 320, 180);
+    let dark_px = rasterize_canvas_subregion(&state, &GrafiaTheme::sonoma_dark(), 320, 180);
     assert_ne!(light_px.data(), dark_px.data());
 }
 
 // TC-V090-014, TC-V090-015 & TC-V090-016: Orthogonal Stem Gauge, Green's Theorem Counter Balance & Superellipse / Symmetry Overlay.
 #[test]
 fn tc_v090_014_to_016_stem_gauge_counter_balance_superellipse_and_symmetry() {
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     state.set_reference_stems(vec![80.0], 2.0);
     set_layer_contours(&mut state, vec![
         make_rect_contour(0, 10, 0.0, 0.0, 81.0, 500.0, false),
@@ -236,7 +236,7 @@ fn tc_v090_014_to_016_stem_gauge_counter_balance_superellipse_and_symmetry() {
 proptest! {
     #[test]
     fn tc_v090_011_prop_smart_corners_and_brush_finite(radius in -80.0f64..120.0f64, p0 in 0.0f64..1.0f64, p1 in 0.0f64..1.0f64) {
-        let mut state = GlifoCanvasState::init_glyph_a();
+        let mut state = GrafiaCanvasState::init_glyph_a();
         set_layer_contours(&mut state, vec![make_square_contour(0, 10, 200.0)]);
         state.set_smart_corner(SmartCornerSpec { node_id: NodeId(10), radius_upm: radius });
         let prev = state.compute_smart_corner_preview_contours();
@@ -254,7 +254,7 @@ proptest! {
 #[test]
 fn tc_v090_012_arbtest_stateful_smart_corners_brush_and_curvature_comb() {
     arbtest(|u| {
-        let mut state = GlifoCanvasState::init_glyph_a();
+        let mut state = GrafiaCanvasState::init_glyph_a();
         set_layer_contours(&mut state, vec![make_square_contour(0, 10, 200.0), make_quarter_circle_contour(1)]);
         for _ in 0..u.int_in_range(10..=20)? {
             match u.int_in_range(0..=5)? {

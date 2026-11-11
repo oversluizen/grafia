@@ -4,6 +4,7 @@
 
 use crate::core::annotations::CanvasAnnotation;
 use crate::core::bezier_ops::Node;
+use crate::core::selection_info::CanvasAnchor;
 use serde::{Deserialize, Serialize};
 
 /// Type-safe contour identifier.
@@ -78,6 +79,10 @@ pub struct Glyph {
     pub contours: Vec<GlyphContour>,
     #[serde(default)]
     pub annotations: Vec<CanvasAnnotation>,
+    #[serde(default)]
+    pub background_contours: Vec<GlyphContour>,
+    #[serde(default)]
+    pub anchors: Vec<CanvasAnchor>,
 }
 
 /// Type alias for `Glyph` conforming to SPEC-002 §5.1.
@@ -93,7 +98,15 @@ impl Glyph {
             height: 0.0,
             contours: Vec::new(),
             annotations: Vec::new(),
+            background_contours: Vec::new(),
+            anchors: Vec::new(),
         }
+    }
+
+    /// Returns `true` if the glyph contains an anchor with the given `name`.
+    #[must_use]
+    pub fn has_anchor(&self, name: &str) -> bool {
+        self.anchors.iter().any(|a| a.name == name)
     }
 
     /// Returns a list of all active contour IDs in order.

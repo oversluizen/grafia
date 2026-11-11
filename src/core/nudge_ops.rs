@@ -15,16 +15,33 @@ fn wrap_index(idx: isize, len: usize, closed: bool) -> Option<usize> {
     }
     if closed {
         Some(idx.rem_euclid(len as isize) as usize)
-    } else if idx >= 0 && (idx as usize) < len {
-        Some(idx as usize)
     } else {
-        None
+        usize::try_from(idx).ok().filter(|&u| u < len)
     }
 }
 
 fn lerp_pt(a: FontPoint, b: FontPoint, t: f64) -> FontPoint {
     let u = 1.0 - t;
     FontPoint::new(u * a.x.0 + t * b.x.0, u * a.y.0 + t * b.y.0)
+}
+
+fn pick_far_coord(a: f64, b: f64, p3: f64) -> f64 {
+    if (a - p3).abs() >= (b - p3).abs() {
+        a
+    } else {
+        b
+    }
+}
+
+fn interp_coord(val: f64, cur: f64, p3: f64, span: f64, min_span: f64, delta: f64) -> f64 {
+    if span.abs() > min_span {
+        let ratio = (1.0 - (val - p3) / span).clamp(NUDGE_RATIO_CLAMP_MIN, NUDGE_RATIO_CLAMP_MAX);
+        val + ratio * delta
+    } else if (val - p3).abs() > NUDGE_SPAN_MIN {
+        val
+    } else {
+        cur
+    }
 }
 
 /// Projects `pt` perpendicularly onto the infinite line passing through `line_a` and `line_b`
@@ -103,40 +120,17 @@ pub fn apply_ctrl_alt_interpolate_nudge(
                 {
                     let q2 = shadow[q2_idx].point;
                     let q3 = shadow[q3_idx].point;
-                    let ref_x = if (q3.x.0 - p3.x.0).abs() >= (q2.x.0 - p3.x.0).abs() {
-                        q3.x.0
-                    } else {
-                        q2.x.0
-                    };
-                    let ref_y = if (q3.y.0 - p3.y.0).abs() >= (q2.y.0 - p3.y.0).abs() {
-                        q3.y.0
-                    } else {
-                        q2.y.0
-                    };
-                    let span_x = ref_x - p3.x.0;
-                    let span_y = ref_y - p3.y.0;
+                    let span_x = pick_far_coord(q3.x.0, q2.x.0, p3.x.0) - p3.x.0;
+                    let span_y = pick_far_coord(q3.y.0, q2.y.0, p3.y.0) - p3.y.0;
 
                     for qk_idx in [q1_idx, q2_idx] {
                         if !selected_nodes.contains(&shadow[qk_idx].id) {
                             let qk = shadow[qk_idx].point;
-                            let nx = if span_x.abs() > NUDGE_SPAN_MIN {
-                                let rx = (1.0 - (qk.x.0 - p3.x.0) / span_x)
-                                    .clamp(NUDGE_RATIO_CLAMP_MIN, NUDGE_RATIO_CLAMP_MAX);
-                                qk.x.0 + rx * dx
-                            } else if (qk.x.0 - p3.x.0).abs() > NUDGE_SPAN_MIN {
-                                qk.x.0
-                            } else {
-                                contour[qk_idx].point.x.0
-                            };
-                            let ny = if span_y.abs() > NUDGE_SPAN_MIN {
-                                let ry = (1.0 - (qk.y.0 - p3.y.0) / span_y)
-                                    .clamp(NUDGE_RATIO_CLAMP_MIN, NUDGE_RATIO_CLAMP_MAX);
-                                qk.y.0 + ry * dy
-                            } else if (qk.y.0 - p3.y.0).abs() > NUDGE_SPAN_MIN {
-                                qk.y.0
-                            } else {
-                                contour[qk_idx].point.y.0
-                            };
+                            let cur = contour[qk_idx].point;
+                            let nx =
+                                interp_coord(qk.x.0, cur.x.0, p3.x.0, span_x, NUDGE_SPAN_MIN, dx);
+                            let ny =
+                                interp_coord(qk.y.0, cur.y.0, p3.y.0, span_y, NUDGE_SPAN_MIN, dy);
                             contour[qk_idx].point = FontPoint::new(nx, ny);
                         }
                     }
@@ -170,40 +164,23 @@ pub fn apply_ctrl_alt_interpolate_nudge(
                 {
                     let p0 = shadow[p0_idx].point;
                     let p1 = shadow[p1_idx].point;
-                    let ref_x = if (p0.x.0 - p3.x.0).abs() >= (p1.x.0 - p3.x.0).abs() {
-                        p0.x.0
-                    } else {
-                        p1.x.0
-                    };
-                    let ref_y = if (p0.y.0 - p3.y.0).abs() >= (p1.y.0 - p3.y.0).abs() {
-                        p0.y.0
-                    } else {
-                        p1.y.0
-                    };
-                    let span_x = p3.x.0 - ref_x;
-                    let span_y = p3.y.0 - ref_y;
+                    let span_x = p3.x.0 - pick_far_coord(p0.x.0, p1.x.0, p3.x.0);
+                    let span_y = p3.y.0 - pick_far_coord(p0.y.0, p1.y.0, p3.y.0);
 
                     for pk_idx in [p1_idx, p2_idx] {
                         if !selected_nodes.contains(&shadow[pk_idx].id) {
                             let pk = shadow[pk_idx].point;
-                            let nx = if span_x.abs() > NUDGE_SPAN_MIN {
-                                let rx = (1.0 - (p3.x.0 - pk.x.0) / span_x)
-                                    .clamp(NUDGE_RATIO_CLAMP_MIN, NUDGE_RATIO_CLAMP_MAX);
-                                pk.x.0 + rx * dx
-                            } else if (pk.x.0 - p3.x.0).abs() > NUDGE_SPAN_MIN {
-                                pk.x.0
-                            } else {
-                                contour[pk_idx].point.x.0
-                            };
-                            let ny = if span_y.abs() > NUDGE_PREV_SPAN_Y_MIN {
-                                let ry = (1.0 - (p3.y.0 - pk.y.0) / span_y)
-                                    .clamp(NUDGE_RATIO_CLAMP_MIN, NUDGE_RATIO_CLAMP_MAX);
-                                pk.y.0 + ry * dy
-                            } else if (pk.y.0 - p3.y.0).abs() > NUDGE_SPAN_MIN {
-                                pk.y.0
-                            } else {
-                                contour[pk_idx].point.y.0
-                            };
+                            let cur = contour[pk_idx].point;
+                            let nx =
+                                interp_coord(pk.x.0, cur.x.0, p3.x.0, -span_x, NUDGE_SPAN_MIN, dx);
+                            let ny = interp_coord(
+                                pk.y.0,
+                                cur.y.0,
+                                p3.y.0,
+                                -span_y,
+                                NUDGE_PREV_SPAN_Y_MIN,
+                                dy,
+                            );
                             contour[pk_idx].point = FontPoint::new(nx, ny);
                         }
                     }
@@ -291,7 +268,9 @@ pub fn slide_smooth_node_on_cubic_path_shift_middle(
     if n < min_len || contour.len() != n {
         return false;
     }
-    let Some(i) = shadow.iter().position(|node| node.id == node_id) else { return false; };
+    let Some(i) = shadow.iter().position(|node| node.id == node_id) else {
+        return false;
+    };
     if shadow[i].node_type != NodeType::Smooth {
         return false;
     }
@@ -348,10 +327,14 @@ pub fn slide_smooth_node_on_cubic_path_shift_middle(
         contour[i].point = p3_new;
         contour[q1_i].point = b1;
         contour[q2_i].point = a2;
-        contour[p2_i].point = FontPoint::new(p3_new.x.0 - d_new * tau_x, p3_new.y.0 - d_new * tau_y);
+        contour[p2_i].point =
+            FontPoint::new(p3_new.x.0 - d_new * tau_x, p3_new.y.0 - d_new * tau_y);
         if d1 > COLLINEAR_MIN_LEN_EPSILON {
             let ratio = d_new / d1;
-            contour[p1_i].point = FontPoint::new(p0.x.0 + ratio * (p1.x.0 - p0.x.0), p0.y.0 + ratio * (p1.y.0 - p0.y.0));
+            contour[p1_i].point = FontPoint::new(
+                p0.x.0 + ratio * (p1.x.0 - p0.x.0),
+                p0.y.0 + ratio * (p1.y.0 - p0.y.0),
+            );
         }
     } else {
         if d1 <= COLLINEAR_MIN_LEN_EPSILON {
@@ -376,10 +359,14 @@ pub fn slide_smooth_node_on_cubic_path_shift_middle(
         contour[i].point = p3_new;
         contour[p1_i].point = a0;
         contour[p2_i].point = b0;
-        contour[q1_i].point = FontPoint::new(p3_new.x.0 + d_new * tau_x, p3_new.y.0 + d_new * tau_y);
+        contour[q1_i].point =
+            FontPoint::new(p3_new.x.0 + d_new * tau_x, p3_new.y.0 + d_new * tau_y);
         if d2 > COLLINEAR_MIN_LEN_EPSILON {
             let ratio = d_new / d2;
-            contour[q2_i].point = FontPoint::new(q3.x.0 + ratio * (q2.x.0 - q3.x.0), q3.y.0 + ratio * (q2.y.0 - q3.y.0));
+            contour[q2_i].point = FontPoint::new(
+                q3.x.0 + ratio * (q2.x.0 - q3.x.0),
+                q3.y.0 + ratio * (q2.y.0 - q3.y.0),
+            );
         }
     }
     true
@@ -399,18 +386,26 @@ pub fn slide_smooth_line_node_unlimited(
     if n < 3 || contour.len() != n {
         return false;
     }
-    let Some(i) = shadow.iter().position(|node| node.id == node_id) else { return false; };
+    let Some(i) = shadow.iter().position(|node| node.id == node_id) else {
+        return false;
+    };
     if shadow[i].node_type != NodeType::Smooth {
         return false;
     }
-    let (Some(prev_i), Some(next_i)) = (wrap_index(i as isize - 1, n, closed), wrap_index(i as isize + 1, n, closed)) else {
+    let (Some(prev_i), Some(next_i)) = (
+        wrap_index(i as isize - 1, n, closed),
+        wrap_index(i as isize + 1, n, closed),
+    ) else {
         return false;
     };
-    if shadow[prev_i].node_type == NodeType::OffCurve || shadow[next_i].node_type == NodeType::OffCurve {
+    if shadow[prev_i].node_type == NodeType::OffCurve
+        || shadow[next_i].node_type == NodeType::OffCurve
+    {
         return false;
     }
     let target = FontPoint::new(shadow[i].point.x.0 + dx, shadow[i].point.y.0 + dy);
-    contour[i].point = project_point_onto_infinite_line(target, shadow[prev_i].point, shadow[next_i].point);
+    contour[i].point =
+        project_point_onto_infinite_line(target, shadow[prev_i].point, shadow[next_i].point);
     contour[i].node_type = NodeType::Smooth;
     true
 }

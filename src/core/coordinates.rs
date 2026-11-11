@@ -30,7 +30,7 @@ impl FontPoint {
         dx.hypot(dy)
     }
 
-    /// Rounds this font point to the nearest `1.0 UPM` integer grid (`TC-GLIFO-015`).
+    /// Rounds this font point to the nearest `1.0 UPM` integer grid (`TC-GRAFIA-015`).
     #[must_use]
     pub fn round_to_grid(self) -> Self {
         Self::new(self.x.0.round(), self.y.0.round())
@@ -94,6 +94,19 @@ impl ViewportTransform {
             zoom: zoom.max(crate::tokens::MIN_VIEWPORT_ZOOM),
             pan_offset,
             upm,
+        }
+    }
+
+    /// Returns a copy of this viewport transform shifted horizontally by `origin_x_upm` in UPM.
+    #[must_use]
+    pub fn with_origin_x_upm(self, origin_x_upm: f64) -> Self {
+        Self {
+            zoom: self.zoom,
+            pan_offset: ScreenPoint::new(
+                self.pan_offset.x.0 + (origin_x_upm as f32 * self.zoom),
+                self.pan_offset.y.0,
+            ),
+            upm: self.upm,
         }
     }
 

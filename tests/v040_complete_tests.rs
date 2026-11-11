@@ -1,4 +1,4 @@
-//! Normative COTS Verification Suite for `SPEC-005` (`glifo v0.4.0`):
+//! Normative COTS Verification Suite for `SPEC-005` (`grafia v0.4.0`):
 //! Specialized Edit Tools (`KnifeTool`, `PrimitivesTool`, `MeasurementTool`, `AnnotationTool`,
 //! `PencilTool`, `PixelTool`), Coordinate & Segment Delta Overlays, and Canvas Annotations
 //! (`TC-V040-001` .. `TC-V040-009`).
@@ -10,8 +10,8 @@ use grafia::adapters::headless::rasterize_canvas_subregion;
 use grafia::adapters::input_dispatcher::InputDispatcher;
 use grafia::{
     AnnotationId, AnnotationKind, AnnotationSubTool, AppearanceMode, CanvasAnnotation, CanvasTool,
-    FontPoint, GlifoCanvasState, GlifoTheme, Node, NodeId, NodeType, PrimitiveSubTool, ScreenPoint,
-    ToolDialogRequest,
+    FontPoint, GrafiaCanvasState, GrafiaTheme, Node, NodeId, NodeType, PrimitiveSubTool,
+    ScreenPoint, ToolDialogRequest,
 };
 
 fn default_canvas_rect() -> Rect {
@@ -20,7 +20,7 @@ fn default_canvas_rect() -> Rect {
 
 #[allow(clippy::too_many_arguments)]
 fn run_dispatch(
-    state: &mut GlifoCanvasState,
+    state: &mut GrafiaCanvasState,
     events: Vec<Event>,
     shift: bool,
     alt: bool,
@@ -64,7 +64,7 @@ fn mods(shift: bool, alt: bool, cmd: bool, ctrl: bool) -> EguiModifiers {
 }
 
 fn press_key(
-    state: &mut GlifoCanvasState,
+    state: &mut GrafiaCanvasState,
     key: Key,
     shift: bool,
     alt: bool,
@@ -89,7 +89,7 @@ fn press_key(
 }
 
 fn pointer_press(
-    state: &mut GlifoCanvasState,
+    state: &mut GrafiaCanvasState,
     scr: ScreenPoint,
     shift: bool,
     alt: bool,
@@ -117,7 +117,7 @@ fn pointer_press(
 }
 
 fn pointer_move(
-    state: &mut GlifoCanvasState,
+    state: &mut GrafiaCanvasState,
     scr: ScreenPoint,
     shift: bool,
     alt: bool,
@@ -125,18 +125,11 @@ fn pointer_move(
     ctrl: bool,
 ) {
     let pos = Pos2::new(scr.x.0, scr.y.0);
-    let _ = run_dispatch(
-        state,
-        vec![Event::PointerMoved(pos)],
-        shift,
-        alt,
-        cmd,
-        ctrl,
-    );
+    let _ = run_dispatch(state, vec![Event::PointerMoved(pos)], shift, alt, cmd, ctrl);
 }
 
 fn pointer_release(
-    state: &mut GlifoCanvasState,
+    state: &mut GrafiaCanvasState,
     scr: ScreenPoint,
     shift: bool,
     alt: bool,
@@ -160,8 +153,8 @@ fn pointer_release(
     );
 }
 
-fn init_single_box_state() -> GlifoCanvasState {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+fn init_single_box_state() -> GrafiaCanvasState {
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 0.5;
     state.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
     let rect_nodes = vec![
@@ -239,7 +232,11 @@ fn tc_v040_002_knife_tool_alt_adds_nodes_without_slicing_and_single_hit_opens_co
     pointer_release(&mut state, end_scr, false, true, false, false);
 
     assert_eq!(state.contours.len(), 1, "Alt+Knife must not split contour");
-    assert_eq!(state.contours[0].len(), 6, "2 OnCurve nodes inserted at x=100,y=250 and x=500,y=250");
+    assert_eq!(
+        state.contours[0].len(),
+        6,
+        "2 OnCurve nodes inserted at x=100,y=250 and x=500,y=250"
+    );
     assert_eq!(state.selected_nodes.len(), 2);
 
     // Undo back to 4-node rectangle
@@ -255,7 +252,10 @@ fn tc_v040_002_knife_tool_alt_adds_nodes_without_slicing_and_single_hit_opens_co
     pointer_release(&mut state, out_scr, false, false, false, false);
 
     assert_eq!(state.contours.len(), 1);
-    assert!(!state.is_contour_closed(0), "Single knife hit on closed contour must divide & open it");
+    assert!(
+        !state.is_contour_closed(0),
+        "Single knife hit on closed contour must divide & open it"
+    );
     let first = state.contours[0].first().unwrap().point;
     let last = state.contours[0].last().unwrap().point;
     assert!((first.x.0 - 500.0).abs() < 1.0 && (first.y.0 - 300.0).abs() < 1.0);
@@ -267,7 +267,7 @@ fn tc_v040_002_knife_tool_alt_adds_nodes_without_slicing_and_single_hit_opens_co
 // ============================================================================
 #[test]
 fn tc_v040_003_primitives_tool_rect_and_circle_modifiers_and_single_click_dialog() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 0.5;
     state.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
     state.active_snappers.clear();
@@ -290,7 +290,9 @@ fn tc_v040_003_primitives_tool_rect_and_circle_modifiers_and_single_click_dialog
 
     assert_eq!(state.contours.len(), 1);
     assert_eq!(state.contours[0].len(), 4);
-    assert!(state.contours[0].iter().all(|n| n.node_type == NodeType::Corner));
+    assert!(state.contours[0]
+        .iter()
+        .all(|n| n.node_type == NodeType::Corner));
 
     // 2. Press Shift+F -> cycles to Circle sub-tool (`CanvasTool`)
     press_key(&mut state, Key::F, true, false, false, false);
@@ -309,8 +311,14 @@ fn tc_v040_003_primitives_tool_rect_and_circle_modifiers_and_single_click_dialog
     assert_eq!(state.contours.len(), 2);
     // Cubic Bézier circle has 4 Smooth extreme nodes + 8 OffCurve kappa handles = 12 nodes
     assert_eq!(state.contours[1].len(), 12);
-    let smooth_count = state.contours[1].iter().filter(|n| n.node_type == NodeType::Smooth).count();
-    let offcurve_count = state.contours[1].iter().filter(|n| n.node_type == NodeType::OffCurve).count();
+    let smooth_count = state.contours[1]
+        .iter()
+        .filter(|n| n.node_type == NodeType::Smooth)
+        .count();
+    let offcurve_count = state.contours[1]
+        .iter()
+        .filter(|n| n.node_type == NodeType::OffCurve)
+        .count();
     assert_eq!(smooth_count, 4);
     assert_eq!(offcurve_count, 8);
 
@@ -329,7 +337,12 @@ fn tc_v040_003_primitives_tool_rect_and_circle_modifiers_and_single_click_dialog
     ));
 
     // Programmatic dialog confirmation `insert_primitive` creates the primitive with Undo support
-    assert!(state.insert_primitive(PrimitiveSubTool::Rectangle, FontPoint::new(250.0, 250.0), 120.0, 80.0));
+    assert!(state.insert_primitive(
+        PrimitiveSubTool::Rectangle,
+        FontPoint::new(250.0, 250.0),
+        120.0,
+        80.0
+    ));
     assert_eq!(state.contours.len(), 3);
     assert!(state.undo());
     assert_eq!(state.contours.len(), 2);
@@ -340,7 +353,7 @@ fn tc_v040_003_primitives_tool_rect_and_circle_modifiers_and_single_click_dialog
 // ============================================================================
 #[test]
 fn tc_v040_004_measurement_tool_coordinate_labels_and_temporary_modifier_override() {
-    let mut state = GlifoCanvasState::init_glyph_o();
+    let mut state = GrafiaCanvasState::init_glyph_o();
     state.italic_angle_deg = 12.0;
     assert_eq!(state.active_tool, CanvasTool::Select);
 
@@ -410,16 +423,35 @@ fn tc_v040_005_measurement_ray_intersections_sidebearings_angle_and_promote_to_g
     let hits = &state.v040.measurement.intersections;
     // Ray hits: start (-50), LSB (0), contour left (100), contour right (500), RSB (600), end (650)
     let xs: Vec<f64> = hits.iter().map(|p| p.x.0).collect();
-    assert!(xs.iter().any(|&x| (x - 0.0).abs() < 1.0), "Must intersect LSB x=0: {xs:?}");
-    assert!(xs.iter().any(|&x| (x - 100.0).abs() < 1.0), "Must intersect contour x=100: {xs:?}");
-    assert!(xs.iter().any(|&x| (x - 500.0).abs() < 1.0), "Must intersect contour x=500: {xs:?}");
-    assert!(xs.iter().any(|&x| (x - 600.0).abs() < 1.0), "Must intersect RSB x=600: {xs:?}");
+    assert!(
+        xs.iter().any(|&x| (x - 0.0).abs() < 1.0),
+        "Must intersect LSB x=0: {xs:?}"
+    );
+    assert!(
+        xs.iter().any(|&x| (x - 100.0).abs() < 1.0),
+        "Must intersect contour x=100: {xs:?}"
+    );
+    assert!(
+        xs.iter().any(|&x| (x - 500.0).abs() < 1.0),
+        "Must intersect contour x=500: {xs:?}"
+    );
+    assert!(
+        xs.iter().any(|&x| (x - 600.0).abs() < 1.0),
+        "Must intersect RSB x=600: {xs:?}"
+    );
 
     // Press 'G' while dragging measurement line (`CanvasTool::keyDown:` at spec_ref)
     assert!(state.guides.is_empty());
     press_key(&mut state, Key::G, false, false, false, false);
-    assert_eq!(state.guides.len(), 1, "Pressing 'G' during measurement drag must create a local Guide");
-    assert!(state.guides[0].show_measurement, "Promoted guide must have show_measurement = true");
+    assert_eq!(
+        state.guides.len(),
+        1,
+        "Pressing 'G' during measurement drag must create a local Guide"
+    );
+    assert!(
+        state.guides[0].show_measurement,
+        "Promoted guide must have show_measurement = true"
+    );
     assert!(state.show_guides);
 
     pointer_release(&mut state, p_end, false, false, false, false);
@@ -431,7 +463,7 @@ fn tc_v040_005_measurement_ray_intersections_sidebearings_angle_and_promote_to_g
 // ============================================================================
 #[test]
 fn tc_v040_006_annotation_tool_five_types_handle_manipulation_delete_and_undo() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 0.5;
     state.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
 
@@ -445,7 +477,10 @@ fn tc_v040_006_annotation_tool_five_types_handle_manipulation_delete_and_undo() 
     pointer_press(&mut state, p_text, false, false, false, false);
     pointer_release(&mut state, p_text, false, false, false, false);
     assert_eq!(state.glyph.annotations.len(), 1);
-    assert!(matches!(state.glyph.annotations[0].kind, AnnotationKind::Text { .. }));
+    assert!(matches!(
+        state.glyph.annotations[0].kind,
+        AnnotationKind::Text { .. }
+    ));
 
     // 2. Cycle sub-tool via Shift+A -> Arrow (2), Circle (3), Plus (4), Minus (5)
     press_key(&mut state, Key::A, true, false, false, false);
@@ -509,7 +544,7 @@ fn tc_v040_006_annotation_tool_five_types_handle_manipulation_delete_and_undo() 
 // ============================================================================
 #[test]
 fn tc_v040_007_pencil_tool_freehand_sampling_and_cubic_curve_fitting() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 0.5;
     state.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
 
@@ -534,18 +569,16 @@ fn tc_v040_007_pencil_tool_freehand_sampling_and_cubic_curve_fitting() {
     assert!(state.v040.pencil.active);
     assert!(state.v040.pencil.points_upm.len() >= 4);
     let scr_last = state.viewport.to_screen(*pts.last().unwrap());
-    pointer_release(
-        &mut state,
-        scr_last,
-        false,
-        false,
-        false,
-        false,
-    );
+    pointer_release(&mut state, scr_last, false, false, false, false);
 
     assert_eq!(state.contours.len(), 1);
-    assert!(!state.is_contour_closed(0), "Open stroke far from start must produce an open contour");
-    assert!(state.contours[0].iter().any(|n| n.node_type == NodeType::OffCurve));
+    assert!(
+        !state.is_contour_closed(0),
+        "Open stroke far from start must produce an open contour"
+    );
+    assert!(state.contours[0]
+        .iter()
+        .any(|n| n.node_type == NodeType::OffCurve));
 
     // 2. Closed freehand loop (ends near start point)
     let loop_pts = [
@@ -562,17 +595,13 @@ fn tc_v040_007_pencil_tool_freehand_sampling_and_cubic_curve_fitting() {
         pointer_move(&mut state, lscr, false, false, false, false);
     }
     let lscr_last = state.viewport.to_screen(*loop_pts.last().unwrap());
-    pointer_release(
-        &mut state,
-        lscr_last,
-        false,
-        false,
-        false,
-        false,
-    );
+    pointer_release(&mut state, lscr_last, false, false, false, false);
 
     assert_eq!(state.contours.len(), 2);
-    assert!(state.is_contour_closed(1), "Loop ending near start must auto-close");
+    assert!(
+        state.is_contour_closed(1),
+        "Loop ending near start must auto-close"
+    );
 
     // Undo / Redo roundtrip
     assert!(state.undo());
@@ -586,7 +615,7 @@ fn tc_v040_007_pencil_tool_freehand_sampling_and_cubic_curve_fitting() {
 // ============================================================================
 #[test]
 fn tc_v040_008_pixel_tool_grid_cell_paint_erase_and_shift_bresenham_line() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 0.5;
     state.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
     state.grid_step_upm = 50.0;
@@ -666,7 +695,7 @@ fn tc_v040_009_headless_and_light_dark_rendering_parity_for_v040_tools() {
 // ============================================================================
 #[test]
 fn tc_v040_010_primitives_space_pan_and_grid_rounding() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 0.5;
     state.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
     state.round_to_grid = true;
@@ -717,7 +746,10 @@ fn tc_v040_011_measurement_node_snapping_and_ccw_vertical_angle() {
         state.v040.measurement.start_upm,
         state.v040.measurement.current_upm,
     );
-    assert!(angle_up.abs() < 1e-3, "Vertical upward angle must be 0°, got {angle_up}");
+    assert!(
+        angle_up.abs() < 1e-3,
+        "Vertical upward angle must be 0°, got {angle_up}"
+    );
 }
 
 // ============================================================================
@@ -725,7 +757,7 @@ fn tc_v040_011_measurement_node_snapping_and_ccw_vertical_angle() {
 // ============================================================================
 #[test]
 fn tc_v040_012_annotation_arrow_rotate_text_resize_and_shift_body_drag() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 0.5;
     state.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
     state.active_tool = CanvasTool::Annotation;
@@ -757,9 +789,9 @@ fn tc_v040_012_annotation_arrow_rotate_text_resize_and_shift_body_drag() {
     let p_arr = state.viewport.to_screen(FontPoint::new(400.0, 200.0));
     pointer_press(&mut state, p_arr, false, false, false, false);
     pointer_release(&mut state, p_arr, false, false, false, false);
-    let h_arr = state.viewport.to_screen(
-        state.glyph.annotations[1].handle_position_upm().unwrap(),
-    );
+    let h_arr = state
+        .viewport
+        .to_screen(state.glyph.annotations[1].handle_position_upm().unwrap());
     let h_arr_up = state.viewport.to_screen(FontPoint::new(400.0, 300.0));
     pointer_press(&mut state, h_arr, false, false, false, false);
     pointer_move(&mut state, h_arr_up, false, false, false, false);
@@ -775,7 +807,7 @@ fn tc_v040_012_annotation_arrow_rotate_text_resize_and_shift_body_drag() {
 // ============================================================================
 #[test]
 fn tc_v040_013_knife_tool_cuts_cubic_bezier_contour_glyph_o() {
-    let mut state = GlifoCanvasState::init_glyph_o();
+    let mut state = GrafiaCanvasState::init_glyph_o();
     let initial_contours = state.contours.len();
     press_key(&mut state, Key::E, false, false, false, false);
 
@@ -790,44 +822,65 @@ fn tc_v040_013_knife_tool_cuts_cubic_bezier_contour_glyph_o() {
     // Outer + inner counter ring sliced across both stems produces 2 disjoint arch contours (top & bottom)
     assert_eq!(state.contours.len(), initial_contours);
     assert!(
-        state.contours.iter().any(|c| c.iter().all(|n| n.point.y.0 <= 350.5))
-            && state.contours.iter().any(|c| c.iter().all(|n| n.point.y.0 >= 349.5)),
+        state
+            .contours
+            .iter()
+            .any(|c| c.iter().all(|n| n.point.y.0 <= 350.5))
+            && state
+                .contours
+                .iter()
+                .any(|c| c.iter().all(|n| n.point.y.0 >= 349.5)),
         "Slicing /o at y=350 must produce a bottom arch (y <= 350) and a top arch (y >= 350)"
     );
     state.assert_invariants();
 }
 
 // ============================================================================
-// TC-V040-014: egui GlifoCanvasWidget Full-Pass Paint Across All v0.4.0 Tools
+// TC-V040-014: egui GrafiaCanvasWidget Full-Pass Paint Across All v0.4.0 Tools
 // ============================================================================
 #[test]
 fn tc_v040_014_egui_widget_renders_all_v040_overlays_without_panic() {
-    let mut state = GlifoCanvasState::init_glyph_o();
-    state.glyph.annotations.push(CanvasAnnotation::new_for_sub_tool(
-        AnnotationId(1),
-        FontPoint::new(150.0, 450.0),
-        AnnotationSubTool::Text,
-    ));
-    state.glyph.annotations.push(CanvasAnnotation::new_for_sub_tool(
-        AnnotationId(2),
-        FontPoint::new(350.0, 350.0),
-        AnnotationSubTool::Circle,
-    ));
-    state.glyph.annotations.push(CanvasAnnotation::new_for_sub_tool(
-        AnnotationId(3),
-        FontPoint::new(450.0, 250.0),
-        AnnotationSubTool::Arrow,
-    ));
-    state.glyph.annotations.push(CanvasAnnotation::new_for_sub_tool(
-        AnnotationId(4),
-        FontPoint::new(550.0, 450.0),
-        AnnotationSubTool::Plus,
-    ));
-    state.glyph.annotations.push(CanvasAnnotation::new_for_sub_tool(
-        AnnotationId(5),
-        FontPoint::new(620.0, 450.0),
-        AnnotationSubTool::Minus,
-    ));
+    let mut state = GrafiaCanvasState::init_glyph_o();
+    state
+        .glyph
+        .annotations
+        .push(CanvasAnnotation::new_for_sub_tool(
+            AnnotationId(1),
+            FontPoint::new(150.0, 450.0),
+            AnnotationSubTool::Text,
+        ));
+    state
+        .glyph
+        .annotations
+        .push(CanvasAnnotation::new_for_sub_tool(
+            AnnotationId(2),
+            FontPoint::new(350.0, 350.0),
+            AnnotationSubTool::Circle,
+        ));
+    state
+        .glyph
+        .annotations
+        .push(CanvasAnnotation::new_for_sub_tool(
+            AnnotationId(3),
+            FontPoint::new(450.0, 250.0),
+            AnnotationSubTool::Arrow,
+        ));
+    state
+        .glyph
+        .annotations
+        .push(CanvasAnnotation::new_for_sub_tool(
+            AnnotationId(4),
+            FontPoint::new(550.0, 450.0),
+            AnnotationSubTool::Plus,
+        ));
+    state
+        .glyph
+        .annotations
+        .push(CanvasAnnotation::new_for_sub_tool(
+            AnnotationId(5),
+            FontPoint::new(620.0, 450.0),
+            AnnotationSubTool::Minus,
+        ));
 
     let ctx = egui::Context::default();
     for mode in [AppearanceMode::Light, AppearanceMode::Dark] {
@@ -847,7 +900,7 @@ fn tc_v040_014_egui_widget_renders_all_v040_overlays_without_panic() {
             };
             let theme = state.theme.clone();
             let mut out = ctx.run_ui(raw, |ui| {
-                let _ = grafia::GlifoCanvasWidget::new(&mut state, &theme).show(ui);
+                let _ = grafia::GrafiaCanvasWidget::new(&mut state, &theme).show(ui);
             });
             out.textures_delta.clear();
         }
@@ -861,7 +914,7 @@ fn tc_v040_014_egui_widget_renders_all_v040_overlays_without_panic() {
 #[test]
 fn tc_v040_015_generate_visual_proof_pngs() {
     let out_dirs = [
-        std::path::PathBuf::from(r"D:\Programmeren\glifo\target\visual_verification"),
+        std::path::PathBuf::from(r"D:\Programmeren\grafia\target\visual_verification"),
         std::path::PathBuf::from(
             r"C:\Users\jhove\.gemini\antigravity-cli\brain\fccb9142-9217-4702-a2ca-95303b541ee0",
         ),
@@ -870,7 +923,7 @@ fn tc_v040_015_generate_visual_proof_pngs() {
         let _ = std::fs::create_dir_all(dir);
     }
 
-    let save_frame = |name: &str, state: &GlifoCanvasState| {
+    let save_frame = |name: &str, state: &GrafiaCanvasState| {
         let theme = state.theme.clone();
         let pm = rasterize_canvas_subregion(state, &theme, 960, 640);
         for dir in &out_dirs {
@@ -883,7 +936,7 @@ fn tc_v040_015_generate_visual_proof_pngs() {
     };
 
     // Frame 48: KnifeTool active drag with orange slice line + intersection circles
-    let mut s48 = GlifoCanvasState::init_glyph_a();
+    let mut s48 = GrafiaCanvasState::init_glyph_a();
     press_key(&mut s48, Key::E, false, false, false, false);
     let p0 = s48.viewport.to_screen(FontPoint::new(0.0, 260.0));
     let p1 = s48.viewport.to_screen(FontPoint::new(700.0, 260.0));
@@ -893,9 +946,14 @@ fn tc_v040_015_generate_visual_proof_pngs() {
     assert!(!s48.v040.knife.intersections.is_empty());
 
     // Frame 49: PrimitivesTool (inserted Rectangle + active Circle preview with dimension badge)
-    let mut s49 = GlifoCanvasState::init_glyph_a();
+    let mut s49 = GrafiaCanvasState::init_glyph_a();
     press_key(&mut s49, Key::F, false, false, false, false);
-    s49.insert_primitive(PrimitiveSubTool::Rectangle, FontPoint::new(40.0, 480.0), 140.0, 140.0);
+    s49.insert_primitive(
+        PrimitiveSubTool::Rectangle,
+        FontPoint::new(40.0, 480.0),
+        140.0,
+        140.0,
+    );
     press_key(&mut s49, Key::F, true, false, false, false);
     let c0 = s49.viewport.to_screen(FontPoint::new(500.0, 480.0));
     let c1 = s49.viewport.to_screen(FontPoint::new(660.0, 640.0));
@@ -905,7 +963,7 @@ fn tc_v040_015_generate_visual_proof_pngs() {
     assert_ne!(pm48.data(), pm49.data());
 
     // Frame 50: MeasurementTool (Blue/Green/Red labels + active ruler ray with intersections)
-    let mut s50 = GlifoCanvasState::init_glyph_o();
+    let mut s50 = GrafiaCanvasState::init_glyph_o();
     s50.selected_nodes = s50.contours[0].iter().map(|n| n.id).collect();
     press_key(&mut s50, Key::L, false, false, false, false);
     let m0 = s50.viewport.to_screen(FontPoint::new(-50.0, 350.0));
@@ -916,30 +974,66 @@ fn tc_v040_015_generate_visual_proof_pngs() {
     assert_ne!(pm49.data(), pm50.data());
 
     // Frame 51: AnnotationTool (all 5 CanvasAnnotation types: Text, Circle, Arrow, Plus, Minus)
-    let mut s51 = GlifoCanvasState::init_glyph_a();
+    let mut s51 = GrafiaCanvasState::init_glyph_a();
     press_key(&mut s51, Key::A, false, false, false, false);
-    s51.glyph.annotations.push(CanvasAnnotation::new_for_sub_tool(AnnotationId(1), FontPoint::new(80.0, 620.0), AnnotationSubTool::Text));
-    s51.glyph.annotations.push(CanvasAnnotation::new_for_sub_tool(AnnotationId(2), FontPoint::new(350.0, 350.0), AnnotationSubTool::Circle));
-    s51.glyph.annotations.push(CanvasAnnotation::new_for_sub_tool(AnnotationId(3), FontPoint::new(500.0, 220.0), AnnotationSubTool::Arrow));
-    s51.glyph.annotations.push(CanvasAnnotation::new_for_sub_tool(AnnotationId(4), FontPoint::new(140.0, 200.0), AnnotationSubTool::Plus));
-    s51.glyph.annotations.push(CanvasAnnotation::new_for_sub_tool(AnnotationId(5), FontPoint::new(580.0, 560.0), AnnotationSubTool::Minus));
+    s51.glyph
+        .annotations
+        .push(CanvasAnnotation::new_for_sub_tool(
+            AnnotationId(1),
+            FontPoint::new(80.0, 620.0),
+            AnnotationSubTool::Text,
+        ));
+    s51.glyph
+        .annotations
+        .push(CanvasAnnotation::new_for_sub_tool(
+            AnnotationId(2),
+            FontPoint::new(350.0, 350.0),
+            AnnotationSubTool::Circle,
+        ));
+    s51.glyph
+        .annotations
+        .push(CanvasAnnotation::new_for_sub_tool(
+            AnnotationId(3),
+            FontPoint::new(500.0, 220.0),
+            AnnotationSubTool::Arrow,
+        ));
+    s51.glyph
+        .annotations
+        .push(CanvasAnnotation::new_for_sub_tool(
+            AnnotationId(4),
+            FontPoint::new(140.0, 200.0),
+            AnnotationSubTool::Plus,
+        ));
+    s51.glyph
+        .annotations
+        .push(CanvasAnnotation::new_for_sub_tool(
+            AnnotationId(5),
+            FontPoint::new(580.0, 560.0),
+            AnnotationSubTool::Minus,
+        ));
     s51.v040.selected_annotations = vec![AnnotationId(2), AnnotationId(3)];
     let pm51 = save_frame("frame_51_v040_annotations_five_types.png", &s51);
     assert_ne!(pm50.data(), pm51.data());
 
     // Frame 52: PencilTool & PixelTool (freehand trail + stamped pixel cells)
-    let mut s52 = GlifoCanvasState::init_glyph_a();
+    let mut s52 = GrafiaCanvasState::init_glyph_a();
     s52.grid_step_upm = 50.0;
     press_key(&mut s52, Key::X, false, false, false, false);
     for (gx, gy) in [(1, 8), (2, 8), (3, 8), (2, 9)] {
-        let p = s52.viewport.to_screen(FontPoint::new(f64::from(gx) * 50.0 + 10.0, f64::from(gy) * 50.0 + 10.0));
+        let p = s52.viewport.to_screen(FontPoint::new(
+            f64::from(gx) * 50.0 + 10.0,
+            f64::from(gy) * 50.0 + 10.0,
+        ));
         pointer_press(&mut s52, p, false, false, false, false);
         pointer_release(&mut s52, p, false, false, false, false);
     }
     press_key(&mut s52, Key::B, false, false, false, false);
     for i in 0..=12 {
         let t = f64::from(i) / 12.0;
-        let pt = s52.viewport.to_screen(FontPoint::new(420.0 + 200.0 * t, 480.0 + 90.0 * (t * std::f64::consts::PI).sin()));
+        let pt = s52.viewport.to_screen(FontPoint::new(
+            420.0 + 200.0 * t,
+            480.0 + 90.0 * (t * std::f64::consts::PI).sin(),
+        ));
         if i == 0 {
             pointer_press(&mut s52, pt, false, false, false, false);
         } else {
@@ -950,7 +1044,7 @@ fn tc_v040_015_generate_visual_proof_pngs() {
     assert_ne!(pm51.data(), pm52.data());
 
     // Frame 53: Dark Mode (`AppearanceMode::Dark`) with Annotations & Measurement Ruler
-    let mut s53 = GlifoCanvasState::init_glyph_a();
+    let mut s53 = GrafiaCanvasState::init_glyph_a();
     s53.glyph.annotations = s51.glyph.annotations.clone();
     s53.v040.selected_annotations = s51.v040.selected_annotations.clone();
     s53.set_appearance_mode(AppearanceMode::Dark);
@@ -970,7 +1064,7 @@ fn tc_v040_015_generate_visual_proof_pngs() {
 fn tc_v040_016_knife_tool_slices_through_oncurve_seam_nodes_and_multi_stem_contours() {
     // 1. Create a Circle via PrimitivesTool::Circle at [100..500, 100..500].
     // Its 4 OnCurve extreme nodes sit at (300, 100), (500, 300), (300, 500), (100, 300).
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 0.5;
     state.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
     assert!(state.insert_primitive(
@@ -1001,7 +1095,7 @@ fn tc_v040_016_knife_tool_slices_through_oncurve_seam_nodes_and_multi_stem_conto
     state.assert_invariants();
 
     // 2. Multi-stem horizontal slice across Glyph '/A' outer contour (crosses both left and right legs = 4 hits)
-    let mut state_a = GlifoCanvasState::init_glyph_a();
+    let mut state_a = GrafiaCanvasState::init_glyph_a();
     // Remove inner counter so we test a single non-convex contour crossed 4 times at y = 100
     state_a.contours.truncate(1);
     state_a.glyph.contours.truncate(1);
@@ -1030,7 +1124,7 @@ fn tc_v040_016_knife_tool_slices_through_oncurve_seam_nodes_and_multi_stem_conto
 // ============================================================================
 #[test]
 fn tc_v040_017_annotation_clipboard_empty_text_body_hit_and_f_key_subtool_cycling() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 0.5;
     state.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
 
@@ -1138,7 +1232,7 @@ fn tc_v040_018_temp_modifier_overrides_measurement_and_cmd_select_in_knife_penci
 fn tc_v040_019_jaco_crash_regression_knife_open_connect_add_inflections_and_selection_invariants() {
     // 1. Exact reproduction on `/n`:
     // Cut `/n` open twice with single-intersection knife cuts -> produces 2 open contours.
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.load_glyph_archetype(grafia::tokens::GlyphArchetype::N);
     let mut flags = state.closed_flags();
     assert!(grafia::core::knife_cut_paths_in_layer(
@@ -1256,7 +1350,7 @@ fn tc_v040_019_jaco_crash_regression_knife_open_connect_add_inflections_and_sele
 
     // 1d. Single-intersection Knife cut on a cubic segment (e.g. `/n` arch at x=300) followed by
     // `connect_selected_open_endpoints()`: closing must NOT overwrite the trailing `OffCurve` handle into `Corner`!
-    let mut state_cubic_cut = GlifoCanvasState::init_glyph_n();
+    let mut state_cubic_cut = GrafiaCanvasState::init_glyph_n();
     let mut flags_cc = state_cubic_cut.closed_flags();
     assert!(grafia::core::knife_cut_paths_in_layer(
         &mut state_cubic_cut.contours,
@@ -1289,7 +1383,7 @@ fn tc_v040_019_jaco_crash_regression_knife_open_connect_add_inflections_and_sele
 
     // 1e. 2-OnCurve open cubic loop with coincident endpoints: `connect_selected_open_endpoints()`
     // must not pop the 2nd OnCurve node and leave a 1-OnCurve closed contour.
-    let mut state_two_on = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state_two_on = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state_two_on.contours = vec![vec![
         grafia::core::Node::new(NodeId(1), 0.0, 0.0, NodeType::Corner),
         grafia::core::Node::new(NodeId(2), 100.0, 0.0, NodeType::OffCurve),
@@ -1306,7 +1400,7 @@ fn tc_v040_019_jaco_crash_regression_knife_open_connect_add_inflections_and_sele
     state_two_on.assert_invariants();
 
     // 2. Also test `add_inflection_points()` on `/s` with all nodes (including OffCurve handles) selected
-    let mut state_s = GlifoCanvasState::init_glyph_s();
+    let mut state_s = GrafiaCanvasState::init_glyph_s();
     // Deform one spine handle on `/s` so a single cubic segment contains an inflection root
     state_s.contours[0][11].point = FontPoint::new(200.0, 260.0);
     state_s.sync_paths_from_contours();
@@ -1316,7 +1410,7 @@ fn tc_v040_019_jaco_crash_regression_knife_open_connect_add_inflections_and_sele
 
     // 3. Test `add_extremes(false)`, `add_extremes(true)`, `tidy_up_paths()`, `close_open_paths()`,
     // and `Pixel` erase while `selected_nodes` and `active_open_contour` contain stale/affected nodes
-    let mut state_ext = GlifoCanvasState::init_glyph_s();
+    let mut state_ext = GrafiaCanvasState::init_glyph_s();
     state_ext.selected_nodes = state_ext.contours[0].iter().map(|n| n.id).collect();
     let _ = state_ext.add_extremes(false);
     state_ext.assert_invariants();
@@ -1328,7 +1422,7 @@ fn tc_v040_019_jaco_crash_regression_knife_open_connect_add_inflections_and_sele
     state_ext.assert_invariants();
 
     // Open a contour, set active_open_contour = Some(0) and pending_pen_bcp_out, and call `close_open_paths()`
-    let mut state_open = GlifoCanvasState::init_glyph_n();
+    let mut state_open = GrafiaCanvasState::init_glyph_n();
     state_open.set_contour_closed(0, false);
     state_open.active_open_contour = Some(0);
     state_open.pending_pen_bcp_out = Some((0, FontPoint::new(120.0, 200.0)));
@@ -1340,7 +1434,7 @@ fn tc_v040_019_jaco_crash_regression_knife_open_connect_add_inflections_and_sele
     state_open.assert_invariants();
 
     // Stamp a pixel cell, select its nodes, then erase it with PixelTool while selected
-    let mut state_px = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state_px = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state_px.viewport.zoom = 0.5;
     state_px.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
     state_px.grid_step_upm = 50.0;
@@ -1375,7 +1469,7 @@ fn tc_v040_020_arbtest_stateful_multi_tool_action_chains() {
             GlyphArchetype::N,
             GlyphArchetype::S,
         ])?;
-        let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+        let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
         state.viewport.zoom = 0.5;
         state.viewport.pan_offset = ScreenPoint::new(150.0, 500.0);
         state.load_glyph_archetype(archetype);
@@ -1420,13 +1514,20 @@ fn tc_v040_020_arbtest_stateful_multi_tool_action_chains() {
                         let idx_a = u.int_in_range(0..=(open_eps.len() - 1))?;
                         let id_a = open_eps.remove(idx_a);
                         let id_b = *u.choose(&open_eps)?;
-                        state.selected_nodes = if id_a == id_b { vec![id_a] } else { vec![id_a, id_b] };
+                        state.selected_nodes = if id_a == id_b {
+                            vec![id_a]
+                        } else {
+                            vec![id_a, id_b]
+                        };
                     }
                 }
                 3 => {
                     // Select a random subset of live NodeIds
-                    let all_ids: Vec<NodeId> =
-                        state.contours.iter().flat_map(|c| c.iter().map(|n| n.id)).collect();
+                    let all_ids: Vec<NodeId> = state
+                        .contours
+                        .iter()
+                        .flat_map(|c| c.iter().map(|n| n.id))
+                        .collect();
                     let mut chosen = Vec::new();
                     for id in all_ids {
                         if u.arbitrary::<bool>()? {
@@ -1459,13 +1560,17 @@ fn tc_v040_020_arbtest_stateful_multi_tool_action_chains() {
                                     let my = 0.5 * (line.p0.y + line.p1.y);
                                     let dx = line.p1.x - line.p0.x;
                                     let dy = line.p1.y - line.p0.y;
-                                    seg_points.push((FontPoint::new(mx, my), FontPoint::new(-dy, dx)));
+                                    seg_points
+                                        .push((FontPoint::new(mx, my), FontPoint::new(-dy, dx)));
                                 }
                                 ContourSegment::Cubic { cubic, .. } => {
                                     use kurbo::{ParamCurve, ParamCurveDeriv};
                                     let m = cubic.eval(0.5);
                                     let d = cubic.deriv().eval(0.5);
-                                    seg_points.push((FontPoint::new(m.x, m.y), FontPoint::new(-d.y, d.x)));
+                                    seg_points.push((
+                                        FontPoint::new(m.x, m.y),
+                                        FontPoint::new(-d.y, d.x),
+                                    ));
                                 }
                             }
                         }
@@ -1475,7 +1580,7 @@ fn tc_v040_020_arbtest_stateful_multi_tool_action_chains() {
                         let len = norm.x.0.hypot(norm.y.0).max(1.0);
                         let nx = norm.x.0 / len;
                         let ny = norm.y.0 / len;
-                    let knife_kind = u.int_in_range(0..=2)?;
+                        let knife_kind = u.int_in_range(0..=2)?;
                         let span = if knife_kind == 0 { 40.0 } else { 600.0 };
                         let p0 = FontPoint::new(mid.x.0 - nx * span, mid.y.0 - ny * span);
                         let p1 = FontPoint::new(mid.x.0 + nx * span, mid.y.0 + ny * span);
@@ -1583,7 +1688,9 @@ fn tc_v040_020_arbtest_stateful_multi_tool_action_chains() {
                     state.grid_step_upm = 50.0;
                     state.activate_tool(CanvasTool::Pixel);
                     let target_pt = if let Some(contour) = state.contours.first() {
-                        contour.first().map_or(FontPoint::new(75.0, 75.0), |n| n.point)
+                        contour
+                            .first()
+                            .map_or(FontPoint::new(75.0, 75.0), |n| n.point)
                     } else {
                         FontPoint::new(75.0, 75.0)
                     };
@@ -1656,7 +1763,7 @@ fn tc_v040_020_arbtest_stateful_multi_tool_action_chains() {
 fn tc_v040_021_boolean_remove_overlap_rectilinear_pixels_cubic_circles_and_counters() {
     // 1. Overlapping rectilinear stems forming a '+' cross:
     // Horizontal bar [100..500, 250..350] + Vertical bar [250..350, 100..500]
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 0.5;
     state.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
     assert!(state.insert_primitive(
@@ -1688,15 +1795,27 @@ fn tc_v040_021_boolean_remove_overlap_rectilinear_pixels_cubic_circles_and_count
     press_key(&mut state, Key::O, true, false, true, false);
     state.assert_invariants();
     // 2 overlapping closed rectangles merge into 1 closed 12-corner '+' contour + 1 untouched open contour = 2 contours
-    assert_eq!(state.contours.len(), 2, "2 overlapping bars + 1 open path must yield 1 merged closed contour + 1 open contour");
-    let closed_idx = (0..state.contours.len()).find(|&i| state.is_contour_closed(i)).unwrap();
-    let open_idx = (0..state.contours.len()).find(|&i| !state.is_contour_closed(i)).unwrap();
+    assert_eq!(
+        state.contours.len(),
+        2,
+        "2 overlapping bars + 1 open path must yield 1 merged closed contour + 1 open contour"
+    );
+    let closed_idx = (0..state.contours.len())
+        .find(|&i| state.is_contour_closed(i))
+        .unwrap();
+    let open_idx = (0..state.contours.len())
+        .find(|&i| !state.is_contour_closed(i))
+        .unwrap();
     assert_eq!(
         state.contours[closed_idx].len(),
         12,
         "Merged '+' cross must have exactly 12 Corner nodes"
     );
-    assert_eq!(state.contours[open_idx].len(), 2, "Open contour must remain untouched");
+    assert_eq!(
+        state.contours[open_idx].len(),
+        2,
+        "Open contour must remain untouched"
+    );
     assert!(
         grafia::contour_signed_area(&state.contours[closed_idx]) > 0.0,
         "Outer merged contour must have CCW positive signed area"
@@ -1710,7 +1829,7 @@ fn tc_v040_021_boolean_remove_overlap_rectilinear_pixels_cubic_circles_and_count
 
     // 2. Adjacent `PixelTool` cells sharing edges:
     // Stamp 3 horizontal adjacent 50x50 cells at (100,100), (150,100), (200,100) -> Remove Overlap merges into 1 clean 4-node [100..250, 100..150] rectangle!
-    let mut state_px = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state_px = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state_px.viewport.zoom = 0.5;
     state_px.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
     state_px.grid_step_upm = 50.0;
@@ -1736,7 +1855,7 @@ fn tc_v040_021_boolean_remove_overlap_rectilinear_pixels_cubic_circles_and_count
     );
 
     // 3. Overlapping curved `Circle` cubic Bézier contours + enclosed CW counter preservation:
-    let mut state_circles = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state_circles = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state_circles.viewport.zoom = 0.5;
     state_circles.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
     // Outer Circle 1: [100..400, 100..400]
@@ -1778,8 +1897,14 @@ fn tc_v040_021_boolean_remove_overlap_rectilinear_pixels_cubic_circles_and_count
     // Outer contour must still contain Cubic OffCurve handles and span x in [100..550]
     let outer_c = &state_circles.contours[0];
     assert!(outer_c.iter().any(|n| n.node_type == NodeType::OffCurve));
-    let min_x = outer_c.iter().map(|n| n.point.x.0).fold(f64::INFINITY, f64::min);
-    let max_x = outer_c.iter().map(|n| n.point.x.0).fold(f64::NEG_INFINITY, f64::max);
+    let min_x = outer_c
+        .iter()
+        .map(|n| n.point.x.0)
+        .fold(f64::INFINITY, f64::min);
+    let max_x = outer_c
+        .iter()
+        .map(|n| n.point.x.0)
+        .fold(f64::NEG_INFINITY, f64::max);
     assert!((min_x - 100.0).abs() < 2.0 && (max_x - 550.0).abs() < 2.0);
     // Inner counter must have negative (CW) signed area
     assert!(grafia::contour_signed_area(&state_circles.contours[1]) < 0.0);
@@ -1788,15 +1913,31 @@ fn tc_v040_021_boolean_remove_overlap_rectilinear_pixels_cubic_circles_and_count
     let mut next_id = 1000;
     let rect_a = grafia::build_rectangle_contour_nodes(100.0, 100.0, 400.0, 400.0, &mut next_id);
     let rect_b = grafia::build_rectangle_contour_nodes(250.0, 200.0, 500.0, 300.0, &mut next_id);
-    let diff = grafia::subtract_contours(std::slice::from_ref(&rect_a), std::slice::from_ref(&rect_b), &mut next_id);
+    let diff = grafia::subtract_contours(
+        std::slice::from_ref(&rect_a),
+        std::slice::from_ref(&rect_b),
+        &mut next_id,
+    );
     assert_eq!(diff.len(), 1);
-    assert_eq!(diff[0].len(), 8, "Subtracting side notch from rectangle yields an 8-corner C-shape");
-    let inter = grafia::intersect_contours(std::slice::from_ref(&rect_a), std::slice::from_ref(&rect_b), &mut next_id);
+    assert_eq!(
+        diff[0].len(),
+        8,
+        "Subtracting side notch from rectangle yields an 8-corner C-shape"
+    );
+    let inter = grafia::intersect_contours(
+        std::slice::from_ref(&rect_a),
+        std::slice::from_ref(&rect_b),
+        &mut next_id,
+    );
     assert_eq!(inter.len(), 1);
-    assert_eq!(inter[0].len(), 4, "Intersection of [100..400,100..400] and [250..500,200..300] is [250..400,200..300]");
+    assert_eq!(
+        inter[0].len(),
+        4,
+        "Intersection of [100..400,100..400] and [250..500,200..300] is [250..400,200..300]"
+    );
 
     // 5. Single-contour self-intersection removal (figure-8 bow-tie contour -> 2 CCW triangles):
-    let mut state_fig8 = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state_fig8 = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     let bow_tie = vec![
         Node::new(NodeId(1), 100.0, 100.0, NodeType::Corner),
         Node::new(NodeId(2), 400.0, 400.0, NodeType::Corner),
@@ -1817,10 +1958,13 @@ fn tc_v040_021_boolean_remove_overlap_rectilinear_pixels_cubic_circles_and_count
         2,
         "Figure-8 self-intersecting contour must split at (250,250) into 2 closed triangle contours"
     );
-    assert!(state_fig8.contours.iter().all(|c| c.len() == 3 && grafia::contour_signed_area(c) > 0.0));
+    assert!(state_fig8
+        .contours
+        .iter()
+        .all(|c| c.len() == 3 && grafia::contour_signed_area(c) > 0.0));
 
     // 6. Completely contained redundant positive CCW contour + coincident identical Circle contours:
-    let mut state_contained = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state_contained = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     assert!(state_contained.insert_primitive(
         PrimitiveSubTool::Rectangle,
         FontPoint::new(100.0, 100.0),
@@ -1842,7 +1986,7 @@ fn tc_v040_021_boolean_remove_overlap_rectilinear_pixels_cubic_circles_and_count
     assert_eq!(state_contained.contours.len(), 1);
     assert_eq!(state_contained.contours[0].len(), 4);
 
-    let mut state_coincident = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state_coincident = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     for _ in 0..2 {
         assert!(state_coincident.insert_primitive(
             PrimitiveSubTool::Circle,
@@ -1867,7 +2011,7 @@ fn tc_v040_021_boolean_remove_overlap_rectilinear_pixels_cubic_circles_and_count
 #[test]
 fn tc_v040_022_knife_tool_multi_hit_four_intersections_on_glyph_n_and_glyph_o_counter_ring() {
     // Part 1: Single closed contour `/n` sliced horizontally at y = 200 across both stems (4 intersections)
-    let mut state_n = GlifoCanvasState::init_glyph_n();
+    let mut state_n = GrafiaCanvasState::init_glyph_n();
     assert_eq!(state_n.contours.len(), 1);
     press_key(&mut state_n, Key::E, false, false, false, false);
 
@@ -1899,11 +2043,14 @@ fn tc_v040_022_knife_tool_multi_hit_four_intersections_on_glyph_n_and_glyph_o_co
         .iter()
         .filter(|c| c.iter().all(|n| n.point.y.0 >= 199.5))
         .count();
-    assert_eq!(bottom_stems, 2, "Must have 2 bottom stem contours below y=200");
+    assert_eq!(
+        bottom_stems, 2,
+        "Must have 2 bottom stem contours below y=200"
+    );
     assert_eq!(top_arch, 1, "Must have 1 top arch contour above y=200");
 
     // Part 2: Outer + inner counter ring `/o` sliced horizontally at y = 250 (2 hits on outer + 2 hits on inner = 4 hits)
-    let mut state_o = GlifoCanvasState::init_glyph_o();
+    let mut state_o = GrafiaCanvasState::init_glyph_o();
     assert_eq!(state_o.contours.len(), 2);
     // Normalize `/o` path direction first (`outer` CCW, `inner` CW)
     let _ = state_o.correct_path_direction();
@@ -1965,7 +2112,3 @@ fn tc_v040_022_knife_tool_multi_hit_four_intersections_on_glyph_n_and_glyph_o_co
     );
     assert!(state_o.is_contour_closed(0));
 }
-
-
-
-

@@ -168,7 +168,8 @@ impl<'a> ShapeLocatorRenderer<'a> {
             for seg in &segments {
                 match seg {
                     ContourSegment::Line { line, .. } => {
-                        context_builder.line_to(to_locator_pt(FontPoint::new(line.p1.x, line.p1.y)));
+                        context_builder
+                            .line_to(to_locator_pt(FontPoint::new(line.p1.x, line.p1.y)));
                     }
                     ContourSegment::Cubic { cubic, .. } => {
                         context_builder.cubic_bezier_to(
@@ -220,7 +221,8 @@ impl<'a> ShapeLocatorRenderer<'a> {
                 for seg in &segments {
                     match seg {
                         ContourSegment::Line { line, .. } => {
-                            focus_builder.line_to(to_locator_pt(FontPoint::new(line.p1.x, line.p1.y)));
+                            focus_builder
+                                .line_to(to_locator_pt(FontPoint::new(line.p1.x, line.p1.y)));
                         }
                         ContourSegment::Cubic { cubic, .. } => {
                             focus_builder.cubic_bezier_to(

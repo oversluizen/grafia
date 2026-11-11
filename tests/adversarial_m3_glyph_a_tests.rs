@@ -14,10 +14,10 @@
 
 use egui::{Context, Event, Key, Modifiers as EguiModifiers, PointerButton, Pos2, RawInput};
 use grafia::adapters::{
-    CanvasTool, CanvasViewMode, GlifoCanvasResponse, GlifoCanvasState, GlifoCanvasWidget,
+    CanvasTool, CanvasViewMode, GrafiaCanvasResponse, GrafiaCanvasState, GrafiaCanvasWidget,
 };
 use grafia::core::{FontPoint, NodeType, ScreenPoint};
-use grafia::tokens::{GlifoTheme, GlyphAGoldenMaster};
+use grafia::tokens::{GlyphAGoldenMaster, GrafiaTheme};
 use kurbo::PathEl;
 
 #[path = "../examples/vector_canvas_demo.rs"]
@@ -44,42 +44,48 @@ const EXPECTED_OUTER_POINTS: &[(f64, f64)] = &[
     (160.0, 0.0),
 ];
 
-const EXPECTED_INNER_POINTS: &[(f64, f64)] = &[
-    (260.0, 260.0),
-    (440.0, 260.0),
-    (350.0, 520.0),
-];
+const EXPECTED_INNER_POINTS: &[(f64, f64)] = &[(260.0, 260.0), (440.0, 260.0), (350.0, 520.0)];
 
 fn run_canvas_frame(
     ctx: &Context,
-    state: &mut GlifoCanvasState,
-    theme: &GlifoTheme,
+    state: &mut GrafiaCanvasState,
+    theme: &GrafiaTheme,
     raw_input: RawInput,
-) -> GlifoCanvasResponse {
+) -> GrafiaCanvasResponse {
     let mut resp = None;
     let mut full_output = ctx.run_ui(raw_input, |ui| {
-        resp = Some(GlifoCanvasWidget::new(state, theme).show(ui));
+        resp = Some(GrafiaCanvasWidget::new(state, theme).show(ui));
     });
     full_output.textures_delta.clear();
-    resp.expect("GlifoCanvasWidget must return response")
+    resp.expect("GrafiaCanvasWidget must return response")
 }
 
 #[test]
 fn test_glyph_a_golden_master_parameters_on_launch() {
-    let state = GlifoCanvasState::init_glyph_a();
+    let state = GrafiaCanvasState::init_glyph_a();
     let master = GlyphAGoldenMaster::load();
 
     // 1. Verify Typography Metrics
     assert_eq!(state.viewport.upm, EXPECTED_UPM, "UPM must be 1000");
     assert_eq!(master.upm, EXPECTED_UPM, "Master UPM must be 1000");
     assert_eq!(master.width, EXPECTED_WIDTH, "Advance width must be 700.0");
-    assert_eq!(master.cap_height, EXPECTED_CAP_HEIGHT, "Cap height must be 700.0");
+    assert_eq!(
+        master.cap_height, EXPECTED_CAP_HEIGHT,
+        "Cap height must be 700.0"
+    );
     assert_eq!(master.ascender, EXPECTED_ASCENDER, "Ascender must be 800.0");
-    assert_eq!(master.descender, EXPECTED_DESCENDER, "Descender must be -200.0");
+    assert_eq!(
+        master.descender, EXPECTED_DESCENDER,
+        "Descender must be -200.0"
+    );
     assert_eq!(master.x_height, EXPECTED_X_HEIGHT, "x-height must be 500.0");
 
     // 2. Verify Contours and Nodes Count
-    assert_eq!(state.contours.len(), 2, "Must have exactly 2 contours (outer + inner)");
+    assert_eq!(
+        state.contours.len(),
+        2,
+        "Must have exactly 2 contours (outer + inner)"
+    );
     assert_eq!(
         state.contours[0].len(),
         EXPECTED_OUTER_POINTS.len(),
@@ -133,20 +139,38 @@ fn test_glyph_a_golden_master_parameters_on_launch() {
 
     // 5. Verify Paths Synchronization and View Mode
     assert_eq!(state.paths.len(), 2, "Must synchronize exactly 2 BezPaths");
-    assert_eq!(state.active_tool, CanvasTool::Select, "Default tool must be Select");
-    assert_eq!(state.view_mode, CanvasViewMode::EditWireframe, "Default mode must be EditWireframe");
-    assert!(state.selected_nodes.is_empty(), "Initial selection must be empty");
-    assert!(state.active_contour_closed, "Contour closed state must be true");
+    assert_eq!(
+        state.active_tool,
+        CanvasTool::Select,
+        "Default tool must be Select"
+    );
+    assert_eq!(
+        state.view_mode,
+        CanvasViewMode::EditWireframe,
+        "Default mode must be EditWireframe"
+    );
+    assert!(
+        state.selected_nodes.is_empty(),
+        "Initial selection must be empty"
+    );
+    assert!(
+        state.active_contour_closed,
+        "Contour closed state must be true"
+    );
     assert_eq!(state.next_node_id, 12, "Next node ID must be 12");
 }
 
 #[test]
 fn test_glyph_a_kurbo_bezpaths_structure_on_launch_and_reset() {
-    let state = GlifoCanvasState::init_glyph_a();
+    let state = GrafiaCanvasState::init_glyph_a();
 
     // Verify Outer BezPath elements
     let outer_elements: Vec<PathEl> = state.paths[0].elements().to_vec();
-    assert_eq!(outer_elements.len(), 9, "Outer path must have MoveTo + 7 LineTo + ClosePath");
+    assert_eq!(
+        outer_elements.len(),
+        9,
+        "Outer path must have MoveTo + 7 LineTo + ClosePath"
+    );
     match outer_elements[0] {
         PathEl::MoveTo(pt) => assert_eq!((pt.x, pt.y), EXPECTED_OUTER_POINTS[0]),
         _ => panic!("First outer element must be MoveTo"),
@@ -161,7 +185,11 @@ fn test_glyph_a_kurbo_bezpaths_structure_on_launch_and_reset() {
 
     // Verify Inner BezPath elements
     let inner_elements: Vec<PathEl> = state.paths[1].elements().to_vec();
-    assert_eq!(inner_elements.len(), 4, "Inner path must have MoveTo + 2 LineTo + ClosePath");
+    assert_eq!(
+        inner_elements.len(),
+        4,
+        "Inner path must have MoveTo + 2 LineTo + ClosePath"
+    );
     match inner_elements[0] {
         PathEl::MoveTo(pt) => assert_eq!((pt.x, pt.y), EXPECTED_INNER_POINTS[0]),
         _ => panic!("First inner element must be MoveTo"),
@@ -177,7 +205,7 @@ fn test_glyph_a_kurbo_bezpaths_structure_on_launch_and_reset() {
 
 #[test]
 fn test_glyph_a_geometric_containment_and_winding_area() {
-    let _state = GlifoCanvasState::init_glyph_a();
+    let _state = GrafiaCanvasState::init_glyph_a();
 
     // Shoelace formula for signed polygon area
     let shoelace = |pts: &[(f64, f64)]| -> f64 {
@@ -195,14 +223,32 @@ fn test_glyph_a_geometric_containment_and_winding_area() {
     let inner_area = shoelace(EXPECTED_INNER_POINTS);
 
     // Both contours must have non-zero area
-    assert!(outer_area.abs() > 50000.0, "Outer contour area must be substantial: {outer_area}");
-    assert!(inner_area.abs() > 10000.0, "Inner counter area must be substantial: {inner_area}");
+    assert!(
+        outer_area.abs() > 50000.0,
+        "Outer contour area must be substantial: {outer_area}"
+    );
+    assert!(
+        inner_area.abs() > 10000.0,
+        "Inner counter area must be substantial: {inner_area}"
+    );
 
     // Counter containment check: every inner point must be strictly within outer bounding box
-    let min_outer_x = EXPECTED_OUTER_POINTS.iter().map(|p| p.0).fold(f64::INFINITY, f64::min);
-    let max_outer_x = EXPECTED_OUTER_POINTS.iter().map(|p| p.0).fold(f64::NEG_INFINITY, f64::max);
-    let min_outer_y = EXPECTED_OUTER_POINTS.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
-    let max_outer_y = EXPECTED_OUTER_POINTS.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max);
+    let min_outer_x = EXPECTED_OUTER_POINTS
+        .iter()
+        .map(|p| p.0)
+        .fold(f64::INFINITY, f64::min);
+    let max_outer_x = EXPECTED_OUTER_POINTS
+        .iter()
+        .map(|p| p.0)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let min_outer_y = EXPECTED_OUTER_POINTS
+        .iter()
+        .map(|p| p.1)
+        .fold(f64::INFINITY, f64::min);
+    let max_outer_y = EXPECTED_OUTER_POINTS
+        .iter()
+        .map(|p| p.1)
+        .fold(f64::NEG_INFINITY, f64::max);
 
     for &(ix, iy) in EXPECTED_INNER_POINTS {
         assert!(
@@ -219,8 +265,8 @@ fn test_glyph_a_geometric_containment_and_winding_area() {
 #[test]
 fn test_glyph_a_mutations_and_reset_restoration() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
 
     // --- MUTATION 1: Drag outer contour apex node (300, 700) ---
     let apex_font = FontPoint::new(300.0, 700.0);
@@ -291,7 +337,11 @@ fn test_glyph_a_mutations_and_reset_restoration() {
     });
     let _ = run_canvas_frame(&ctx, &mut state, &theme, input);
 
-    assert_eq!(state.contours.len(), 3, "Pen click must create a 3rd contour");
+    assert_eq!(
+        state.contours.len(),
+        3,
+        "Pen click must create a 3rd contour"
+    );
     let total_nodes_mutated: usize = state.contours.iter().map(|c| c.len()).sum();
     assert_eq!(total_nodes_mutated, 12, "Total nodes must now be 12");
 
@@ -311,12 +361,24 @@ fn test_glyph_a_mutations_and_reset_restoration() {
 
     // --- EXECUTE RESET /A ---
     // This mirrors `examples/vector_canvas_demo.rs`: `self.state = GrafiaCanvasState::init_glyph_a();`
-    state = GlifoCanvasState::init_glyph_a();
+    state = GrafiaCanvasState::init_glyph_a();
 
     // --- VERIFY RESTORATION OF PRISTINE GOLDEN MASTER STATE ---
-    assert_eq!(state.contours.len(), 2, "Reset must restore exactly 2 contours");
-    assert_eq!(state.contours[0].len(), 8, "Reset must restore 8 outer nodes");
-    assert_eq!(state.contours[1].len(), 3, "Reset must restore 3 inner nodes");
+    assert_eq!(
+        state.contours.len(),
+        2,
+        "Reset must restore exactly 2 contours"
+    );
+    assert_eq!(
+        state.contours[0].len(),
+        8,
+        "Reset must restore 8 outer nodes"
+    );
+    assert_eq!(
+        state.contours[1].len(),
+        3,
+        "Reset must restore 3 inner nodes"
+    );
 
     // Verify outer points restored
     for (idx, &(exp_x, exp_y)) in EXPECTED_OUTER_POINTS.iter().enumerate() {
@@ -343,7 +405,7 @@ fn test_glyph_a_mutations_and_reset_restoration() {
 
 #[test]
 fn test_glyph_a_adversarial_corruption_recovery() {
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let mut state = GrafiaCanvasState::init_glyph_a();
 
     // Adversarial corruption: empty state, extreme numbers
     state.contours.clear();
@@ -355,7 +417,7 @@ fn test_glyph_a_adversarial_corruption_recovery() {
     state.active_contour_closed = false;
 
     // Reset restores full state health
-    state = GlifoCanvasState::init_glyph_a();
+    state = GrafiaCanvasState::init_glyph_a();
 
     assert_eq!(state.contours.len(), 2);
     assert_eq!(state.contours[0].len(), 8);
@@ -371,7 +433,7 @@ fn test_glyph_a_adversarial_corruption_recovery() {
 #[test]
 fn test_glyph_a_repeated_reset_idempotency_and_no_id_drift() {
     for cycle in 0..50 {
-        let mut state = GlifoCanvasState::init_glyph_a();
+        let mut state = GrafiaCanvasState::init_glyph_a();
 
         // Mutate arbitrarily
         state.contours[0][0].point.x.0 += (cycle as f64) * 1.5;
@@ -382,14 +444,34 @@ fn test_glyph_a_repeated_reset_idempotency_and_no_id_drift() {
         state.view_mode = CanvasViewMode::ShapeThumbnail;
 
         // Reset
-        state = GlifoCanvasState::init_glyph_a();
+        state = GrafiaCanvasState::init_glyph_a();
 
-        assert_eq!(state.next_node_id, 12, "Cycle {cycle}: next_node_id must reset to 12 without drift");
-        assert_eq!(state.contours[0][0].point.x.0, 30.0, "Cycle {cycle}: coordinate must reset");
-        assert_eq!(state.contours[1][1].point.y.0, 260.0, "Cycle {cycle}: coordinate must reset");
-        assert!(state.selected_nodes.is_empty(), "Cycle {cycle}: selection must clear");
-        assert_eq!(state.active_tool, CanvasTool::Select, "Cycle {cycle}: tool must reset");
-        assert_eq!(state.view_mode, CanvasViewMode::EditWireframe, "Cycle {cycle}: mode must reset");
+        assert_eq!(
+            state.next_node_id, 12,
+            "Cycle {cycle}: next_node_id must reset to 12 without drift"
+        );
+        assert_eq!(
+            state.contours[0][0].point.x.0, 30.0,
+            "Cycle {cycle}: coordinate must reset"
+        );
+        assert_eq!(
+            state.contours[1][1].point.y.0, 260.0,
+            "Cycle {cycle}: coordinate must reset"
+        );
+        assert!(
+            state.selected_nodes.is_empty(),
+            "Cycle {cycle}: selection must clear"
+        );
+        assert_eq!(
+            state.active_tool,
+            CanvasTool::Select,
+            "Cycle {cycle}: tool must reset"
+        );
+        assert_eq!(
+            state.view_mode,
+            CanvasViewMode::EditWireframe,
+            "Cycle {cycle}: mode must reset"
+        );
     }
 }
 

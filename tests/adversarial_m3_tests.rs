@@ -10,10 +10,10 @@
 
 use egui::{Context, Event, Key, Modifiers as EguiModifiers, RawInput};
 use grafia::adapters::{
-    CanvasTool, CanvasViewMode, GlifoCanvasResponse, GlifoCanvasState, GlifoCanvasWidget,
+    CanvasTool, CanvasViewMode, GrafiaCanvasResponse, GrafiaCanvasState, GrafiaCanvasWidget,
 };
 use grafia::core::{FontPoint, ScreenPoint, ViewportTransform};
-use grafia::tokens::{GlifoTheme, MIN_VIEWPORT_ZOOM};
+use grafia::tokens::{GrafiaTheme, MIN_VIEWPORT_ZOOM};
 use std::fs;
 use std::path::Path;
 
@@ -29,16 +29,16 @@ const ZOOM_OUT_FACTOR: f32 = 0.8;
 
 fn run_canvas_frame(
     ctx: &Context,
-    state: &mut GlifoCanvasState,
-    theme: &GlifoTheme,
+    state: &mut GrafiaCanvasState,
+    theme: &GrafiaTheme,
     raw_input: RawInput,
-) -> GlifoCanvasResponse {
+) -> GrafiaCanvasResponse {
     let mut resp = None;
     let mut full_output = ctx.run_ui(raw_input, |ui| {
-        resp = Some(GlifoCanvasWidget::new(state, theme).show(ui));
+        resp = Some(GrafiaCanvasWidget::new(state, theme).show(ui));
     });
     full_output.textures_delta.clear();
-    resp.expect("GlifoCanvasWidget must return a response")
+    resp.expect("GrafiaCanvasWidget must return a response")
 }
 
 // ============================================================================
@@ -48,8 +48,8 @@ fn run_canvas_frame(
 #[test]
 fn test_adversarial_view_mode_switching_and_hotkeys() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
 
     assert_eq!(state.view_mode, CanvasViewMode::EditWireframe);
 
@@ -66,7 +66,7 @@ fn test_adversarial_view_mode_switching_and_hotkeys() {
         if ui.input(|i| i.key_pressed(Key::Num2)) {
             state.view_mode = CanvasViewMode::PreviewFilled;
         }
-        let _ = GlifoCanvasWidget::new(&mut state, &theme).show(ui);
+        let _ = GrafiaCanvasWidget::new(&mut state, &theme).show(ui);
     });
     full_output.textures_delta.clear();
     assert_eq!(
@@ -88,7 +88,7 @@ fn test_adversarial_view_mode_switching_and_hotkeys() {
         if ui.input(|i| i.key_pressed(Key::Num3)) {
             state.view_mode = CanvasViewMode::ShapeThumbnail;
         }
-        let _ = GlifoCanvasWidget::new(&mut state, &theme).show(ui);
+        let _ = GrafiaCanvasWidget::new(&mut state, &theme).show(ui);
     });
     full_output.textures_delta.clear();
     assert_eq!(
@@ -110,7 +110,7 @@ fn test_adversarial_view_mode_switching_and_hotkeys() {
         if ui.input(|i| i.key_pressed(Key::Num1)) {
             state.view_mode = CanvasViewMode::EditWireframe;
         }
-        let _ = GlifoCanvasWidget::new(&mut state, &theme).show(ui);
+        let _ = GrafiaCanvasWidget::new(&mut state, &theme).show(ui);
     });
     full_output.textures_delta.clear();
     assert_eq!(
@@ -127,8 +127,8 @@ fn test_adversarial_view_mode_switching_and_hotkeys() {
 #[test]
 fn test_adversarial_tool_switching_in_all_view_modes() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
 
     for mode in [
         CanvasViewMode::EditWireframe,
@@ -259,7 +259,7 @@ fn test_adversarial_coordinate_math_at_zoom_boundaries() {
 
 #[test]
 fn test_adversarial_reset_glyph_a_restoration() {
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let mut state = GrafiaCanvasState::init_glyph_a();
 
     // Verify initial golden master state
     assert_eq!(state.contours.len(), 2);
@@ -276,14 +276,22 @@ fn test_adversarial_reset_glyph_a_restoration() {
     assert_eq!(state.contours.len(), 0);
 
     // Trigger Reset /A
-    state = GlifoCanvasState::init_glyph_a();
+    state = GrafiaCanvasState::init_glyph_a();
 
     // Verify full restoration
-    assert_eq!(state.contours.len(), 2, "Contours count must be restored to 2");
+    assert_eq!(
+        state.contours.len(),
+        2,
+        "Contours count must be restored to 2"
+    );
     let restored_node_count: usize = state.contours.iter().map(|c| c.len()).sum();
     assert_eq!(restored_node_count, 11, "Node count must be restored to 11");
     assert_eq!(state.active_tool, CanvasTool::Select, "Tool must be Select");
-    assert_eq!(state.view_mode, CanvasViewMode::EditWireframe, "Mode must be EditWireframe");
+    assert_eq!(
+        state.view_mode,
+        CanvasViewMode::EditWireframe,
+        "Mode must be EditWireframe"
+    );
 }
 
 // ============================================================================
@@ -378,7 +386,7 @@ fn test_adversarial_v020_demonstrator_toolbar_actions_empty_and_selected() {
     };
 
     // 1. Zero nodes selected: Flip H, Flip V, Extremes, Tidy, Make First, BBox toggle + narrow 800px window
-    let mut state = GlifoCanvasState::init_glyph_s();
+    let mut state = GrafiaCanvasState::init_glyph_s();
     assert!(state.selected_nodes.is_empty());
     let orig_count = state.contours[0].len();
     let _ = state.add_extremes_action();
@@ -389,11 +397,14 @@ fn test_adversarial_v020_demonstrator_toolbar_actions_empty_and_selected() {
     assert!(!state.make_node_first());
 
     // 2. Single contour selected: Flip H, Flip V, Make First, Extremes, Tidy
-    state = GlifoCanvasState::init_glyph_a();
+    state = GrafiaCanvasState::init_glyph_a();
     state.selected_nodes = state.contours[0].iter().map(|n| n.id).collect();
     let c1_before = state.contours[1].clone();
     assert!(state.flip_horizontal());
-    assert_eq!(state.contours[1], c1_before, "Unselected contour 1 must not move when contour 0 is selected");
+    assert_eq!(
+        state.contours[1], c1_before,
+        "Unselected contour 1 must not move when contour 0 is selected"
+    );
     assert!(state.flip_vertical());
     state.selected_nodes = vec![state.contours[0][1].id];
     assert!(state.make_node_first());
@@ -413,7 +424,8 @@ fn test_adversarial_v020_demonstrator_toolbar_actions_empty_and_selected() {
     run_ui_frame(&mut app);
 
     // 4. M-38: Verify examples/vector_canvas_demo.rs wires all SPEC-003 Path Ops & TransformPanel actions
-    let demo_src = fs::read_to_string("examples/vector_canvas_demo.rs").expect("Must read examples/vector_canvas_demo.rs");
+    let demo_src = fs::read_to_string("examples/vector_canvas_demo.rs")
+        .expect("Must read examples/vector_canvas_demo.rs");
     for required_call in [
         "set_transform_grid_anchor",
         "set_metrics_origin",
@@ -488,10 +500,7 @@ fn test_adversarial_demonstrator_source_hygiene() {
                     && (part.len() == 4 || part.len() == 7 || part.len() == 9)
                     && part[1..].chars().all(|c| c.is_ascii_hexdigit())
                 {
-                    panic!(
-                        "Line {}: Forbidden hardcoded hex color `{part}`",
-                        idx + 1
-                    );
+                    panic!("Line {}: Forbidden hardcoded hex color `{part}`", idx + 1);
                 }
             }
         }

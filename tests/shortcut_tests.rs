@@ -1,4 +1,4 @@
-//! Test suite for Keyboard Shortcuts and Modifiers (TC-GLIFO-V01-03..05, TC-1227, TC-1234, TC-1236).
+//! Test suite for Keyboard Shortcuts and Modifiers (TC-GRAFIA-V01-03..05, TC-1227, TC-1234, TC-1236).
 //!
 //! Asserts:
 //! 1. Spacebar temporary hold switches view_mode to `PreviewFilled`; release returns to `EditWireframe`.
@@ -6,12 +6,12 @@
 //! 3. Escape key clears selection.
 
 use egui::{Context, Event, Key, Modifiers, RawInput};
-use grafia::adapters::{CanvasViewMode, GlifoCanvasState, GlifoCanvasWidget};
-use grafia::tokens::GlifoTheme;
+use grafia::adapters::{CanvasViewMode, GrafiaCanvasState, GrafiaCanvasWidget};
+use grafia::tokens::GrafiaTheme;
 
-fn frame(ctx: &Context, state: &mut GlifoCanvasState, theme: &GlifoTheme, raw_input: RawInput) {
+fn frame(ctx: &Context, state: &mut GrafiaCanvasState, theme: &GrafiaTheme, raw_input: RawInput) {
     let mut full_output = ctx.run_ui(raw_input, |ui| {
-        GlifoCanvasWidget::new(state, theme).show(ui);
+        GrafiaCanvasWidget::new(state, theme).show(ui);
     });
     full_output.textures_delta.clear();
 }
@@ -19,8 +19,8 @@ fn frame(ctx: &Context, state: &mut GlifoCanvasState, theme: &GlifoTheme, raw_in
 #[test]
 fn test_spacebar_hold_and_release_preview_toggle() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     state.view_mode = CanvasViewMode::EditWireframe;
 
     // 1. Initial state is EditWireframe
@@ -62,8 +62,8 @@ fn test_spacebar_hold_and_release_preview_toggle() {
 #[test]
 fn test_arrow_keys_nudge_selection_by_1_and_10_upm() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
 
     // Select the first node
     let first_node = state.contours[0][0].clone();
@@ -147,8 +147,8 @@ fn test_arrow_keys_nudge_selection_by_1_and_10_upm() {
 #[test]
 fn test_arrow_keys_with_empty_selection_does_not_mutate() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     state.selected_nodes.clear();
 
     let original_pt = state.contours[0][0].point;
@@ -162,8 +162,11 @@ fn test_arrow_keys_with_empty_selection_does_not_mutate() {
         modifiers: Modifiers::NONE,
     });
     let mut full_output = ctx.run_ui(input, |ui| {
-        let resp = GlifoCanvasWidget::new(&mut state, &theme).show(ui);
-        assert!(!resp.changed, "Arrow key with empty selection must not report changed");
+        let resp = GrafiaCanvasWidget::new(&mut state, &theme).show(ui);
+        assert!(
+            !resp.changed,
+            "Arrow key with empty selection must not report changed"
+        );
     });
     full_output.textures_delta.clear();
 
@@ -176,8 +179,8 @@ fn test_arrow_keys_with_empty_selection_does_not_mutate() {
 #[test]
 fn test_escape_key_clears_selection() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
 
     state.selected_nodes = vec![state.contours[0][0].id];
     assert!(!state.selected_nodes.is_empty());

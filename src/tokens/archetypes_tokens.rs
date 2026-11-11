@@ -1,4 +1,4 @@
-//! Canonical Typographic Archetype Presets (`/A`, `/n`, `/o`, `/s`) loaded from Token JSON (`SPEC-002 §5`, `DEF-GLIFO-006`).
+//! Canonical Typographic Archetype Presets (`/A`, `/n`, `/o`, `/s`) loaded from Token JSON (`SPEC-002 §5`, `DEF-GRAFIA-006`).
 
 use serde::{Deserialize, Serialize};
 

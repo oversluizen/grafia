@@ -264,7 +264,8 @@ fn test_guard_zero_hardcoded_colors_in_ui_components() {
 
     for file_path in &files {
         let file_str = file_path.to_string_lossy();
-        if file_str.contains("theme") || file_str.contains("token") || file_str.contains("palette") {
+        if file_str.contains("theme") || file_str.contains("token") || file_str.contains("palette")
+        {
             continue;
         }
 
@@ -322,8 +323,23 @@ fn test_guard_zero_hardcoded_colors_in_ui_components() {
     }
 }
 
+/// Counts statement-separating semicolons on a single line, ignoring semicolons inside `[...]` array/vec repeat expressions.
+fn count_statement_semicolons(code_line: &str) -> usize {
+    let mut bracket_depth: usize = 0;
+    let mut count = 0;
+    for ch in code_line.chars() {
+        match ch {
+            '[' => bracket_depth += 1,
+            ']' => bracket_depth = bracket_depth.saturating_sub(1),
+            ';' if bracket_depth == 0 => count += 1,
+            _ => {}
+        }
+    }
+    count
+}
+
 // ============================================================================
-// Guardrail 3: Modularity Limits (< 400 eSLOC & < 599 Physical Lines) (STD-ARCH Regel 4)
+// Guardrail 3: Modularity Limits (< 399 eSLOC & < 599 Physical Lines) (STD-ARCH Regel 4)
 // ============================================================================
 
 #[test]
@@ -357,28 +373,69 @@ fn test_guard_modularity_limits_gl1015() {
             ));
         }
 
-        if esloc >= 400 {
+        if esloc >= 399 {
             violations.push(format!(
-                "  - {relative_path}: {esloc} eSLOC exceeds STD-ARCH modularity limit (max 399 eSLOC)."
+                "  - {relative_path}: {esloc} eSLOC exceeds STD-ARCH modularity limit (max 398 eSLOC)."
             ));
         }
 
         // Anti-Cramming Rule: No multi-statement cramming to fake LOC reduction
         for (line_idx, line) in content.lines().enumerate() {
             let code_part = line.split("//").next().unwrap_or("").trim();
-            if !code_part.contains('"') && !code_part.ends_with('\\') {
-                let without_arrays = code_part
-                    .replace("; 2]", "]")
-                    .replace("; 3]", "]")
-                    .replace("; 4]", "]");
-                if without_arrays.matches(';').count() >= 3 {
-                    violations.push(format!(
-                        "  - {relative_path}:{}: Multi-statement single-line cramming forbidden (>= 3 semicolons): `{code_part}`",
-                        line_idx + 1
-                    ));
-                }
+            if !code_part.contains('"')
+                && !code_part.ends_with('\\')
+                && count_statement_semicolons(code_part) >= 2
+            {
+                violations.push(format!(
+                    "  - {relative_path}:{}: Multi-statement single-line cramming forbidden (>= 2 semicolons): `{code_part}`",
+                    line_idx + 1
+                ));
             }
         }
+    }
+
+    let examples_dir = manifest_dir.join("examples");
+    let mut example_files = Vec::new();
+    if examples_dir.exists() {
+        collect_rs_files(&examples_dir, &mut example_files);
+    }
+    for file_path in &example_files {
+        let content = fs::read_to_string(file_path)
+            .unwrap_or_else(|e| panic!("Failed to read {}: {e}", file_path.display()));
+        let relative_path = file_path
+            .strip_prefix(manifest_dir)
+            .unwrap_or(file_path)
+            .to_string_lossy();
+        let esloc = calculate_esloc(&content);
+        if esloc >= 300 {
+            violations.push(format!(
+                "  - {relative_path}: {esloc} eSLOC exceeds example modularity limit (< 300 eSLOC)."
+            ));
+        }
+        for (line_idx, line) in content.lines().enumerate() {
+            let code_part = line.split("//").next().unwrap_or("").trim();
+            if !code_part.contains('"')
+                && !code_part.ends_with('\\')
+                && count_statement_semicolons(code_part) >= 2
+            {
+                violations.push(format!(
+                    "  - {relative_path}:{}: Multi-statement single-line cramming forbidden in examples (>= 2 semicolons): `{code_part}`",
+                    line_idx + 1
+                ));
+            }
+        }
+    }
+
+    let fmt_status = std::process::Command::new("cargo")
+        .args(["fmt", "--all", "--", "--check"])
+        .current_dir(manifest_dir)
+        .status()
+        .expect("Failed to execute `cargo fmt --all -- --check`");
+    if !fmt_status.success() {
+        violations.push(
+            "  - `cargo fmt --all -- --check` failed: repository contains unformatted code."
+                .to_string(),
+        );
     }
 
     if !violations.is_empty() {
@@ -455,7 +512,9 @@ fn test_guard_windows_gui_subsystem_attribute() {
                     "  - {relative_path}: Bare `NativeOptions::default()` is forbidden by STD-ARCH §3.3 (causes Windows Hybrid-GPU wgpu TDR and main-thread font freeze)."
                 ));
             }
-            if stripped.contains("system_font_fallback: true") || !stripped.contains("system_font_fallback: false") {
+            if stripped.contains("system_font_fallback: true")
+                || !stripped.contains("system_font_fallback: false")
+            {
                 violations.push(format!(
                     "  - {relative_path}: GUI entrypoint must explicitly set `system_font_fallback: false` per STD-ARCH §3.3."
                 ));
@@ -476,14 +535,21 @@ fn test_guard_windows_gui_subsystem_attribute() {
     let needle = "UiBuilder::new()";
     for file_path in &ui_files {
         let content = fs::read_to_string(file_path).unwrap_or_default();
-        let rel = file_path.strip_prefix(manifest_dir).unwrap_or(file_path).to_string_lossy();
+        let rel = file_path
+            .strip_prefix(manifest_dir)
+            .unwrap_or(file_path)
+            .to_string_lossy();
         let stripped = strip_comments_and_strings(&content);
         let mut from = 0;
         while let Some(pos) = stripped[from..].find(needle) {
             let abs = from + pos;
             let line_num = stripped[..abs].lines().count().max(1);
             let after = &stripped[abs + needle.len()..];
-            let span = after.find(';').unwrap_or(after.len()).min(after.find(needle).unwrap_or(after.len())).min(300);
+            let span = after
+                .find(';')
+                .unwrap_or(after.len())
+                .min(after.find(needle).unwrap_or(after.len()))
+                .min(300);
             if !after[..span].contains(".id_salt(") {
                 violations.push(format!(
                     "  - {rel}:{line_num}: `UiBuilder::new()` without `.id_salt(...)` violates STD-ARCH §3.4."
@@ -603,7 +669,10 @@ fn test_guard_central_state_invariant_and_undo_redo_roundtrip_presence() {
         {
             has_mutable_state_or_history = true;
         }
-        if stripped.contains("egui::") || stripped.contains("eframe::") || stripped.contains("CanvasWidget") {
+        if stripped.contains("egui::")
+            || stripped.contains("eframe::")
+            || stripped.contains("CanvasWidget")
+        {
             has_gui_or_canvas = true;
         }
         if stripped.contains("fn validate_invariants(") {
@@ -621,15 +690,23 @@ fn test_guard_central_state_invariant_and_undo_redo_roundtrip_presence() {
     let mut has_roundtrip_test = false;
     let mut has_cold_start_test = false;
     for file_path in &test_files {
-        if file_path.file_name().is_some_and(|n| n == "architecture_guard_tests.rs") {
+        if file_path
+            .file_name()
+            .is_some_and(|n| n == "architecture_guard_tests.rs")
+        {
             continue;
         }
         let content = fs::read_to_string(file_path).unwrap_or_default();
         let stripped = strip_comments_and_strings(&content);
-        if stripped.contains("validate_invariants()") && stripped.contains(".undo()") && stripped.contains(".redo()") {
+        if stripped.contains("validate_invariants()")
+            && stripped.contains(".undo()")
+            && stripped.contains(".redo()")
+        {
             has_roundtrip_test = true;
         }
-        if stripped.contains("cold_start") || (stripped.contains("Instant::now()") && stripped.contains("repaint_delay")) {
+        if stripped.contains("cold_start")
+            || (stripped.contains("Instant::now()") && stripped.contains("repaint_delay"))
+        {
             has_cold_start_test = true;
         }
     }
@@ -651,7 +728,6 @@ fn test_guard_central_state_invariant_and_undo_redo_roundtrip_presence() {
         );
     }
 }
-
 
 // ============================================================================
 // Guardrail 5: Gekalibreerde Eenvoud — Zero Unused Dependencies & Required Docs
@@ -770,7 +846,18 @@ fn tc_arch_008_clean_room_source_and_tests_guard() {
             }
         }
     }
-    assert!(!files.is_empty(), "src/, examples/, tests/, and root .md must contain files");
+    if let Ok(entries) = fs::read_dir(manifest_dir.join("tokens")) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_file() {
+                files.push(p);
+            }
+        }
+    }
+    assert!(
+        !files.is_empty(),
+        "src/, examples/, tests/, and root .md must contain files"
+    );
 
     let forbidden_terms: &[&str] = &[
         concat!("Gly", "phs 4"),
@@ -809,6 +896,9 @@ fn tc_arch_008_clean_room_source_and_tests_guard() {
         concat!("Obsi", "dian"),
         concat!("GL-", "1015"),
         concat!("my", "PKA"),
+        concat!("gli", "fo"),
+        concat!("Gli", "fo"),
+        concat!("GLI", "FO"),
     ];
 
     let mut violations = Vec::new();
@@ -819,6 +909,9 @@ fn tc_arch_008_clean_room_source_and_tests_guard() {
             .strip_prefix(manifest_dir)
             .unwrap_or(file_path)
             .to_string_lossy();
+        if rel.to_ascii_lowercase().contains(concat!("gli", "fo")) {
+            violations.push(format!("  - {rel}: forbidden legacy filename term"));
+        }
         for (idx, line) in content.lines().enumerate() {
             let line_num = idx + 1;
             for &term in forbidden_terms {
@@ -836,7 +929,9 @@ fn tc_arch_008_clean_room_source_and_tests_guard() {
                 }
             }
             if contains_hex_offset_4plus(line) {
-                violations.push(format!("  - {rel}:{line_num}: forbidden hex offset literal"));
+                violations.push(format!(
+                    "  - {rel}:{line_num}: forbidden hex offset literal"
+                ));
             }
         }
     }
@@ -848,6 +943,3 @@ fn tc_arch_008_clean_room_source_and_tests_guard() {
         violations.join("\n")
     );
 }
-
-
-

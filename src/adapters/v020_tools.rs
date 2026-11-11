@@ -1,7 +1,7 @@
-//! `SPEC-003` (`v0.2.0`) `GlifoCanvasState` methods for 8-Knob Bounding Box, `RotateTool`,
+//! `SPEC-003` (`v0.2.0`) `GrafiaCanvasState` methods for 8-Knob Bounding Box, `RotateTool`,
 //! `ScaleTool`, `LassoTool`, `ZoomTool`, Clipboard, Path Operations, and `TransformPanel`.
 
-use crate::adapters::state::{CanvasTool, GlifoCanvasState};
+use crate::adapters::state::{CanvasTool, GrafiaCanvasState};
 use crate::core::{
     add_extremes_to_contours, add_inflection_points_to_contours, align_selected_nodes,
     close_open_contours_in_layer, compute_layer_bounds, compute_selection_bounds,
@@ -46,7 +46,7 @@ pub enum V020DragState {
     },
 }
 
-impl GlifoCanvasState {
+impl GrafiaCanvasState {
     #[must_use]
     pub fn effective_grid_step(&self) -> f64 {
         let subdiv = self.grid_subdivisions.max(1) as f64;
@@ -78,7 +78,11 @@ impl GlifoCanvasState {
 
     #[must_use]
     pub fn layer_bounds(&self) -> Option<SelectionBounds> {
-        let angle = if self.show_bounding_box_slanted { self.italic_angle_deg } else { 0.0 };
+        let angle = if self.show_bounding_box_slanted {
+            self.italic_angle_deg
+        } else {
+            0.0
+        };
         compute_layer_bounds(&self.contours, angle, DEFAULT_X_HEIGHT_UPM * 0.5)
     }
 
@@ -87,7 +91,8 @@ impl GlifoCanvasState {
         if !self.show_bounding_box {
             return Vec::new();
         }
-        self.selection_bounds().map_or_else(Vec::new, |b| b.active_knobs(self.viewport.zoom))
+        self.selection_bounds()
+            .map_or_else(Vec::new, |b| b.active_knobs(self.viewport.zoom))
     }
 
     #[must_use]
@@ -120,6 +125,9 @@ impl GlifoCanvasState {
     }
 
     pub fn activate_tool(&mut self, tool: CanvasTool) {
+        if tool == CanvasTool::Text && self.active_tool != CanvasTool::Text {
+            self.last_select_tool = self.active_tool;
+        }
         let was_transform = matches!(self.active_tool, CanvasTool::Rotate | CanvasTool::Scale);
         let is_transform = matches!(tool, CanvasTool::Rotate | CanvasTool::Scale);
         self.active_tool = tool;
@@ -127,6 +135,8 @@ impl GlifoCanvasState {
         self.pen_state = PenToolState::Idle;
         self.v020_drag = V020DragState::Idle;
         self.v040.reset_in_flight_drags();
+        self.text_drag_anchor_caret = None;
+        self.text_measurement_dragging = false;
         if is_transform && !was_transform {
             self.transform_origin_custom = false;
             self.update_transform_origin();
@@ -145,8 +155,16 @@ impl GlifoCanvasState {
         match self.transform_origin_mode {
             TransformOriginSpec::Custom(pt) => pt,
             TransformOriginSpec::MetricsOrigin(m) => {
-                let adv_w = if self.glyph.width > 0.0 { self.glyph.width } else { DEFAULT_X_HEIGHT_UPM };
-                let cap_h = if self.glyph.height > 0.0 { self.glyph.height } else { DEFAULT_CAP_HEIGHT_UPM };
+                let adv_w = if self.glyph.width > 0.0 {
+                    self.glyph.width
+                } else {
+                    DEFAULT_X_HEIGHT_UPM
+                };
+                let cap_h = if self.glyph.height > 0.0 {
+                    self.glyph.height
+                } else {
+                    DEFAULT_CAP_HEIGHT_UPM
+                };
                 m.resolve_pivot(
                     adv_w,
                     DEFAULT_ASCENDER_UPM,
@@ -155,8 +173,7 @@ impl GlifoCanvasState {
                     self.italic_angle_deg,
                 )
             }
-            TransformOriginSpec::BoundingBoxCenter
-            | TransformOriginSpec::BoundingBoxOrigin(_) => {
+            TransformOriginSpec::BoundingBoxCenter | TransformOriginSpec::BoundingBoxOrigin(_) => {
                 let anchor = match self.transform_origin_mode {
                     TransformOriginSpec::BoundingBoxOrigin(a) => a,
                     _ => self.transform_grid_anchor,
@@ -166,7 +183,9 @@ impl GlifoCanvasState {
                 } else {
                     self.layer_bounds()
                 };
-                ref_bounds.map_or(FontPoint::new(0.0, 0.0), |b| b.aligned_point(anchor.index()))
+                ref_bounds.map_or(FontPoint::new(0.0, 0.0), |b| {
+                    b.aligned_point(anchor.index())
+                })
             }
         }
     }
@@ -201,7 +220,8 @@ impl GlifoCanvasState {
     }
 
     pub fn copy_selection(&mut self) -> bool {
-        let extracted = extract_clipboard_contours(&self.contours, &self.closed_flags(), &self.selected_nodes);
+        let extracted =
+            extract_clipboard_contours(&self.contours, &self.closed_flags(), &self.selected_nodes);
         if extracted.is_empty() {
             return false;
         }
@@ -248,7 +268,10 @@ impl GlifoCanvasState {
         let mut kept_f = Vec::new();
         for (c, f) in self.contours.drain(..).zip(flags) {
             if !c.is_empty() {
-                let on_c = c.iter().filter(|n| n.node_type != NodeType::OffCurve).count();
+                let on_c = c
+                    .iter()
+                    .filter(|n| n.node_type != NodeType::OffCurve)
+                    .count();
                 kept_c.push(c);
                 kept_f.push(f && on_c > 1);
             }
@@ -303,30 +326,46 @@ impl GlifoCanvasState {
     }
 
     fn retain_valid_selection(&mut self) {
-        let valid_ids: std::collections::HashSet<NodeId> =
-            self.contours.iter().flat_map(|c| c.iter().map(|n| n.id)).collect();
+        let valid_ids: std::collections::HashSet<NodeId> = self
+            .contours
+            .iter()
+            .flat_map(|c| c.iter().map(|n| n.id))
+            .collect();
         self.selected_nodes.retain(|id| valid_ids.contains(id));
     }
 
-    pub fn add_extremes(&mut self, force: bool) -> bool {
+    fn apply_contour_op(
+        &mut self,
+        label: &'static str,
+        sync_flags: bool,
+        op: impl FnOnce(&mut Vec<Vec<crate::core::Node>>, &mut Vec<bool>, &[NodeId], &mut u64) -> bool,
+    ) -> bool {
         let before = self.snapshot();
         let mut flags = self.closed_flags();
-        let grid = self.effective_grid_step();
-        if !add_extremes_to_contours(
+        if !op(
             &mut self.contours,
             &mut flags,
             &self.selected_nodes,
-            force,
             &mut self.next_node_id,
-            grid,
         ) {
             return false;
         }
         self.retain_valid_selection();
-        self.sync_contours_and_closed_flags(&flags);
-        self.record_mutation("Add Extremes", before);
+        if sync_flags {
+            self.sync_contours_and_closed_flags(&flags);
+        } else {
+            self.sync_paths_from_contours();
+        }
+        self.record_mutation(label, before);
         self.assert_invariants();
         true
+    }
+
+    pub fn add_extremes(&mut self, force: bool) -> bool {
+        let grid = self.effective_grid_step();
+        self.apply_contour_op("Add Extremes", true, |c, f, s, id| {
+            add_extremes_to_contours(c, f, s, force, id, grid)
+        })
     }
 
     pub fn add_extremes_action(&mut self) -> bool {
@@ -334,80 +373,36 @@ impl GlifoCanvasState {
     }
 
     pub fn add_inflection_points(&mut self) -> bool {
-        let before = self.snapshot();
-        let flags = self.closed_flags();
         let grid = self.effective_grid_step();
-        if !add_inflection_points_to_contours(
-            &mut self.contours,
-            &flags,
-            &self.selected_nodes,
-            &mut self.next_node_id,
-            grid,
-        ) {
-            return false;
-        }
-        self.retain_valid_selection();
-        self.sync_paths_from_contours();
-        self.record_mutation("Add Inflection Points", before);
-        self.assert_invariants();
-        true
+        self.apply_contour_op("Add Inflection Points", false, |c, f, s, id| {
+            add_inflection_points_to_contours(c, f, s, id, grid)
+        })
     }
 
     pub fn tidy_up_paths(&mut self) -> bool {
-        let before = self.snapshot();
-        let mut flags = self.closed_flags();
-        if !tidy_up_contours(&mut self.contours, &mut flags, &self.selected_nodes, self.grid_step_upm) {
-            return false;
-        }
-        self.retain_valid_selection();
-        self.sync_contours_and_closed_flags(&flags);
-        self.record_mutation("Tidy Up Paths", before);
-        self.assert_invariants();
-        true
+        let step = self.grid_step_upm;
+        self.apply_contour_op("Tidy Up Paths", true, |c, f, s, _| {
+            tidy_up_contours(c, f, s, step)
+        })
     }
 
     pub fn align_selection(&mut self) -> bool {
-        let before = self.snapshot();
-        let flags = self.closed_flags();
+        let anchor = self.transform_grid_anchor;
         let grid = self.effective_grid_step();
-        if !align_selected_nodes(
-            &mut self.contours,
-            &flags,
-            &self.selected_nodes,
-            self.transform_grid_anchor,
-            grid,
-        ) {
-            return false;
-        }
-        self.sync_paths_from_contours();
-        self.record_mutation("Align Selection", before);
-        self.assert_invariants();
-        true
+        self.apply_contour_op("Align Selection", false, |c, f, s, _| {
+            align_selected_nodes(c, f, s, anchor, grid)
+        })
     }
 
     pub fn connect_selected_open_endpoints(&mut self) -> bool {
-        let before = self.snapshot();
-        let mut flags = self.closed_flags();
-        if !connect_selected_open_endpoints_in_contours(&mut self.contours, &mut flags, &self.selected_nodes) {
-            return false;
-        }
-        self.retain_valid_selection();
-        self.sync_contours_and_closed_flags(&flags);
-        self.record_mutation("Connect Open Endpoints", before);
-        self.assert_invariants();
-        true
+        self.apply_contour_op("Connect Open Endpoints", true, |c, f, s, _| {
+            connect_selected_open_endpoints_in_contours(c, f, s)
+        })
     }
 
     pub fn close_open_paths(&mut self) -> bool {
-        let before = self.snapshot();
-        let mut flags = self.closed_flags();
-        if !close_open_contours_in_layer(&mut self.contours, &mut flags, &self.selected_nodes) {
-            return false;
-        }
-        self.retain_valid_selection();
-        self.sync_contours_and_closed_flags(&flags);
-        self.record_mutation("Close Open Paths", before);
-        self.assert_invariants();
-        true
+        self.apply_contour_op("Close Open Paths", true, |c, f, s, _| {
+            close_open_contours_in_layer(c, f, s)
+        })
     }
 }

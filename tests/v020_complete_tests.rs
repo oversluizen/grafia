@@ -1,4 +1,4 @@
-//! Normative COTS Verification Suite for `SPEC-003` (`glifo v0.2.0`):
+//! Normative COTS Verification Suite for `SPEC-003` (`grafia v0.2.0`):
 //! Transform Tools (`R`, `S`), 8-Knob Bounding Box (`Cmd+Alt+Shift+B`), `LassoTool` (`Shift+V`),
 //! `ZoomTool` (`Z`, `Cmd+Space`), Canvas Clipboard (`Cmd+C`, `Cmd+X`, `Cmd+V`), and the
 //! 7 Topological/Geometric Path Operations + `TransformPanel` (`TC-V020-01` .. `TC-V020-07`).
@@ -9,8 +9,8 @@ use egui::{Event, Key, Modifiers as EguiModifiers, PointerButton, Pos2, RawInput
 use grafia::adapters::headless::rasterize_canvas_subregion;
 use grafia::adapters::input_dispatcher::InputDispatcher;
 use grafia::{
-    BBoxAction, CanvasTool, DuplicateWarningKind, FontPoint, GlifoCanvasState, GlifoTheme,
-    GlyphContour, MetricsOrigin, Node, NodeId, NodeType, ScreenPoint, TransformGridAnchor,
+    BBoxAction, CanvasTool, DuplicateWarningKind, FontPoint, GlyphContour, GrafiaCanvasState,
+    GrafiaTheme, MetricsOrigin, Node, NodeId, NodeType, ScreenPoint, TransformGridAnchor,
 };
 
 fn default_canvas_rect() -> Rect {
@@ -19,7 +19,7 @@ fn default_canvas_rect() -> Rect {
 
 #[allow(clippy::too_many_arguments)]
 fn run_dispatch(
-    state: &mut GlifoCanvasState,
+    state: &mut GrafiaCanvasState,
     events: Vec<Event>,
     shift: bool,
     alt: bool,
@@ -63,7 +63,7 @@ fn mods(shift: bool, alt: bool, cmd: bool, ctrl: bool) -> EguiModifiers {
 }
 
 fn press_key_v020(
-    state: &mut GlifoCanvasState,
+    state: &mut GrafiaCanvasState,
     key: Key,
     shift: bool,
     alt: bool,
@@ -88,7 +88,7 @@ fn press_key_v020(
 }
 
 fn pointer_press(
-    state: &mut GlifoCanvasState,
+    state: &mut GrafiaCanvasState,
     scr: ScreenPoint,
     shift: bool,
     alt: bool,
@@ -116,7 +116,7 @@ fn pointer_press(
 }
 
 fn pointer_move(
-    state: &mut GlifoCanvasState,
+    state: &mut GrafiaCanvasState,
     scr: ScreenPoint,
     shift: bool,
     alt: bool,
@@ -124,18 +124,11 @@ fn pointer_move(
     ctrl: bool,
 ) {
     let pos = Pos2::new(scr.x.0, scr.y.0);
-    let _ = run_dispatch(
-        state,
-        vec![Event::PointerMoved(pos)],
-        shift,
-        alt,
-        cmd,
-        ctrl,
-    );
+    let _ = run_dispatch(state, vec![Event::PointerMoved(pos)], shift, alt, cmd, ctrl);
 }
 
 fn pointer_release(
-    state: &mut GlifoCanvasState,
+    state: &mut GrafiaCanvasState,
     scr: ScreenPoint,
     shift: bool,
     alt: bool,
@@ -164,7 +157,7 @@ fn contour_signed_area(contour: &[Node]) -> f64 {
     grafia::compute_signed_area(&pts)
 }
 
-fn set_single_contour(state: &mut GlifoCanvasState, nodes: Vec<Node>, closed: bool) {
+fn set_single_contour(state: &mut GrafiaCanvasState, nodes: Vec<Node>, closed: bool) {
     state.contours = vec![nodes.clone()];
     let mut gc = GlyphContour::new(grafia::ContourId(0), nodes);
     gc.closed = closed;
@@ -191,7 +184,7 @@ fn assert_pt_near(actual: FontPoint, expected_x: f64, expected_y: f64, tol: f64,
 // ============================================================================
 #[test]
 fn test_spec003_bbox_calculation_active_knobs_hit_zones_and_priority_fallthrough() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 1.0;
     state.viewport.pan_offset = ScreenPoint::new(200.0, 400.0);
 
@@ -312,8 +305,20 @@ fn test_spec003_bbox_calculation_active_knobs_hit_zones_and_priority_fallthrough
         false,
     );
     // Both selected nodes translated by +20 in X (NodeId(1) -> (20, 0), NodeId(4) -> (120, 200))
-    assert_pt_near(state.find_node(NodeId(1)).unwrap().point, 20.0, 0.0, 1e-4, "M-30 node 1");
-    assert_pt_near(state.find_node(NodeId(4)).unwrap().point, 120.0, 200.0, 1e-4, "M-30 node 4");
+    assert_pt_near(
+        state.find_node(NodeId(1)).unwrap().point,
+        20.0,
+        0.0,
+        1e-4,
+        "M-30 node 1",
+    );
+    assert_pt_near(
+        state.find_node(NodeId(4)).unwrap().point,
+        120.0,
+        200.0,
+        1e-4,
+        "M-30 node 4",
+    );
     assert!(state.undo());
 
     // M-11: Slanted & Space-Panning Marquee Selection:
@@ -329,8 +334,14 @@ fn test_spec003_bbox_calculation_active_knobs_hit_zones_and_priority_fallthrough
     pointer_press(&mut state, m_start, false, true, false, false);
     pointer_move(&mut state, m_mid, false, true, false, false);
     pointer_release(&mut state, m_mid, false, true, false, false);
-    assert!((state.selection_angle_deg - 12.0).abs() < 1e-6, "M-11(a) Alt marquee must snap selection_angle_deg to italic_angle_deg");
-    assert!(state.show_bounding_box_slanted, "M-11(a) Alt marquee with italic_angle_deg != 0 sets show_bounding_box_slanted");
+    assert!(
+        (state.selection_angle_deg - 12.0).abs() < 1e-6,
+        "M-11(a) Alt marquee must snap selection_angle_deg to italic_angle_deg"
+    );
+    assert!(
+        state.show_bounding_box_slanted,
+        "M-11(a) Alt marquee with italic_angle_deg != 0 sets show_bounding_box_slanted"
+    );
 
     // (b) Ctrl-drag marquee dynamically adjusts selection_angle_deg in [-60°, +60°]
     state.italic_angle_deg = 0.0;
@@ -340,7 +351,10 @@ fn test_spec003_bbox_calculation_active_knobs_hit_zones_and_priority_fallthrough
     pointer_press(&mut state, c_start, false, false, false, true);
     pointer_move(&mut state, c_end, false, false, false, true);
     pointer_release(&mut state, c_end, false, false, false, true);
-    assert!(state.selection_angle_deg > 10.0 && state.selection_angle_deg <= 60.0, "M-11(b) Ctrl marquee dynamic slant angle");
+    assert!(
+        state.selection_angle_deg > 10.0 && state.selection_angle_deg <= 60.0,
+        "M-11(b) Ctrl marquee dynamic slant angle"
+    );
     assert!(state.show_bounding_box_slanted);
 
     // (c) Holding Space during active MarqueeSelecting pans marquee_start without switching to PreviewFilled!
@@ -355,11 +369,21 @@ fn test_spec003_bbox_calculation_active_knobs_hit_zones_and_priority_fallthrough
     // Press Space while MarqueeSelecting and move +90 dx in screen space so marquee_start shifts from -80 to +10,
     // and marquee now covers x in [10, 120] -> selecting NodeId(4) at (100,200) instead of NodeId(1) at (0,0)!
     press_key_v020(&mut state, Key::Space, false, false, false, false);
-    assert_eq!(state.view_mode, grafia::CanvasViewMode::EditWireframe, "M-11(c) Space during marquee must NOT enter PreviewFilled");
+    assert_eq!(
+        state.view_mode,
+        grafia::CanvasViewMode::EditWireframe,
+        "M-11(c) Space during marquee must NOT enter PreviewFilled"
+    );
     pointer_move(&mut state, m_panned, false, false, false, false);
     pointer_release(&mut state, m_panned, false, false, false, false);
-    assert!(state.selected_nodes.contains(&NodeId(4)), "M-11(c) Space-panned marquee must update live selection to cover NodeId(4)");
-    assert!(!state.selected_nodes.contains(&NodeId(1)), "M-11(c) Space-panned marquee must move start past NodeId(1)");
+    assert!(
+        state.selected_nodes.contains(&NodeId(4)),
+        "M-11(c) Space-panned marquee must update live selection to cover NodeId(4)"
+    );
+    assert!(
+        !state.selected_nodes.contains(&NodeId(1)),
+        "M-11(c) Space-panned marquee must move start past NodeId(1)"
+    );
 
     // Visual render smoke check with bounding box and pills active
     let pix = rasterize_canvas_subregion(&state, &state.theme, 600, 450);
@@ -372,7 +396,7 @@ fn test_spec003_bbox_calculation_active_knobs_hit_zones_and_priority_fallthrough
 // ============================================================================
 #[test]
 fn test_spec003_bbox_scale_rotate_slant_pivots_and_partial_bcp_alignment() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 1.0;
     state.viewport.pan_offset = ScreenPoint::new(200.0, 400.0);
     state.show_bounding_box = true;
@@ -397,9 +421,27 @@ fn test_spec003_bbox_scale_rotate_slant_pivots_and_partial_bcp_alignment() {
     pointer_move(&mut state, target_scr, false, false, false, false);
     pointer_release(&mut state, target_scr, false, false, false, false);
 
-    assert_pt_near(state.find_node(NodeId(1)).unwrap().point, 0.0, 0.0, 1e-4, "M-04 pivot");
-    assert_pt_near(state.find_node(NodeId(2)).unwrap().point, 150.0, 0.0, 1e-4, "M-04 P1");
-    assert_pt_near(state.find_node(NodeId(3)).unwrap().point, 150.0, 150.0, 1e-4, "M-04 P2");
+    assert_pt_near(
+        state.find_node(NodeId(1)).unwrap().point,
+        0.0,
+        0.0,
+        1e-4,
+        "M-04 pivot",
+    );
+    assert_pt_near(
+        state.find_node(NodeId(2)).unwrap().point,
+        150.0,
+        0.0,
+        1e-4,
+        "M-04 P1",
+    );
+    assert_pt_near(
+        state.find_node(NodeId(3)).unwrap().point,
+        150.0,
+        150.0,
+        1e-4,
+        "M-04 P2",
+    );
     // Pass 3: unselected OffCurve handle NodeId(4) attached to selected NodeId(3) shifted rigidly by (+50, +50) -> (150, 190)!
     assert_pt_near(
         state.find_node(NodeId(4)).unwrap().point,
@@ -419,9 +461,25 @@ fn test_spec003_bbox_scale_rotate_slant_pivots_and_partial_bcp_alignment() {
     pointer_press(&mut state, k5_scr, false, true, false, false);
     pointer_move(&mut state, k5_end, false, true, false, false);
     pointer_release(&mut state, k5_end, false, true, false, false);
-    assert_eq!(state.contours.len(), 1, "M-06: BBox Alt-drag must NEVER duplicate contours");
-    assert_pt_near(state.find_node(NodeId(1)).unwrap().point, -25.0, 0.0, 1e-4, "M-06 left");
-    assert_pt_near(state.find_node(NodeId(2)).unwrap().point, 125.0, 0.0, 1e-4, "M-06 right");
+    assert_eq!(
+        state.contours.len(),
+        1,
+        "M-06: BBox Alt-drag must NEVER duplicate contours"
+    );
+    assert_pt_near(
+        state.find_node(NodeId(1)).unwrap().point,
+        -25.0,
+        0.0,
+        1e-4,
+        "M-06 left",
+    );
+    assert_pt_near(
+        state.find_node(NodeId(2)).unwrap().point,
+        125.0,
+        0.0,
+        1e-4,
+        "M-06 right",
+    );
     assert!(state.undo());
 
     // M-05: Shift-drag on horizontal knob 5 by +50 dx -> uniform 2D scale (sx = 1.5, sy = 1.5) around opposite knob 3 (0, 50)
@@ -431,7 +489,13 @@ fn test_spec003_bbox_scale_rotate_slant_pivots_and_partial_bcp_alignment() {
     pointer_press(&mut state, k5_scr, true, false, false, false);
     pointer_move(&mut state, k5_shift_end, true, false, false, false);
     pointer_release(&mut state, k5_shift_end, true, false, false, false);
-    assert_pt_near(state.find_node(NodeId(3)).unwrap().point, 150.0, 125.0, 1e-4, "M-05 Shift uniform");
+    assert_pt_near(
+        state.find_node(NodeId(3)).unwrap().point,
+        150.0,
+        125.0,
+        1e-4,
+        "M-05 Shift uniform",
+    );
     assert!(state.undo());
 
     // M-08: Negative scale (dragging knob 5 by -200 dx past opposite knob 3 -> sx = -1.0) mirrors coordinates without reversing node order
@@ -441,8 +505,18 @@ fn test_spec003_bbox_scale_rotate_slant_pivots_and_partial_bcp_alignment() {
     pointer_press(&mut state, k5_scr, false, false, false, false);
     pointer_move(&mut state, k5_neg_end, false, false, false, false);
     pointer_release(&mut state, k5_neg_end, false, false, false, false);
-    assert_eq!(state.contours[0][0].id, NodeId(1), "M-08: winding array order must not flip");
-    assert_pt_near(state.find_node(NodeId(2)).unwrap().point, -100.0, 0.0, 1e-4, "M-08 mirrored P1");
+    assert_eq!(
+        state.contours[0][0].id,
+        NodeId(1),
+        "M-08: winding array order must not flip"
+    );
+    assert_pt_near(
+        state.find_node(NodeId(2)).unwrap().point,
+        -100.0,
+        0.0,
+        1e-4,
+        "M-08 mirrored P1",
+    );
     assert!(state.undo());
 
     // M-09: Drag in Zone 3 (t = 1.85) outside corner knob 8 with Shift -> snaps rotation to 45° around opposite knob 0 (0,0)
@@ -460,7 +534,13 @@ fn test_spec003_bbox_scale_rotate_slant_pivots_and_partial_bcp_alignment() {
     pointer_release(&mut state, rot_end, true, false, false, false);
     // P1=(100,0) rotated +45 deg around (0,0) -> (70.710678, 70.710678)
     let cos45 = 100.0 * std::f64::consts::FRAC_1_SQRT_2;
-    assert_pt_near(state.find_node(NodeId(2)).unwrap().point, cos45, cos45, 1e-3, "M-09 45deg BBox rotate");
+    assert_pt_near(
+        state.find_node(NodeId(2)).unwrap().point,
+        cos45,
+        cos45,
+        1e-3,
+        "M-09 45deg BBox rotate",
+    );
     // SPEC-003 §2.1.5.3 Pass 3: NodeId(3) is Smooth at (100,100) -> rotated +45 deg around (0,0) to (0, 141.421356).
     // Its incoming neighbor NodeId(2) was also transformed to (70.710678, 70.710678), so vector b->a is (-0.707107, +0.707107).
     // Therefore unselected outgoing OffCurve handle NodeId(4) (initial length 40) MUST be rotated collinear to
@@ -485,8 +565,20 @@ fn test_spec003_bbox_scale_rotate_slant_pivots_and_partial_bcp_alignment() {
     pointer_move(&mut state, k8_sa_end, true, true, false, false);
     pointer_release(&mut state, k8_sa_end, true, true, false, false);
     assert_eq!(state.contours.len(), 1, "M-07 must never duplicate");
-    assert_pt_near(state.find_node(NodeId(1)).unwrap().point, -25.0, -25.0, 1e-4, "M-07 Shift+Alt center pivot P0");
-    assert_pt_near(state.find_node(NodeId(3)).unwrap().point, 125.0, 125.0, 1e-4, "M-07 Shift+Alt center pivot P2");
+    assert_pt_near(
+        state.find_node(NodeId(1)).unwrap().point,
+        -25.0,
+        -25.0,
+        1e-4,
+        "M-07 Shift+Alt center pivot P0",
+    );
+    assert_pt_near(
+        state.find_node(NodeId(3)).unwrap().point,
+        125.0,
+        125.0,
+        1e-4,
+        "M-07 Shift+Alt center pivot P2",
+    );
     assert!(state.undo());
 
     // M-10: Drag in Zone 3 outside knob 1 (Bottom-Center at (50, 0)) horizontally by -20 dx in font space
@@ -502,8 +594,20 @@ fn test_spec003_bbox_scale_rotate_slant_pivots_and_partial_bcp_alignment() {
     pointer_press(&mut state, slant_start, false, false, false, false);
     pointer_move(&mut state, slant_end, false, false, false, false);
     pointer_release(&mut state, slant_end, false, false, false, false);
-    assert_pt_near(state.find_node(NodeId(1)).unwrap().point, -17.563117, 0.0, 1e-2, "M-10 slant bottom node P0");
-    assert_pt_near(state.find_node(NodeId(3)).unwrap().point, 100.0, 100.0, 1e-3, "M-10 slant top node P2 unchanged");
+    assert_pt_near(
+        state.find_node(NodeId(1)).unwrap().point,
+        -17.563117,
+        0.0,
+        1e-2,
+        "M-10 slant bottom node P0",
+    );
+    assert_pt_near(
+        state.find_node(NodeId(3)).unwrap().point,
+        100.0,
+        100.0,
+        1e-3,
+        "M-10 slant top node P2 unchanged",
+    );
     assert!(state.undo());
 }
 
@@ -513,7 +617,7 @@ fn test_spec003_bbox_scale_rotate_slant_pivots_and_partial_bcp_alignment() {
 // ============================================================================
 #[test]
 fn test_spec003_rotate_and_scale_tools_origin_relocation_cmd_update_and_shift_zones() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 1.0;
     state.viewport.pan_offset = ScreenPoint::new(200.0, 400.0);
 
@@ -539,22 +643,46 @@ fn test_spec003_rotate_and_scale_tools_origin_relocation_cmd_update_and_shift_zo
     let frac_scr = state.viewport.to_screen(FontPoint::new(12.4, 18.6));
     pointer_press(&mut state, frac_scr, false, false, false, false);
     pointer_release(&mut state, frac_scr, false, false, false, false);
-    assert_pt_near(state.transform_origin, 12.0, 19.0, 1e-6, "M-12 click rounds to grid when !Ctrl");
+    assert_pt_near(
+        state.transform_origin,
+        12.0,
+        19.0,
+        1e-6,
+        "M-12 click rounds to grid when !Ctrl",
+    );
     pointer_press(&mut state, frac_scr, false, false, false, true);
     pointer_release(&mut state, frac_scr, false, false, false, true);
-    assert_pt_near(state.transform_origin, 12.4, 18.6, 1e-4, "M-12 Ctrl click bypasses grid snap");
+    assert_pt_near(
+        state.transform_origin,
+        12.4,
+        18.6,
+        1e-4,
+        "M-12 Ctrl click bypasses grid snap",
+    );
     state.round_to_grid = false;
 
     let origin_target_scr = state.viewport.to_screen(FontPoint::new(0.0, 0.0));
     pointer_press(&mut state, origin_target_scr, false, false, false, false);
     pointer_release(&mut state, origin_target_scr, false, false, false, false);
-    assert_pt_near(state.transform_origin, 0.0, 0.0, 1e-6, "M-12 click relocates origin");
+    assert_pt_near(
+        state.transform_origin,
+        0.0,
+        0.0,
+        1e-6,
+        "M-12 click relocates origin",
+    );
     assert_eq!(state.history.can_undo(), can_undo_before);
 
     // Switching directly from 'R' to 'S' preserves manually relocated transform_origin (0, 0)!
     press_key_v020(&mut state, Key::S, false, false, false, false);
     assert_eq!(state.active_tool, CanvasTool::Scale);
-    assert_pt_near(state.transform_origin, 0.0, 0.0, 1e-6, "R->S preserves custom origin");
+    assert_pt_near(
+        state.transform_origin,
+        0.0,
+        0.0,
+        1e-6,
+        "R->S preserves custom origin",
+    );
 
     // M-13: Dragging within 3.0 dp of transform_origin moves transform_origin live to (10, 20)
     let start_near_origin = ScreenPoint::new(origin_target_scr.x.0 + 1.5, origin_target_scr.y.0);
@@ -575,7 +703,13 @@ fn test_spec003_rotate_and_scale_tools_origin_relocation_cmd_update_and_shift_zo
     pointer_press(&mut state, s_start, true, false, false, false);
     pointer_move(&mut state, s_horiz, true, false, false, false);
     pointer_release(&mut state, s_horiz, true, false, false, false);
-    assert_pt_near(state.find_node(NodeId(3)).unwrap().point, 200.0, 100.0, 1e-4, "M-15 Shift horiz scale");
+    assert_pt_near(
+        state.find_node(NodeId(3)).unwrap().point,
+        200.0,
+        100.0,
+        1e-4,
+        "M-15 Shift horiz scale",
+    );
     assert!(state.undo());
 
     // M-16: ScaleTool Shift Zone 2 (|sin(theta)| > 0.86, near vertical drag from (100, 100) to (105, 200)):
@@ -584,7 +718,13 @@ fn test_spec003_rotate_and_scale_tools_origin_relocation_cmd_update_and_shift_zo
     pointer_press(&mut state, s_start, true, false, false, false);
     pointer_move(&mut state, s_vert, true, false, false, false);
     pointer_release(&mut state, s_vert, true, false, false, false);
-    assert_pt_near(state.find_node(NodeId(3)).unwrap().point, 100.0, 200.0, 1e-4, "M-16 Shift vert scale");
+    assert_pt_near(
+        state.find_node(NodeId(3)).unwrap().point,
+        100.0,
+        200.0,
+        1e-4,
+        "M-16 Shift vert scale",
+    );
     assert!(state.undo());
 
     // M-17: ScaleTool Shift Zone 3 (0.2 <= |sin(theta)| <= 0.86, diagonal drag from (100, 100) to (180, 140)):
@@ -593,7 +733,13 @@ fn test_spec003_rotate_and_scale_tools_origin_relocation_cmd_update_and_shift_zo
     pointer_press(&mut state, s_start, true, false, false, false);
     pointer_move(&mut state, s_diag, true, false, false, false);
     pointer_release(&mut state, s_diag, true, false, false, false);
-    assert_pt_near(state.find_node(NodeId(3)).unwrap().point, 180.0, 180.0, 1e-4, "M-17 Shift uniform max");
+    assert_pt_near(
+        state.find_node(NodeId(3)).unwrap().point,
+        180.0,
+        180.0,
+        1e-4,
+        "M-17 Shift uniform max",
+    );
     assert!(state.undo());
 
     // M-14: Switch to RotateTool ('R'), drag with Shift from (100, 0) to (70, 90) -> snaps to +45° around (0, 0)
@@ -603,9 +749,19 @@ fn test_spec003_rotate_and_scale_tools_origin_relocation_cmd_update_and_shift_zo
     pointer_press(&mut state, r_start, true, true, false, false);
     pointer_move(&mut state, r_end, true, true, false, false);
     pointer_release(&mut state, r_end, true, true, false, false);
-    assert_eq!(state.contours.len(), 1, "M-14: RotateTool Alt must never duplicate");
+    assert_eq!(
+        state.contours.len(),
+        1,
+        "M-14: RotateTool Alt must never duplicate"
+    );
     let cos45 = 100.0 * std::f64::consts::FRAC_1_SQRT_2;
-    assert_pt_near(state.find_node(NodeId(2)).unwrap().point, cos45, cos45, 1e-3, "M-14 Rotate 45deg");
+    assert_pt_near(
+        state.find_node(NodeId(2)).unwrap().point,
+        cos45,
+        cos45,
+        1e-3,
+        "M-14 Rotate 45deg",
+    );
     assert!(state.undo());
 
     // M-31: Temporary Cmd-Select while in RotateTool updates selection to [NodeId(2), NodeId(3)]
@@ -616,7 +772,13 @@ fn test_spec003_rotate_and_scale_tools_origin_relocation_cmd_update_and_shift_zo
     pointer_move(&mut state, m_br, false, false, true, false);
     pointer_release(&mut state, m_br, false, false, true, false);
     assert_eq!(state.selected_nodes, vec![NodeId(2), NodeId(3)]);
-    assert_pt_near(state.transform_origin, 100.0, 50.0, 1e-4, "M-31 Cmd-Select updates transform_origin");
+    assert_pt_near(
+        state.transform_origin,
+        100.0,
+        50.0,
+        1e-4,
+        "M-31 Cmd-Select updates transform_origin",
+    );
 }
 
 // ============================================================================
@@ -625,7 +787,7 @@ fn test_spec003_rotate_and_scale_tools_origin_relocation_cmd_update_and_shift_zo
 // ============================================================================
 #[test]
 fn test_spec003_lasso_tool_freeform_polygon_segment_suppression_and_modifiers() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 1.0;
     state.viewport.pan_offset = ScreenPoint::new(200.0, 400.0);
 
@@ -692,7 +854,7 @@ fn test_spec003_lasso_tool_freeform_polygon_segment_suppression_and_modifiers() 
 // ============================================================================
 #[test]
 fn test_spec003_zoom_tool_discrete_steps_and_marquee_10dp_threshold() {
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     state.viewport.zoom = 1.0;
     state.viewport.pan_offset = ScreenPoint::new(200.0, 400.0);
 
@@ -708,7 +870,13 @@ fn test_spec003_zoom_tool_discrete_steps_and_marquee_10dp_threshold() {
     pointer_release(&mut state, click_scr, false, false, false, false);
     assert!((state.viewport.zoom - 1.5).abs() < 1e-5);
     let font_after = state.viewport.to_font(click_scr);
-    assert_pt_near(font_after, font_before.x.0, font_before.y.0, 1e-3, "M-19 anchor preserved");
+    assert_pt_near(
+        font_after,
+        font_before.x.0,
+        font_before.y.0,
+        1e-3,
+        "M-19 anchor preserved",
+    );
 
     // Alt + Click steps down from 1.5 to 1.0 in ZOOM_STEPS
     pointer_press(&mut state, click_scr, false, true, false, false);
@@ -724,7 +892,13 @@ fn test_spec003_zoom_tool_discrete_steps_and_marquee_10dp_threshold() {
     pointer_release(&mut state, m_end, false, false, false, false);
     assert!((state.viewport.zoom - 4.0).abs() < 1e-4);
     let viewport_center_font = state.viewport.to_font(ScreenPoint::new(400.0, 300.0));
-    assert_pt_near(viewport_center_font, center_font.x.0, center_font.y.0, 1e-2, "M-20 marquee centered");
+    assert_pt_near(
+        viewport_center_font,
+        center_font.x.0,
+        center_font.y.0,
+        1e-2,
+        "M-20 marquee centered",
+    );
 
     // Alt + Marquee zooms out by min(w/vw, h/vh) = 0.25 -> zoom returns from 4.0 to 1.0
     pointer_press(&mut state, m_start, false, true, false, false);
@@ -739,7 +913,7 @@ fn test_spec003_zoom_tool_discrete_steps_and_marquee_10dp_threshold() {
 // ============================================================================
 #[test]
 fn test_spec003_clipboard_copy_cut_paste_closed_seam_collision_offset_and_splice() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     let nodes = vec![
         Node::new(NodeId(1), 0.0, 0.0, NodeType::Corner),
         Node::new(NodeId(2), 100.0, 0.0, NodeType::Corner),
@@ -766,9 +940,19 @@ fn test_spec003_clipboard_copy_cut_paste_closed_seam_collision_offset_and_splice
     assert!(state.paste_clipboard());
     assert_eq!(state.contours.len(), 2);
     assert!(state.is_contour_closed(1));
-    assert_pt_near(state.contours[1][0].point, 10.0, 10.0, 1e-6, "M-21 (+10,+10) collision offset");
-    assert!(state.contours[1].iter().all(|n| state.selected_nodes.contains(&n.id)));
-    assert!(state.contours[0].iter().all(|n| !state.selected_nodes.contains(&n.id)));
+    assert_pt_near(
+        state.contours[1][0].point,
+        10.0,
+        10.0,
+        1e-6,
+        "M-21 (+10,+10) collision offset",
+    );
+    assert!(state.contours[1]
+        .iter()
+        .all(|n| state.selected_nodes.contains(&n.id)));
+    assert!(state.contours[0]
+        .iter()
+        .all(|n| !state.selected_nodes.contains(&n.id)));
     assert!(state.undo());
 
     // M-22: Partial chain selected across P0 seam (NodeId(6) at index 5 and NodeId(1) at index 0) ->
@@ -778,8 +962,20 @@ fn test_spec003_clipboard_copy_cut_paste_closed_seam_collision_offset_and_splice
     assert_eq!(state.clipboard_contours.len(), 1);
     assert!(!state.clipboard_contours[0].closed);
     assert_eq!(state.clipboard_contours[0].nodes.len(), 2);
-    assert_pt_near(state.clipboard_contours[0].nodes[0].point, 0.0, 100.0, 1e-6, "M-22 seam start");
-    assert_pt_near(state.clipboard_contours[0].nodes[1].point, 0.0, 0.0, 1e-6, "M-22 seam end");
+    assert_pt_near(
+        state.clipboard_contours[0].nodes[0].point,
+        0.0,
+        100.0,
+        1e-6,
+        "M-22 seam start",
+    );
+    assert_pt_near(
+        state.clipboard_contours[0].nodes[1].point,
+        0.0,
+        0.0,
+        1e-6,
+        "M-22 seam end",
+    );
 
     // Mode B (pasteInsertPath:): When 1 open contour is on clipboard and >= 2 contiguous OnCurve nodes
     // are selected on target contour, paste_clipboard splices the open contour into the target contour!
@@ -815,13 +1011,21 @@ fn test_spec003_clipboard_copy_cut_paste_closed_seam_collision_offset_and_splice
     }];
     state.selected_nodes = vec![NodeId(6), NodeId(1)];
     assert!(state.paste_clipboard());
-    assert_eq!(state.contours.len(), 1, "Mode B across P0 seam must splice into contour 0");
+    assert_eq!(
+        state.contours.len(),
+        1,
+        "Mode B across P0 seam must splice into contour 0"
+    );
     assert!(
-        state.contours[0].iter().any(|n| (n.point.x.0 - (-40.0)).abs() < 1e-6),
+        state.contours[0]
+            .iter()
+            .any(|n| (n.point.x.0 - (-40.0)).abs() < 1e-6),
         "Mode B across P0 seam must insert (-40, 50)"
     );
     assert!(
-        state.contours[0].iter().any(|n| (n.point.x.0 - 100.0).abs() < 1e-6 && (n.point.y.0 - 0.0).abs() < 1e-6),
+        state.contours[0]
+            .iter()
+            .any(|n| (n.point.x.0 - 100.0).abs() < 1e-6 && (n.point.y.0 - 0.0).abs() < 1e-6),
         "Mode B across P0 seam must NOT wipe out unselected NodeId(2) at (100, 0)!"
     );
     assert!(state.undo());
@@ -830,13 +1034,20 @@ fn test_spec003_clipboard_copy_cut_paste_closed_seam_collision_offset_and_splice
     // and instead falls back to Mode A (appending a 2nd contour)!
     state.selected_nodes = vec![NodeId(1), NodeId(3)];
     assert!(state.paste_clipboard());
-    assert_eq!(state.contours.len(), 2, "Non-contiguous selection must fall back to Mode A paste");
+    assert_eq!(
+        state.contours.len(),
+        2,
+        "Non-contiguous selection must fall back to Mode A paste"
+    );
     assert!(state.undo());
 
     // M-24: Cut (Cmd+X) copies selection and breaks closed contour open via cut_open_delete
     state.selected_nodes = vec![NodeId(2)];
     assert!(state.cut_selection());
-    assert!(!state.is_contour_closed(0), "M-24: Cut must break closed contour open");
+    assert!(
+        !state.is_contour_closed(0),
+        "M-24: Cut must break closed contour open"
+    );
 }
 
 // ============================================================================
@@ -844,8 +1055,9 @@ fn test_spec003_clipboard_copy_cut_paste_closed_seam_collision_offset_and_splice
 // Verified Scenarios: M-25, M-26, M-27, M-28, M-29, M-32, M-33 + Golden Masters 6.1A..6.5
 // ============================================================================
 #[test]
-fn test_spec003_path_ops_reverse_make_first_correct_direction_extremes_tidy_align_connect_and_panel() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+fn test_spec003_path_ops_reverse_make_first_correct_direction_extremes_tidy_align_connect_and_panel(
+) {
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
 
     // ------------------------------------------------------------------------
     // 1. M-25: make_node_first on Closed vs. Open contour (P_last vs interior)
@@ -878,7 +1090,11 @@ fn test_spec003_path_ops_reverse_make_first_correct_direction_extremes_tidy_alig
     state.grid_step_upm = 0.0;
     state.selected_nodes = vec![NodeId(1)]; // scope to segment so post-tidy doesn't alter unrelated
     assert!(state.add_extremes(false));
-    assert_eq!(state.contours[0].len(), 13, "Golden Master 6.1A must produce 13 nodes");
+    assert_eq!(
+        state.contours[0].len(),
+        13,
+        "Golden Master 6.1A must produce 13 nodes"
+    );
     let expected_61a = [
         (20.000000, 0.000000, NodeType::Corner),
         (11.213203, 8.786797, NodeType::OffCurve),
@@ -895,8 +1111,17 @@ fn test_spec003_path_ops_reverse_make_first_correct_direction_extremes_tidy_alig
         (80.000000, 0.000000, NodeType::Corner),
     ];
     for (idx, (ex, ey, ent)) in expected_61a.iter().enumerate() {
-        assert_pt_near(state.contours[0][idx].point, *ex, *ey, 1e-3, &format!("GM 6.1A[{idx}]"));
-        assert_eq!(state.contours[0][idx].node_type, *ent, "GM 6.1A[{idx}] node_type");
+        assert_pt_near(
+            state.contours[0][idx].point,
+            *ex,
+            *ey,
+            1e-3,
+            &format!("GM 6.1A[{idx}]"),
+        );
+        assert_eq!(
+            state.contours[0][idx].node_type, *ent,
+            "GM 6.1A[{idx}] node_type"
+        );
     }
 
     // ------------------------------------------------------------------------
@@ -920,25 +1145,73 @@ fn test_spec003_path_ops_reverse_make_first_correct_direction_extremes_tidy_alig
     set_single_contour(&mut state, make_61b(NodeType::Corner), true);
     state.selected_nodes = vec![NodeId(1)];
     let _ = state.add_extremes(false);
-    assert_eq!(state.contours[0].len(), 7, "GM 6.1B(1) Corner force=false must stay 7 nodes");
-    assert_pt_near(state.contours[0][3].point, 100.0, 98.0, 1e-4, "GM 6.1B(1) unchanged");
+    assert_eq!(
+        state.contours[0].len(),
+        7,
+        "GM 6.1B(1) Corner force=false must stay 7 nodes"
+    );
+    assert_pt_near(
+        state.contours[0][3].point,
+        100.0,
+        98.0,
+        1e-4,
+        "GM 6.1B(1) unchanged",
+    );
 
     // 6.1B(2): Corner + force=true -> Inserts (92.058928, 98.395119) Smooth and keeps (100, 98) Corner (count = 10)
     set_single_contour(&mut state, make_61b(NodeType::Corner), true);
     state.selected_nodes = vec![NodeId(1)];
     assert!(state.add_extremes(true));
-    assert_eq!(state.contours[0].len(), 10, "GM 6.1B(2) Corner force=true must have 10 nodes");
-    assert_pt_near(state.contours[0][3].point, 92.058928, 98.395119, 1e-3, "GM 6.1B(2) extremum");
-    assert_pt_near(state.contours[0][6].point, 100.0, 98.0, 1e-3, "GM 6.1B(2) preserved corner");
+    assert_eq!(
+        state.contours[0].len(),
+        10,
+        "GM 6.1B(2) Corner force=true must have 10 nodes"
+    );
+    assert_pt_near(
+        state.contours[0][3].point,
+        92.058928,
+        98.395119,
+        1e-3,
+        "GM 6.1B(2) extremum",
+    );
+    assert_pt_near(
+        state.contours[0][6].point,
+        100.0,
+        98.0,
+        1e-3,
+        "GM 6.1B(2) preserved corner",
+    );
 
     // 6.1B(3): Smooth + force=false -> Inserts (92.058928, 98.395119) Smooth and heals (100, 98) (count = 7)
     set_single_contour(&mut state, make_61b(NodeType::Smooth), true);
     state.selected_nodes = vec![NodeId(1)];
     assert!(state.add_extremes(false));
-    assert_eq!(state.contours[0].len(), 7, "GM 6.1B(3) Smooth force=false must heal to 7 nodes");
-    assert_pt_near(state.contours[0][3].point, 92.058928, 98.395119, 1e-3, "GM 6.1B(3) absorbed smooth");
-    assert_pt_near(state.contours[0][4].point, 144.612188, 98.395119, 0.5, "GM 6.1B(3) healed handle 1");
-    assert_pt_near(state.contours[0][5].point, 200.000000, 52.625000, 0.5, "GM 6.1B(3) healed handle 2");
+    assert_eq!(
+        state.contours[0].len(),
+        7,
+        "GM 6.1B(3) Smooth force=false must heal to 7 nodes"
+    );
+    assert_pt_near(
+        state.contours[0][3].point,
+        92.058928,
+        98.395119,
+        1e-3,
+        "GM 6.1B(3) absorbed smooth",
+    );
+    assert_pt_near(
+        state.contours[0][4].point,
+        144.612188,
+        98.395119,
+        0.5,
+        "GM 6.1B(3) healed handle 1",
+    );
+    assert_pt_near(
+        state.contours[0][5].point,
+        200.000000,
+        52.625000,
+        0.5,
+        "GM 6.1B(3) healed handle 2",
+    );
 
     // 6.1B(4): Closed-contour seam wrap-around: when the final cubic segment (ending at P0 Smooth)
     // has an extremum within 30 UPM of P0, force=false must absorb P0 across the closed seam!
@@ -954,7 +1227,11 @@ fn test_spec003_path_ops_reverse_make_first_correct_direction_extremes_tidy_alig
     set_single_contour(&mut state, seam_smooth_61b, true);
     state.selected_nodes.clear();
     assert!(state.add_extremes(false));
-    assert_eq!(state.contours[0].len(), 7, "Closed-contour P0 Smooth within 30 UPM must be absorbed into 7 nodes");
+    assert_eq!(
+        state.contours[0].len(),
+        7,
+        "Closed-contour P0 Smooth within 30 UPM must be absorbed into 7 nodes"
+    );
 
     // ------------------------------------------------------------------------
     // 4. Golden Master 6.2: add_inflection_points (Symmetric & Asymmetric S-Curves)
@@ -968,7 +1245,13 @@ fn test_spec003_path_ops_reverse_make_first_correct_direction_extremes_tidy_alig
     set_single_contour(&mut state, gm_62_sym, false);
     assert!(state.add_inflection_points());
     assert_eq!(state.contours[0].len(), 7);
-    assert_pt_near(state.contours[0][3].point, 50.0, 50.0, 1e-4, "GM 6.2(1) t=0.5 inflection");
+    assert_pt_near(
+        state.contours[0][3].point,
+        50.0,
+        50.0,
+        1e-4,
+        "GM 6.2(1) t=0.5 inflection",
+    );
 
     let gm_62_asym = vec![
         Node::new(NodeId(1), 0.0, 0.0, NodeType::Corner),
@@ -979,11 +1262,41 @@ fn test_spec003_path_ops_reverse_make_first_correct_direction_extremes_tidy_alig
     set_single_contour(&mut state, gm_62_asym, false);
     assert!(state.add_inflection_points());
     assert_eq!(state.contours[0].len(), 7);
-    assert_pt_near(state.contours[0][1].point, 10.363877, 72.547140, 1e-3, "GM 6.2(2)[1]");
-    assert_pt_near(state.contours[0][2].point, 31.468749, 64.536818, 1e-3, "GM 6.2(2)[2]");
-    assert_pt_near(state.contours[0][3].point, 52.182781, 56.674839, 1e-3, "GM 6.2(2)[3]");
-    assert_pt_near(state.contours[0][4].point, 71.442268, 49.364930, 1e-3, "GM 6.2(2)[4]");
-    assert_pt_near(state.contours[0][5].point, 90.363877, 42.183263, 1e-3, "GM 6.2(2)[5]");
+    assert_pt_near(
+        state.contours[0][1].point,
+        10.363877,
+        72.547140,
+        1e-3,
+        "GM 6.2(2)[1]",
+    );
+    assert_pt_near(
+        state.contours[0][2].point,
+        31.468749,
+        64.536818,
+        1e-3,
+        "GM 6.2(2)[2]",
+    );
+    assert_pt_near(
+        state.contours[0][3].point,
+        52.182781,
+        56.674839,
+        1e-3,
+        "GM 6.2(2)[3]",
+    );
+    assert_pt_near(
+        state.contours[0][4].point,
+        71.442268,
+        49.364930,
+        1e-3,
+        "GM 6.2(2)[4]",
+    );
+    assert_pt_near(
+        state.contours[0][5].point,
+        90.363877,
+        42.183263,
+        1e-3,
+        "GM 6.2(2)[5]",
+    );
 
     // ------------------------------------------------------------------------
     // 5. Golden Master 6.3: tidy_up_paths & Duplicate-Node Warning Circles
@@ -1020,8 +1333,16 @@ fn test_spec003_path_ops_reverse_make_first_correct_direction_extremes_tidy_alig
     );
 
     assert!(state.tidy_up_paths());
-    assert_eq!(state.contours.len(), 1, "GM 6.3 degenerate contour 1 must be removed");
-    assert_eq!(state.contours[0].len(), 6, "GM 6.3 contour 0 must have 6 nodes");
+    assert_eq!(
+        state.contours.len(),
+        1,
+        "GM 6.3 degenerate contour 1 must be removed"
+    );
+    assert_eq!(
+        state.contours[0].len(),
+        6,
+        "GM 6.3 contour 0 must have 6 nodes"
+    );
     let expected_63 = [
         (0.0, 0.0, NodeType::Corner),
         (100.0, 0.0, NodeType::Corner),
@@ -1031,8 +1352,17 @@ fn test_spec003_path_ops_reverse_make_first_correct_direction_extremes_tidy_alig
         (0.0, 200.0, NodeType::Corner),
     ];
     for (idx, (ex, ey, ent)) in expected_63.iter().enumerate() {
-        assert_pt_near(state.contours[0][idx].point, *ex, *ey, 1e-4, &format!("GM 6.3[{idx}]"));
-        assert_eq!(state.contours[0][idx].node_type, *ent, "GM 6.3[{idx}] node_type");
+        assert_pt_near(
+            state.contours[0][idx].point,
+            *ex,
+            *ey,
+            1e-4,
+            &format!("GM 6.3[{idx}]"),
+        );
+        assert_eq!(
+            state.contours[0][idx].node_type, *ent,
+            "GM 6.3[{idx}] node_type"
+        );
     }
 
     // SPEC-003 §2.6.5.5: tidy_up_paths (checkConnections) when promoting Corner to Smooth with
@@ -1101,17 +1431,50 @@ fn test_spec003_path_ops_reverse_make_first_correct_direction_extremes_tidy_alig
     state.sync_paths_from_contours();
     assert!(state.correct_path_direction());
     // Outer (depth 0) -> CCW starting at (0,0): [(0,0), (500,0), (500,500), (0,500)]
-    assert!(contour_signed_area(&state.contours[0]) > 0.0, "GM 6.4 outer must be CCW");
-    assert_pt_near(state.contours[0][0].point, 0.0, 0.0, 1e-4, "GM 6.4 outer P0 findMinNode");
+    assert!(
+        contour_signed_area(&state.contours[0]) > 0.0,
+        "GM 6.4 outer must be CCW"
+    );
+    assert_pt_near(
+        state.contours[0][0].point,
+        0.0,
+        0.0,
+        1e-4,
+        "GM 6.4 outer P0 findMinNode",
+    );
     // Counter (depth 1) -> CW starting at (100,100): [(100,100), (100,400), (400,400), (400,100)]
-    assert!(contour_signed_area(&state.contours[1]) < 0.0, "GM 6.4 counter must be CW");
-    assert_pt_near(state.contours[1][0].point, 100.0, 100.0, 1e-4, "GM 6.4 counter P0 findMinNode");
+    assert!(
+        contour_signed_area(&state.contours[1]) < 0.0,
+        "GM 6.4 counter must be CW"
+    );
+    assert_pt_near(
+        state.contours[1][0].point,
+        100.0,
+        100.0,
+        1e-4,
+        "GM 6.4 counter P0 findMinNode",
+    );
     // Island (depth 2) -> CCW starting at (200,200)
-    assert!(contour_signed_area(&state.contours[2]) > 0.0, "GM 6.4 island must be CCW");
-    assert_pt_near(state.contours[2][0].point, 200.0, 200.0, 1e-4, "GM 6.4 island P0 findMinNode");
+    assert!(
+        contour_signed_area(&state.contours[2]) > 0.0,
+        "GM 6.4 island must be CCW"
+    );
+    assert_pt_near(
+        state.contours[2][0].point,
+        200.0,
+        200.0,
+        1e-4,
+        "GM 6.4 island P0 findMinNode",
+    );
     // Open path 3 -> completely untouched
     assert!(!state.is_contour_closed(3));
-    assert_pt_near(state.contours[3][0].point, 0.0, 600.0, 1e-4, "GM 6.4 open untouched");
+    assert_pt_near(
+        state.contours[3][0].point,
+        0.0,
+        600.0,
+        1e-4,
+        "GM 6.4 open untouched",
+    );
 
     // SPEC-003 §2.6.3 boundary-touching edge case: inner closed contour whose first OnCurve node P0=(0, 250)
     // touches the left vertical edge x=0 of outer [0..500]x[0..500] while its interior lies strictly inside:
@@ -1153,8 +1516,20 @@ fn test_spec003_path_ops_reverse_make_first_correct_direction_extremes_tidy_alig
     // GM 6.5(1): 1 OnCurve (100,200) + 1 adjacent OffCurve (110,260) -> OffCurve snaps X to 100.0
     state.selected_nodes = vec![NodeId(1), NodeId(2)];
     assert!(state.align_selection());
-    assert_pt_near(state.find_node(NodeId(1)).unwrap().point, 100.0, 200.0, 1e-4, "GM 6.5(1) anchor fixed");
-    assert_pt_near(state.find_node(NodeId(2)).unwrap().point, 100.0, 260.0, 1e-4, "GM 6.5(1) handle X snapped");
+    assert_pt_near(
+        state.find_node(NodeId(1)).unwrap().point,
+        100.0,
+        200.0,
+        1e-4,
+        "GM 6.5(1) anchor fixed",
+    );
+    assert_pt_near(
+        state.find_node(NodeId(2)).unwrap().point,
+        100.0,
+        260.0,
+        1e-4,
+        "GM 6.5(1) handle X snapped",
+    );
 
     // GM 6.5(2): 3 OnCurve nodes [(100,200), (150,215), (200,230)] across Bottom (0), Center (4), Top (8)
     for (anchor, expected_y) in [
@@ -1239,7 +1614,11 @@ fn test_spec003_path_ops_reverse_make_first_correct_direction_extremes_tidy_alig
     assert!(state.connect_selected_open_endpoints());
     assert_eq!(state.contours.len(), 1);
     assert!(!state.is_contour_closed(0));
-    assert_eq!(state.contours[0].len(), 3, "Case C (< 1.0 UPM) must weld into 3 nodes");
+    assert_eq!(
+        state.contours[0].len(),
+        3,
+        "Case C (< 1.0 UPM) must weld into 3 nodes"
+    );
 
     // Case D: Two different open contours with endpoints >= 1.0 UPM -> bridges with straight line into 1 open contour (4 nodes)
     let cb_far = vec![
@@ -1264,7 +1643,11 @@ fn test_spec003_path_ops_reverse_make_first_correct_direction_extremes_tidy_alig
     assert!(state.connect_selected_open_endpoints());
     assert_eq!(state.contours.len(), 1);
     assert!(!state.is_contour_closed(0));
-    assert_eq!(state.contours[0].len(), 4, "Case D (>= 1.0 UPM) must bridge keeping 4 nodes");
+    assert_eq!(
+        state.contours[0].len(),
+        4,
+        "Case D (>= 1.0 UPM) must bridge keeping 4 nodes"
+    );
 
     // ------------------------------------------------------------------------
     // 9. M-32: TransformPanel Programmatic Operations & MetricsOrigin (0..4)
@@ -1280,7 +1663,13 @@ fn test_spec003_path_ops_reverse_make_first_correct_direction_extremes_tidy_alig
         (MetricsOrigin::XHeight, 500.0),
     ] {
         state.set_metrics_origin(mode);
-        assert_pt_near(state.resolve_transform_origin(), 300.0, expected_y, 1e-4, "MetricsOrigin");
+        assert_pt_near(
+            state.resolve_transform_origin(),
+            300.0,
+            expected_y,
+            1e-4,
+            "MetricsOrigin",
+        );
     }
 
     // Whole-layer transform when selected_nodes is empty vs selection transform when non-empty
@@ -1295,24 +1684,58 @@ fn test_spec003_path_ops_reverse_make_first_correct_direction_extremes_tidy_alig
     state.selected_nodes.clear();
 
     assert!(state.flip_horizontal());
-    assert_eq!(state.contours[0][0].id, NodeId(1), "flip_horizontal must not reverse array order");
-    assert_pt_near(state.contours[0][0].point, 100.0, 0.0, 1e-4, "flip_horizontal P0");
+    assert_eq!(
+        state.contours[0][0].id,
+        NodeId(1),
+        "flip_horizontal must not reverse array order"
+    );
+    assert_pt_near(
+        state.contours[0][0].point,
+        100.0,
+        0.0,
+        1e-4,
+        "flip_horizontal P0",
+    );
     assert!(state.undo());
 
     assert!(state.flip_vertical());
-    assert_pt_near(state.contours[0][0].point, 0.0, 100.0, 1e-4, "flip_vertical P0");
+    assert_pt_near(
+        state.contours[0][0].point,
+        0.0,
+        100.0,
+        1e-4,
+        "flip_vertical P0",
+    );
     assert!(state.undo());
 
     assert!(state.scale_by_factor(2.0, 1.5));
-    assert_pt_near(state.contours[0][2].point, 150.0, 125.0, 1e-4, "scale_by_factor P2");
+    assert_pt_near(
+        state.contours[0][2].point,
+        150.0,
+        125.0,
+        1e-4,
+        "scale_by_factor P2",
+    );
     assert!(state.undo());
 
     assert!(state.rotate_by_degrees(90.0));
-    assert_pt_near(state.contours[0][1].point, 100.0, 100.0, 1e-4, "rotate_by_degrees 90 P1");
+    assert_pt_near(
+        state.contours[0][1].point,
+        100.0,
+        100.0,
+        1e-4,
+        "rotate_by_degrees 90 P1",
+    );
     assert!(state.undo());
 
     assert!(state.slant_by_degrees(45.0, true));
-    assert_pt_near(state.contours[0][2].point, 150.0, 100.0, 1e-4, "slant_by_degrees 45 horiz P2");
+    assert_pt_near(
+        state.contours[0][2].point,
+        150.0,
+        100.0,
+        1e-4,
+        "slant_by_degrees 45 horiz P2",
+    );
     assert!(state.undo());
 }
 
@@ -1324,9 +1747,9 @@ fn test_spec003_path_ops_reverse_make_first_correct_direction_extremes_tidy_alig
 #[test]
 fn test_spec003_vector_cursors_slanted_marquee_render_cmd_space_zoom_and_scale_axis_guard() {
     use grafia::adapters::headless::pixmap_to_rgba_image;
-    use grafia::tokens::GlifoCursorKind;
+    use grafia::tokens::GrafiaCursorKind;
 
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 1.0;
     state.viewport.pan_offset = ScreenPoint::new(200.0, 400.0);
     state.show_bounding_box = true;
@@ -1353,13 +1776,13 @@ fn test_spec003_vector_cursors_slanted_marquee_render_cmd_space_zoom_and_scale_a
     pointer_move(&mut state, zone3_k5, false, false, false, false);
     assert_eq!(
         state.desired_cursor_kind(rect, Some(zone3_k5)),
-        Some(GlifoCursorKind::Rotate),
+        Some(GrafiaCursorKind::Rotate),
         "M-34: Zone 3 on knob 5 without Ctrl+Alt must be Rotate cursor"
     );
     pointer_move(&mut state, zone3_k5, false, true, false, true);
     assert_eq!(
         state.desired_cursor_kind(rect, Some(zone3_k5)),
-        Some(GlifoCursorKind::BBoxSlant),
+        Some(GrafiaCursorKind::BBoxSlant),
         "M-34: Zone 3 on knob 5 with Ctrl+Alt must be BBoxSlant cursor"
     );
 
@@ -1369,29 +1792,30 @@ fn test_spec003_vector_cursors_slanted_marquee_render_cmd_space_zoom_and_scale_a
     pointer_move(&mut state, hover_pt, false, false, false, false);
     assert_eq!(
         state.desired_cursor_kind(rect, Some(hover_pt)),
-        Some(GlifoCursorKind::ZoomIn),
+        Some(GrafiaCursorKind::ZoomIn),
         "M-34: ZoomTool without Alt must report ZoomIn cursor"
     );
     pointer_move(&mut state, hover_pt, false, true, false, false);
     assert_eq!(
         state.desired_cursor_kind(rect, Some(hover_pt)),
-        Some(GlifoCursorKind::ZoomOut),
+        Some(GrafiaCursorKind::ZoomOut),
         "M-34: ZoomTool with Alt held must report ZoomOut cursor"
     );
 
     // 3. M-34: Pass-5 rendered vector cursors for SelectArrow, ZoomIn, ZoomOut, Rotate, Scale,
     //    Lasso, and BBoxSlant must each produce distinct pixel rasters (never falling back to SelectArrow)!
-    let render_cursor_patch = |tool: CanvasTool, alt: bool, ctrl: bool, pt: ScreenPoint| -> Vec<u8> {
-        let s = state.snapshot();
-        let mut st = GlifoCanvasState::new(GlifoTheme::sonoma_default());
-        st.restore_snapshot(&s);
-        st.viewport = state.viewport;
-        st.show_bounding_box = true;
-        st.activate_tool(tool);
-        pointer_move(&mut st, pt, false, alt, false, ctrl);
-        st.cursor_screen_pos = Some(pt);
-        pixmap_to_rgba_image(rasterize_canvas_subregion(&st, &st.theme, 240, 200)).into_raw()
-    };
+    let render_cursor_patch =
+        |tool: CanvasTool, alt: bool, ctrl: bool, pt: ScreenPoint| -> Vec<u8> {
+            let s = state.snapshot();
+            let mut st = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
+            st.restore_snapshot(&s);
+            st.viewport = state.viewport;
+            st.show_bounding_box = true;
+            st.activate_tool(tool);
+            pointer_move(&mut st, pt, false, alt, false, ctrl);
+            st.cursor_screen_pos = Some(pt);
+            pixmap_to_rgba_image(rasterize_canvas_subregion(&st, &st.theme, 240, 200)).into_raw()
+        };
     let cursor_pt = ScreenPoint::new(80.0, 80.0);
     let img_select = render_cursor_patch(CanvasTool::Select, false, false, cursor_pt);
     let img_zoom_in = render_cursor_patch(CanvasTool::Zoom, false, false, cursor_pt);
@@ -1399,29 +1823,62 @@ fn test_spec003_vector_cursors_slanted_marquee_render_cmd_space_zoom_and_scale_a
     let img_rotate = render_cursor_patch(CanvasTool::Rotate, false, false, cursor_pt);
     let img_scale = render_cursor_patch(CanvasTool::Scale, false, false, cursor_pt);
     let img_lasso = render_cursor_patch(CanvasTool::Lasso, false, false, cursor_pt);
-    assert_ne!(img_zoom_in, img_select, "M-34: ZoomIn vector cursor must not fall back to SelectArrow");
-    assert_ne!(img_zoom_out, img_select, "M-34: ZoomOut vector cursor must not fall back to SelectArrow");
-    assert_ne!(img_zoom_in, img_zoom_out, "M-34: ZoomIn (+) and ZoomOut (-) cursors must differ visually");
-    assert_ne!(img_rotate, img_select, "M-34: Rotate vector cursor must not fall back to SelectArrow");
-    assert_ne!(img_scale, img_select, "M-34: Scale vector cursor must not fall back to SelectArrow");
-    assert_ne!(img_lasso, img_select, "M-34: Lasso vector cursor must not fall back to SelectArrow");
-    assert_ne!(img_rotate, img_scale, "M-34: Rotate and Scale vector cursors must differ visually");
+    assert_ne!(
+        img_zoom_in, img_select,
+        "M-34: ZoomIn vector cursor must not fall back to SelectArrow"
+    );
+    assert_ne!(
+        img_zoom_out, img_select,
+        "M-34: ZoomOut vector cursor must not fall back to SelectArrow"
+    );
+    assert_ne!(
+        img_zoom_in, img_zoom_out,
+        "M-34: ZoomIn (+) and ZoomOut (-) cursors must differ visually"
+    );
+    assert_ne!(
+        img_rotate, img_select,
+        "M-34: Rotate vector cursor must not fall back to SelectArrow"
+    );
+    assert_ne!(
+        img_scale, img_select,
+        "M-34: Scale vector cursor must not fall back to SelectArrow"
+    );
+    assert_ne!(
+        img_lasso, img_select,
+        "M-34: Lasso vector cursor must not fall back to SelectArrow"
+    );
+    assert_ne!(
+        img_rotate, img_scale,
+        "M-34: Rotate and Scale vector cursors must differ visually"
+    );
 
     // 4. M-35: Slanted Marquee Parallelogram Rendering in headless & egui painter:
     //    Dragging a marquee with italic slant / Ctrl (selection_angle_deg != 0) must render a slanted parallelogram
     //    whose pixels differ from an axis-aligned marquee over the same start/current screen points!
-    let mut s_rect_m = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut s_rect_m = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     let m_a = ScreenPoint::new(60.0, 160.0);
     let m_b = ScreenPoint::new(160.0, 40.0);
     pointer_press(&mut s_rect_m, m_a, false, false, false, false);
     pointer_move(&mut s_rect_m, m_b, false, false, false, false);
-    let img_rect_marquee = pixmap_to_rgba_image(rasterize_canvas_subregion(&s_rect_m, &s_rect_m.theme, 260, 220)).into_raw();
+    let img_rect_marquee = pixmap_to_rgba_image(rasterize_canvas_subregion(
+        &s_rect_m,
+        &s_rect_m.theme,
+        260,
+        220,
+    ))
+    .into_raw();
 
-    let mut s_slant_m = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut s_slant_m = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     pointer_press(&mut s_slant_m, m_a, false, false, false, true);
     pointer_move(&mut s_slant_m, m_b, false, false, false, true);
     assert!(s_slant_m.show_bounding_box_slanted && s_slant_m.selection_angle_deg.abs() > 5.0);
-    let img_slant_marquee = pixmap_to_rgba_image(rasterize_canvas_subregion(&s_slant_m, &s_slant_m.theme, 260, 220)).into_raw();
+    let img_slant_marquee = pixmap_to_rgba_image(rasterize_canvas_subregion(
+        &s_slant_m,
+        &s_slant_m.theme,
+        260,
+        220,
+    ))
+    .into_raw();
     assert_ne!(
         img_slant_marquee, img_rect_marquee,
         "M-35: Slanted marquee must render a slanted 4-vertex parallelogram, not an axis-aligned rect"
@@ -1434,7 +1891,11 @@ fn test_spec003_vector_cursors_slanted_marquee_render_cmd_space_zoom_and_scale_a
     state.activate_tool(CanvasTool::Select);
     state.viewport.zoom = 1.0;
     press_key_v020(&mut state, Key::Space, false, false, true, false);
-    assert_eq!(state.active_tool, CanvasTool::Zoom, "M-36: Cmd+Space must activate temporary ZoomTool");
+    assert_eq!(
+        state.active_tool,
+        CanvasTool::Zoom,
+        "M-36: Cmd+Space must activate temporary ZoomTool"
+    );
     let z_pt = ScreenPoint::new(250.0, 250.0);
     pointer_press(&mut state, z_pt, false, false, true, false);
     pointer_release(&mut state, z_pt, false, false, true, false);
@@ -1464,7 +1925,11 @@ fn test_spec003_vector_cursors_slanted_marquee_render_cmd_space_zoom_and_scale_a
         false,
         false,
     );
-    assert_eq!(state.active_tool, CanvasTool::Select, "M-36: Releasing Space must restore SelectTool");
+    assert_eq!(
+        state.active_tool,
+        CanvasTool::Select,
+        "M-36: Releasing Space must restore SelectTool"
+    );
 
     // 6. M-37: ScaleTool ('S') Per-Axis Minimum Pivot Distance Guard (|Ax - Ox| > 5.0 && |Ay - Oy| > 5.0):
     //    When transform_origin is (50, 50) and drag starts at (53, 120) (hypot = 70.06 > 5.0, but |Ax - Ox| = 3.0 <= 5.0),
@@ -1503,8 +1968,12 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
     const QH: u32 = 404;
 
     let target_dirs = [
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("target").join("visual_verification"),
-        PathBuf::from(r"C:\Users\jhove\.gemini\antigravity-cli\brain\fccb9142-9217-4702-a2ca-95303b541ee0"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join("visual_verification"),
+        PathBuf::from(
+            r"C:\Users\jhove\.gemini\antigravity-cli\brain\fccb9142-9217-4702-a2ca-95303b541ee0",
+        ),
     ];
     for dir in &target_dirs {
         fs::create_dir_all(dir).expect("Must create visual verification output directory");
@@ -1512,53 +1981,147 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
 
     fn glyph_5x7(ch: char) -> [u8; 7] {
         match ch.to_ascii_uppercase() {
-            'A' => [0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
-            'B' => [0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110],
-            'C' => [0b01110, 0b10001, 0b10000, 0b10000, 0b10000, 0b10001, 0b01110],
-            'D' => [0b11100, 0b10010, 0b10001, 0b10001, 0b10001, 0b10010, 0b11100],
-            'E' => [0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111],
-            'F' => [0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000],
-            'G' => [0b01110, 0b10001, 0b10000, 0b10111, 0b10001, 0b10001, 0b01110],
-            'H' => [0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001],
-            'I' => [0b01110, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110],
-            'J' => [0b00111, 0b00010, 0b00010, 0b00010, 0b10010, 0b10010, 0b01100],
-            'K' => [0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001],
-            'L' => [0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111],
-            'M' => [0b10001, 0b11011, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001],
-            'N' => [0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001, 0b10001],
-            'O' => [0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
-            'P' => [0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000],
-            'Q' => [0b01110, 0b10001, 0b10001, 0b10001, 0b10101, 0b10010, 0b01101],
-            'R' => [0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001],
-            'S' => [0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110],
-            'T' => [0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100],
-            'U' => [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110],
-            'V' => [0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100],
-            'W' => [0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b11011, 0b10001],
-            'X' => [0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001],
-            'Y' => [0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100],
-            'Z' => [0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b11111],
-            '0' => [0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110],
-            '1' => [0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110],
-            '2' => [0b01110, 0b10001, 0b00001, 0b00110, 0b01000, 0b10000, 0b11111],
-            '3' => [0b11110, 0b00001, 0b00001, 0b01110, 0b00001, 0b00001, 0b11110],
-            '4' => [0b10010, 0b10010, 0b10010, 0b11111, 0b00010, 0b00010, 0b00010],
-            '5' => [0b11111, 0b10000, 0b10000, 0b11110, 0b00001, 0b00001, 0b11110],
-            '6' => [0b01110, 0b10000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110],
-            '7' => [0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000],
-            '8' => [0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110],
-            '9' => [0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00001, 0b01110],
-            '[' => [0b01110, 0b01000, 0b01000, 0b01000, 0b01000, 0b01000, 0b01110],
-            ']' => [0b01110, 0b00010, 0b00010, 0b00010, 0b00010, 0b00010, 0b01110],
-            '(' => [0b00100, 0b01000, 0b01000, 0b01000, 0b01000, 0b01000, 0b00100],
-            ')' => [0b00100, 0b00010, 0b00010, 0b00010, 0b00010, 0b00010, 0b00100],
-            '/' => [0b00001, 0b00010, 0b00100, 0b00100, 0b01000, 0b10000, 0b10000],
-            '+' => [0b00000, 0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0b00000],
-            '-' => [0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000],
-            '=' => [0b00000, 0b00000, 0b11111, 0b00000, 0b11111, 0b00000, 0b00000],
-            ':' => [0b00000, 0b00100, 0b00100, 0b00000, 0b00100, 0b00100, 0b00000],
-            '.' => [0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00110, 0b00110],
-            '&' => [0b01100, 0b10010, 0b10100, 0b01000, 0b10101, 0b10010, 0b01101],
+            'A' => [
+                0b01110, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001,
+            ],
+            'B' => [
+                0b11110, 0b10001, 0b10001, 0b11110, 0b10001, 0b10001, 0b11110,
+            ],
+            'C' => [
+                0b01110, 0b10001, 0b10000, 0b10000, 0b10000, 0b10001, 0b01110,
+            ],
+            'D' => [
+                0b11100, 0b10010, 0b10001, 0b10001, 0b10001, 0b10010, 0b11100,
+            ],
+            'E' => [
+                0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b11111,
+            ],
+            'F' => [
+                0b11111, 0b10000, 0b10000, 0b11110, 0b10000, 0b10000, 0b10000,
+            ],
+            'G' => [
+                0b01110, 0b10001, 0b10000, 0b10111, 0b10001, 0b10001, 0b01110,
+            ],
+            'H' => [
+                0b10001, 0b10001, 0b10001, 0b11111, 0b10001, 0b10001, 0b10001,
+            ],
+            'I' => [
+                0b01110, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110,
+            ],
+            'J' => [
+                0b00111, 0b00010, 0b00010, 0b00010, 0b10010, 0b10010, 0b01100,
+            ],
+            'K' => [
+                0b10001, 0b10010, 0b10100, 0b11000, 0b10100, 0b10010, 0b10001,
+            ],
+            'L' => [
+                0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b10000, 0b11111,
+            ],
+            'M' => [
+                0b10001, 0b11011, 0b10101, 0b10101, 0b10001, 0b10001, 0b10001,
+            ],
+            'N' => [
+                0b10001, 0b11001, 0b10101, 0b10011, 0b10001, 0b10001, 0b10001,
+            ],
+            'O' => [
+                0b01110, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110,
+            ],
+            'P' => [
+                0b11110, 0b10001, 0b10001, 0b11110, 0b10000, 0b10000, 0b10000,
+            ],
+            'Q' => [
+                0b01110, 0b10001, 0b10001, 0b10001, 0b10101, 0b10010, 0b01101,
+            ],
+            'R' => [
+                0b11110, 0b10001, 0b10001, 0b11110, 0b10100, 0b10010, 0b10001,
+            ],
+            'S' => [
+                0b01111, 0b10000, 0b10000, 0b01110, 0b00001, 0b00001, 0b11110,
+            ],
+            'T' => [
+                0b11111, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100, 0b00100,
+            ],
+            'U' => [
+                0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01110,
+            ],
+            'V' => [
+                0b10001, 0b10001, 0b10001, 0b10001, 0b10001, 0b01010, 0b00100,
+            ],
+            'W' => [
+                0b10001, 0b10001, 0b10001, 0b10101, 0b10101, 0b11011, 0b10001,
+            ],
+            'X' => [
+                0b10001, 0b10001, 0b01010, 0b00100, 0b01010, 0b10001, 0b10001,
+            ],
+            'Y' => [
+                0b10001, 0b10001, 0b01010, 0b00100, 0b00100, 0b00100, 0b00100,
+            ],
+            'Z' => [
+                0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b10000, 0b11111,
+            ],
+            '0' => [
+                0b01110, 0b10001, 0b10011, 0b10101, 0b11001, 0b10001, 0b01110,
+            ],
+            '1' => [
+                0b00100, 0b01100, 0b00100, 0b00100, 0b00100, 0b00100, 0b01110,
+            ],
+            '2' => [
+                0b01110, 0b10001, 0b00001, 0b00110, 0b01000, 0b10000, 0b11111,
+            ],
+            '3' => [
+                0b11110, 0b00001, 0b00001, 0b01110, 0b00001, 0b00001, 0b11110,
+            ],
+            '4' => [
+                0b10010, 0b10010, 0b10010, 0b11111, 0b00010, 0b00010, 0b00010,
+            ],
+            '5' => [
+                0b11111, 0b10000, 0b10000, 0b11110, 0b00001, 0b00001, 0b11110,
+            ],
+            '6' => [
+                0b01110, 0b10000, 0b10000, 0b11110, 0b10001, 0b10001, 0b01110,
+            ],
+            '7' => [
+                0b11111, 0b00001, 0b00010, 0b00100, 0b01000, 0b01000, 0b01000,
+            ],
+            '8' => [
+                0b01110, 0b10001, 0b10001, 0b01110, 0b10001, 0b10001, 0b01110,
+            ],
+            '9' => [
+                0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00001, 0b01110,
+            ],
+            '[' => [
+                0b01110, 0b01000, 0b01000, 0b01000, 0b01000, 0b01000, 0b01110,
+            ],
+            ']' => [
+                0b01110, 0b00010, 0b00010, 0b00010, 0b00010, 0b00010, 0b01110,
+            ],
+            '(' => [
+                0b00100, 0b01000, 0b01000, 0b01000, 0b01000, 0b01000, 0b00100,
+            ],
+            ')' => [
+                0b00100, 0b00010, 0b00010, 0b00010, 0b00010, 0b00010, 0b00100,
+            ],
+            '/' => [
+                0b00001, 0b00010, 0b00100, 0b00100, 0b01000, 0b10000, 0b10000,
+            ],
+            '+' => [
+                0b00000, 0b00100, 0b00100, 0b11111, 0b00100, 0b00100, 0b00000,
+            ],
+            '-' => [
+                0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000,
+            ],
+            '=' => [
+                0b00000, 0b00000, 0b11111, 0b00000, 0b11111, 0b00000, 0b00000,
+            ],
+            ':' => [
+                0b00000, 0b00100, 0b00100, 0b00000, 0b00100, 0b00100, 0b00000,
+            ],
+            '.' => [
+                0b00000, 0b00000, 0b00000, 0b00000, 0b00000, 0b00110, 0b00110,
+            ],
+            '&' => [
+                0b01100, 0b10010, 0b10100, 0b01000, 0b10101, 0b10010, 0b01101,
+            ],
             _ => [0; 7],
         }
     }
@@ -1586,7 +2149,7 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
     }
 
     fn raster_quad(
-        state: &GlifoCanvasState,
+        state: &GrafiaCanvasState,
         title: &str,
         accent: [u8; 4],
         cursor: Option<(f32, f32)>,
@@ -1629,7 +2192,15 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
         let banner_w = (28 + (title.len() as u32) * 12).min(QW - 8);
         for py in 8..34 {
             for px in 8..banner_w {
-                img.put_pixel(px, py, if px < 18 { Rgba(accent) } else { Rgba([24, 26, 32, 240]) });
+                img.put_pixel(
+                    px,
+                    py,
+                    if px < 18 {
+                        Rgba(accent)
+                    } else {
+                        Rgba([24, 26, 32, 240])
+                    },
+                );
             }
         }
         draw_text(&mut img, title, 24, 14, 2, Rgba([255, 255, 255, 255]));
@@ -1643,7 +2214,12 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
         q_br: &RgbaImage,
     ) -> RgbaImage {
         let mut frame = RgbaImage::from_pixel(W, H, Rgba([180, 185, 195, 255]));
-        for (src, ox, oy) in [(q_tl, 0, 0), (q_tr, QW + 3, 0), (q_bl, 0, QH + 3), (q_br, QW + 3, QH + 3)] {
+        for (src, ox, oy) in [
+            (q_tl, 0, 0),
+            (q_tr, QW + 3, 0),
+            (q_bl, 0, QH + 3),
+            (q_br, QW + 3, QH + 3),
+        ] {
             for y in 0..QH {
                 for x in 0..QW {
                     frame.put_pixel(ox + x, oy + y, *src.get_pixel(x, y));
@@ -1654,17 +2230,23 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
     }
 
     let count_delta = |a: &RgbaImage, b: &RgbaImage| -> usize {
-        a.pixels().zip(b.pixels()).filter(|(p1, p2)| p1 != p2).count()
+        a.pixels()
+            .zip(b.pixels())
+            .filter(|(p1, p2)| p1 != p2)
+            .count()
     };
 
     // ========================================================================
     // Frame 37: SelectTool + show_bounding_box = true, 8-Knob BBox + Pills + Scale/Rotate
     // ========================================================================
-    let mut s37_a = GlifoCanvasState::init_glyph_o();
+    let mut s37_a = GrafiaCanvasState::init_glyph_o();
     s37_a.fit_viewport_to_glyph(QW as f32, QH as f32);
     s37_a.show_bounding_box = true;
     s37_a.selected_nodes = s37_a.contours[0].iter().map(|n| n.id).collect();
-    let k8_37a = s37_a.selection_bounds().unwrap().knob_screen_center(8, &s37_a.viewport);
+    let k8_37a = s37_a
+        .selection_bounds()
+        .unwrap()
+        .knob_screen_center(8, &s37_a.viewport);
     let q37_a = raster_quad(
         &s37_a,
         "37A: /O 8-KNOB BBOX + W/H PILLS",
@@ -1673,7 +2255,7 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
         None,
     );
 
-    let mut s37_b = GlifoCanvasState::init_glyph_a();
+    let mut s37_b = GrafiaCanvasState::init_glyph_a();
     s37_b.fit_viewport_to_glyph(QW as f32, QH as f32);
     s37_b.show_bounding_box = true;
     s37_b.selected_nodes = s37_b.contours[0].iter().map(|n| n.id).collect();
@@ -1691,7 +2273,7 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
         Some((k8_37b_start.x.0, k8_37b_start.y.0)),
     );
 
-    let mut s37_c = GlifoCanvasState::init_glyph_o();
+    let mut s37_c = GrafiaCanvasState::init_glyph_o();
     s37_c.fit_viewport_to_glyph(QW as f32, QH as f32);
     s37_c.show_bounding_box = true;
     s37_c.selected_nodes = s37_c.contours[0].iter().map(|n| n.id).collect();
@@ -1709,7 +2291,7 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
         Some((k5_37c_start.x.0, k5_37c_start.y.0)),
     );
 
-    let mut s37_d = GlifoCanvasState::init_glyph_a();
+    let mut s37_d = GrafiaCanvasState::init_glyph_a();
     s37_d.fit_viewport_to_glyph(QW as f32, QH as f32);
     s37_d.show_bounding_box = true;
     s37_d.selected_nodes = s37_d.contours[0].iter().map(|n| n.id).collect();
@@ -1732,15 +2314,21 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
         Some((rot37_start.x.0, rot37_start.y.0)),
     );
 
-    assert!(count_delta(&q37_a, &q37_c) > 500, "BBox Alt-center scale must visibly transform /o");
-    assert!(count_delta(&q37_b, &q37_d) > 500, "BBox Zone-3 rotate must visibly transform /A");
+    assert!(
+        count_delta(&q37_a, &q37_c) > 500,
+        "BBox Alt-center scale must visibly transform /o"
+    );
+    assert!(
+        count_delta(&q37_b, &q37_d) > 500,
+        "BBox Zone-3 rotate must visibly transform /A"
+    );
     let frame_37 = compose_quad_frame(&q37_a, &q37_b, &q37_c, &q37_d);
     assert_eq!(frame_37.dimensions(), (W, H));
 
     // ========================================================================
     // Frame 38: RotateTool [R] & ScaleTool [S] Reticle + Active Drag Ray Line
     // ========================================================================
-    let mut s38_a = GlifoCanvasState::init_glyph_o();
+    let mut s38_a = GrafiaCanvasState::init_glyph_o();
     s38_a.fit_viewport_to_glyph(QW as f32, QH as f32);
     s38_a.selected_nodes = s38_a.contours[0].iter().map(|n| n.id).collect();
     s38_a.activate_tool(CanvasTool::Rotate);
@@ -1752,7 +2340,14 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
     let r38_end_s = s38_a.viewport.to_screen(r38_end_f);
     pointer_press(&mut s38_a, r38_start_s, false, false, false, false);
     pointer_move(&mut s38_a, r38_end_s, false, false, false, false);
-    assert!(matches!(s38_a.v020_drag, V020DragState::TransformPendingOrDragging { active: true, is_rotate: true, .. }));
+    assert!(matches!(
+        s38_a.v020_drag,
+        V020DragState::TransformPendingOrDragging {
+            active: true,
+            is_rotate: true,
+            ..
+        }
+    ));
     let q38_a = raster_quad(
         &s38_a,
         "38A: [R] ROTATE RETICLE + RAY",
@@ -1761,9 +2356,13 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
         Some((r38_start_s.x.0, r38_start_s.y.0)),
     );
 
-    let mut s38_b = GlifoCanvasState::init_glyph_a();
+    let mut s38_b = GrafiaCanvasState::init_glyph_a();
     s38_b.fit_viewport_to_glyph(QW as f32, QH as f32);
-    s38_b.selected_nodes = s38_b.contours.iter().flat_map(|c| c.iter().map(|n| n.id)).collect();
+    s38_b.selected_nodes = s38_b
+        .contours
+        .iter()
+        .flat_map(|c| c.iter().map(|n| n.id))
+        .collect();
     s38_b.activate_tool(CanvasTool::Rotate);
     let r38b_start_f = FontPoint::new(650.0, 350.0);
     let r38b_end_f = FontPoint::new(560.0, 580.0);
@@ -1779,7 +2378,7 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
         Some((r38b_start_s.x.0, r38b_start_s.y.0)),
     );
 
-    let mut s38_c = GlifoCanvasState::init_glyph_o();
+    let mut s38_c = GrafiaCanvasState::init_glyph_o();
     s38_c.fit_viewport_to_glyph(QW as f32, QH as f32);
     s38_c.selected_nodes = s38_c.contours[0].iter().map(|n| n.id).collect();
     s38_c.activate_tool(CanvasTool::Scale);
@@ -1789,7 +2388,14 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
     let s38c_end_s = s38_c.viewport.to_screen(FontPoint::new(540.0, 520.0));
     pointer_press(&mut s38_c, s38c_start_s, false, false, false, false);
     pointer_move(&mut s38_c, s38c_end_s, false, false, false, false);
-    assert!(matches!(s38_c.v020_drag, V020DragState::TransformPendingOrDragging { active: true, is_rotate: false, .. }));
+    assert!(matches!(
+        s38_c.v020_drag,
+        V020DragState::TransformPendingOrDragging {
+            active: true,
+            is_rotate: false,
+            ..
+        }
+    ));
     let q38_c = raster_quad(
         &s38_c,
         "38C: [S] SCALE RETICLE + RAY",
@@ -1798,7 +2404,7 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
         Some((s38c_start_s.x.0, s38c_start_s.y.0)),
     );
 
-    let mut s38_d = GlifoCanvasState::init_glyph_n();
+    let mut s38_d = GrafiaCanvasState::init_glyph_n();
     s38_d.fit_viewport_to_glyph(QW as f32, QH as f32);
     s38_d.set_metrics_origin(MetricsOrigin::HalfXHeight);
     s38_d.activate_tool(CanvasTool::Scale);
@@ -1820,7 +2426,7 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
     // ========================================================================
     // Frame 39: LassoTool [Shift+V] Freeform Polygon & ZoomTool [Z] Marquee
     // ========================================================================
-    let mut s39_a = GlifoCanvasState::init_glyph_o();
+    let mut s39_a = GrafiaCanvasState::init_glyph_o();
     s39_a.fit_viewport_to_glyph(QW as f32, QH as f32);
     s39_a.activate_tool(CanvasTool::Lasso);
     let lasso_pts_a = [
@@ -1836,7 +2442,10 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
         let scr = s39_a.viewport.to_screen(*pt);
         pointer_move(&mut s39_a, scr, false, false, false, false);
     }
-    assert!(matches!(s39_a.v020_drag, V020DragState::LassoDragging { .. }));
+    assert!(matches!(
+        s39_a.v020_drag,
+        V020DragState::LassoDragging { .. }
+    ));
     assert!(!s39_a.selected_nodes.is_empty());
     let scr_a_last = s39_a.viewport.to_screen(*lasso_pts_a.last().unwrap());
     let q39_a = raster_quad(
@@ -1847,7 +2456,7 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
         Some((scr_a0.x.0, scr_a0.y.0)),
     );
 
-    let mut s39_b = GlifoCanvasState::init_glyph_s();
+    let mut s39_b = GrafiaCanvasState::init_glyph_s();
     s39_b.fit_viewport_to_glyph(QW as f32, QH as f32);
     s39_b.activate_tool(CanvasTool::Lasso);
     let lasso_pts_b = [
@@ -1862,7 +2471,10 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
         let scr = s39_b.viewport.to_screen(*pt);
         pointer_move(&mut s39_b, scr, false, true, false, false);
     }
-    assert!(s39_b.selected_nodes.iter().all(|&id| s39_b.find_node(id).unwrap().node_type != NodeType::OffCurve));
+    assert!(s39_b
+        .selected_nodes
+        .iter()
+        .all(|&id| s39_b.find_node(id).unwrap().node_type != NodeType::OffCurve));
     let scr_b_last = s39_b.viewport.to_screen(*lasso_pts_b.last().unwrap());
     let q39_b = raster_quad(
         &s39_b,
@@ -1872,14 +2484,17 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
         Some((scr_b0.x.0, scr_b0.y.0)),
     );
 
-    let mut s39_c = GlifoCanvasState::init_glyph_a();
+    let mut s39_c = GrafiaCanvasState::init_glyph_a();
     s39_c.fit_viewport_to_glyph(QW as f32, QH as f32);
     s39_c.activate_tool(CanvasTool::Zoom);
     let z_start = ScreenPoint::new(190.0, 95.0);
     let z_end = ScreenPoint::new(420.0, 265.0);
     pointer_press(&mut s39_c, z_start, false, false, false, false);
     pointer_move(&mut s39_c, z_end, false, false, false, false);
-    assert!(matches!(s39_c.v020_drag, V020DragState::ZoomDragging { .. }));
+    assert!(matches!(
+        s39_c.v020_drag,
+        V020DragState::ZoomDragging { .. }
+    ));
     let q39_c = raster_quad(
         &s39_c,
         "39C: [Z] ZOOM MARQUEE DRAG (/A)",
@@ -1888,7 +2503,7 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
         Some((z_start.x.0, z_start.y.0)),
     );
 
-    let mut s39_d = GlifoCanvasState::init_glyph_a();
+    let mut s39_d = GrafiaCanvasState::init_glyph_a();
     s39_d.fit_viewport_to_glyph(QW as f32, QH as f32);
     s39_d.activate_tool(CanvasTool::Zoom);
     let z_start_f = s39_d.viewport.to_font(z_start);
@@ -1902,13 +2517,7 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
         false,
     );
     let _ = grafia::adapters::v020_interaction::handle_v020_pointer_move(
-        &mut s39_d,
-        z_end,
-        z_end_f,
-        false,
-        false,
-        false,
-        false,
+        &mut s39_d, z_end, z_end_f, false, false, false, false,
     );
     let _ = grafia::adapters::v020_interaction::handle_v020_pointer_release(
         &mut s39_d,
@@ -1932,7 +2541,7 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
     // ========================================================================
     // Frame 40: add_extremes + add_inflection_points (/s), connect_open, & Duplicate Warnings -> tidy_up_paths
     // ========================================================================
-    let mut s40_a = GlifoCanvasState::init_glyph_s();
+    let mut s40_a = GrafiaCanvasState::init_glyph_s();
     // Append a tilted bowed cubic loop beside /s to showcase simultaneous extrema + inflection insertion
     let extra_s_curve = vec![
         Node::new(NodeId(401), 460.0, 60.0, NodeType::Corner),
@@ -1952,7 +2561,11 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
     s40_a.selected_nodes = s40_a
         .contours
         .iter()
-        .flat_map(|c| c.iter().filter(|n| n.node_type == NodeType::Smooth).map(|n| n.id))
+        .flat_map(|c| {
+            c.iter()
+                .filter(|n| n.node_type == NodeType::Smooth)
+                .map(|n| n.id)
+        })
         .collect();
     let q40_a = raster_quad(
         &s40_a,
@@ -1962,7 +2575,7 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
         None,
     );
 
-    let mut s40_b = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut s40_b = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     let open_1 = vec![
         Node::new(NodeId(1), 60.0, 120.0, NodeType::Corner),
         Node::new(NodeId(2), 60.0, 460.0, NodeType::Corner),
@@ -1996,7 +2609,7 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
         None,
     );
 
-    let mut s40_c = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut s40_c = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     let warn_nodes = vec![
         Node::new(NodeId(1), 80.0, 80.0, NodeType::Corner),
         Node::new(NodeId(2), 80.0, 80.0, NodeType::Corner), // Red CoincidentOnCurve warning!
@@ -2013,8 +2626,12 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
     s40_c.glyph.height = 650.0;
     s40_c.fit_viewport_to_glyph(QW as f32, QH as f32);
     let warnings_before = s40_c.duplicate_warning_nodes();
-    assert!(warnings_before.iter().any(|(_, _, k)| *k == DuplicateWarningKind::CoincidentOnCurve));
-    assert!(warnings_before.iter().any(|(_, _, k)| *k == DuplicateWarningKind::CoincidentOffCurve));
+    assert!(warnings_before
+        .iter()
+        .any(|(_, _, k)| *k == DuplicateWarningKind::CoincidentOnCurve));
+    assert!(warnings_before
+        .iter()
+        .any(|(_, _, k)| *k == DuplicateWarningKind::CoincidentOffCurve));
     let q40_c = raster_quad(
         &s40_c,
         "40C: DUPLICATE WARNINGS (RED/YLW)",
@@ -2023,13 +2640,16 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
         None,
     );
 
-    let mut s40_d = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut s40_d = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     s40_d.contours = s40_c.contours.clone();
     s40_d.glyph = s40_c.glyph.clone();
     s40_d.viewport = s40_c.viewport;
     s40_d.sync_paths_from_contours();
     assert!(s40_d.tidy_up_paths());
-    assert!(s40_d.duplicate_warning_nodes().is_empty(), "tidy_up_paths must clear duplicate warnings");
+    assert!(
+        s40_d.duplicate_warning_nodes().is_empty(),
+        "tidy_up_paths must clear duplicate warnings"
+    );
     let q40_d = raster_quad(
         &s40_d,
         "40D: AFTER TIDY UP PATHS (CLEAN)",
@@ -2038,7 +2658,10 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
         None,
     );
 
-    assert!(count_delta(&q40_c, &q40_d) > 200, "tidy_up_paths must visibly remove warning circles");
+    assert!(
+        count_delta(&q40_c, &q40_d) > 200,
+        "tidy_up_paths must visibly remove warning circles"
+    );
     let frame_40 = compose_quad_frame(&q40_a, &q40_b, &q40_c, &q40_d);
     assert_eq!(frame_40.dimensions(), (W, H));
 
@@ -2049,7 +2672,10 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
         ("frame_37_v020_bounding_box_and_pills.png", &frame_37),
         ("frame_38_v020_rotate_and_scale_reticle.png", &frame_38),
         ("frame_39_v020_lasso_and_zoom_marquee.png", &frame_39),
-        ("frame_40_v020_path_ops_and_duplicate_warnings.png", &frame_40),
+        (
+            "frame_40_v020_path_ops_and_duplicate_warnings.png",
+            &frame_40,
+        ),
     ];
 
     let mut strip = RgbaImage::from_pixel(W * 2, H * 2, Rgba([24, 24, 28, 255]));
@@ -2063,19 +2689,22 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
         }
         for dir in &target_dirs {
             let p = dir.join(fname);
-            img.save(&p).expect("Must save v0.2.0 verification PNG frame");
+            img.save(&p)
+                .expect("Must save v0.2.0 verification PNG frame");
             assert!(p.exists());
         }
     }
 
     for dir in &target_dirs {
-        let strip_path = dir.join("glifo_v020_verification_strip.png");
-        strip.save(&strip_path).expect("Must save glifo_v020_verification_strip.png");
+        let strip_path = dir.join("grafia_v020_verification_strip.png");
+        strip
+            .save(&strip_path)
+            .expect("Must save grafia_v020_verification_strip.png");
         assert!(strip_path.exists());
     }
 
     // Frame 41: Vector Cursors (ZoomIn, Rotate, Lasso, BBoxSlant) + Slanted Marquee Parallelogram
-    let mut s41_a = GlifoCanvasState::init_glyph_a();
+    let mut s41_a = GrafiaCanvasState::init_glyph_a();
     s41_a.fit_viewport_to_glyph(QW as f32, QH as f32);
     s41_a.show_bounding_box = true;
     s41_a.selected_nodes = s41_a.contours[0].iter().map(|n| n.id).collect();
@@ -2096,7 +2725,7 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
         None,
     );
 
-    let mut s41_b = GlifoCanvasState::init_glyph_o();
+    let mut s41_b = GrafiaCanvasState::init_glyph_o();
     s41_b.fit_viewport_to_glyph(QW as f32, QH as f32);
     let m41_start = ScreenPoint::new(150.0, 320.0);
     let m41_end = ScreenPoint::new(360.0, 90.0);
@@ -2111,7 +2740,7 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
         Some((m41_start.x.0, m41_start.y.0)),
     );
 
-    let mut s41_c = GlifoCanvasState::init_glyph_s();
+    let mut s41_c = GrafiaCanvasState::init_glyph_s();
     s41_c.fit_viewport_to_glyph(QW as f32, QH as f32);
     s41_c.activate_tool(CanvasTool::Lasso);
     let lasso_cur = ScreenPoint::new(300.0, 200.0);
@@ -2125,7 +2754,7 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
         None,
     );
 
-    let mut s41_d = GlifoCanvasState::init_glyph_n();
+    let mut s41_d = GrafiaCanvasState::init_glyph_n();
     s41_d.fit_viewport_to_glyph(QW as f32, QH as f32);
     s41_d.activate_tool(CanvasTool::Zoom);
     let zoom_cur = ScreenPoint::new(300.0, 200.0);
@@ -2142,7 +2771,9 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
     let frame_41 = compose_quad_frame(&q41_a, &q41_b, &q41_c, &q41_d);
     for dir in &target_dirs {
         let p = dir.join("frame_41_v020_vector_cursors_and_slanted_marquee.png");
-        frame_41.save(&p).expect("Must save frame_41_v020_vector_cursors_and_slanted_marquee.png");
+        frame_41
+            .save(&p)
+            .expect("Must save frame_41_v020_vector_cursors_and_slanted_marquee.png");
         assert!(p.exists());
     }
 }

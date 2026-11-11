@@ -1,10 +1,11 @@
 //! Keyboard shortcut dispatching for canvas navigation and manipulation (SPEC-002 §3.3 & §4).
 
-use crate::adapters::state::{CanvasTool, CanvasViewMode, GlifoCanvasState};
+use crate::adapters::keyboard_edit::delete_selected_nodes_or_guide;
+use crate::adapters::state::{CanvasTool, CanvasViewMode, GrafiaCanvasState};
 use crate::core::{
     cycle_selection_tab, enforce_smooth_collinearity_on_handle_drag,
-    expanded_nodes_with_attached_handles,
-    toggle_selected_on_curve_smooth, NodeId, NodeType, ScreenPoint,
+    expanded_nodes_with_attached_handles, toggle_selected_on_curve_smooth, NodeId, NodeType,
+    ScreenPoint,
 };
 use crate::tokens::{
     NUDGE_STEP_CMD_UPM, NUDGE_STEP_SHIFT_UPM, NUDGE_STEP_UPM, ZOOM_STEP_IN_FACTOR,
@@ -12,56 +13,25 @@ use crate::tokens::{
 };
 use egui::{Event, Key, Rect};
 
-fn prune_empty_contours(state: &mut GlifoCanvasState) {
-    let old_closed = state.closed_flags();
-    let old_meta: Vec<(crate::core::ShapeBooleanRole, bool)> = (0..state.contours.len())
-        .map(|i| state.glyph.contours.get(i).map_or((crate::core::ShapeBooleanRole::Normal, true), |gc| (gc.role, gc.visible)))
-        .collect();
-    let mut kept_contours = Vec::with_capacity(state.contours.len());
-    let mut kept_closed = Vec::with_capacity(state.contours.len());
-    let mut kept_meta = Vec::with_capacity(state.contours.len());
-    let mut new_active_open = None;
-
-    for (old_idx, contour) in state.contours.drain(..).enumerate() {
-        if !contour.is_empty() {
-            let new_idx = kept_contours.len();
-            let on_curve_count = contour.iter().filter(|n| n.node_type != NodeType::OffCurve).count();
-            let is_closed = old_closed.get(old_idx).copied().unwrap_or(true) && on_curve_count > 1;
-            if state.active_open_contour == Some(old_idx) && !is_closed {
-                new_active_open = Some(new_idx);
-            }
-            kept_contours.push(contour);
-            kept_closed.push(is_closed);
-            kept_meta.push(old_meta.get(old_idx).copied().unwrap_or((crate::core::ShapeBooleanRole::Normal, true)));
-        }
-    }
-
-    state.contours = kept_contours;
-    state.active_open_contour = new_active_open.or_else(|| kept_closed.iter().rposition(|&closed| !closed));
-    state.active_contour_closed = kept_closed.last().copied().unwrap_or(false);
-    state.glyph.contours = state
-        .contours
-        .iter()
-        .enumerate()
-        .map(|(idx, nodes)| {
-            let mut gc = crate::core::GlyphContour::new(crate::core::ContourId(idx), nodes.clone());
-            gc.closed = kept_closed[idx];
-            gc.role = kept_meta[idx].0;
-            gc.visible = kept_meta[idx].1;
-            gc
-        })
-        .collect();
-}
-
 /// Processes keyboard events for view mode overrides, tool switching, nudging, zoom, and undo/redo.
 pub fn dispatch_keyboard_event(
-    state: &mut GlifoCanvasState,
+    state: &mut GrafiaCanvasState,
     event: &Event,
     is_shift: bool,
     is_cmd: bool,
     is_alt: bool,
     canvas_rect: Rect,
 ) -> bool {
+    let is_ctrl = state.last_modifiers.control;
+    if crate::adapters::v070_layers_vc::dispatch_v070_keyboard_shortcut(
+        state, event, is_shift, is_alt, is_cmd, is_ctrl,
+    ) || crate::adapters::v050_interaction::dispatch_v050_keyboard_shortcut(
+        state, event, is_shift, is_alt, is_cmd, is_ctrl,
+    ) || crate::adapters::v060_layers::dispatch_v060_keyboard_shortcut(
+        state, event, is_shift, is_alt, is_cmd, is_ctrl,
+    ) {
+        return true;
+    }
     match event {
         Event::Key {
             key: Key::Space,
@@ -75,10 +45,15 @@ pub fn dispatch_keyboard_event(
             state.last_modifiers.command = modifiers.command || is_cmd;
             state.last_modifiers.control = modifiers.ctrl;
             state.last_modifiers.space = true;
-            if state.active_tool == CanvasTool::Pen && state.pen_state != crate::interaction::PenToolState::Idle {
+            if state.active_tool == CanvasTool::Pen
+                && state.pen_state != crate::interaction::PenToolState::Idle
+            {
                 return false;
             }
-            if matches!(state.select_state, crate::interaction::SelectToolState::MarqueeSelecting { .. }) {
+            if matches!(
+                state.select_state,
+                crate::interaction::SelectToolState::MarqueeSelecting { .. }
+            ) {
                 state.marquee_modifiers.space = true;
                 return true;
             }
@@ -111,7 +86,9 @@ pub fn dispatch_keyboard_event(
             state.last_modifiers.control = modifiers.ctrl;
             state.last_modifiers.space = false;
             state.marquee_modifiers.space = false;
-            if state.active_tool == CanvasTool::Pen && state.pen_state != crate::interaction::PenToolState::Idle {
+            if state.active_tool == CanvasTool::Pen
+                && state.pen_state != crate::interaction::PenToolState::Idle
+            {
                 return false;
             }
             if state.temp_zoom_via_key_space || state.active_tool == CanvasTool::Zoom {
@@ -125,7 +102,10 @@ pub fn dispatch_keyboard_event(
                 .prev_view_mode
                 .take()
                 .unwrap_or(CanvasViewMode::EditWireframe);
-            if matches!(state.select_state, crate::interaction::SelectToolState::PanningViewport { .. }) {
+            if matches!(
+                state.select_state,
+                crate::interaction::SelectToolState::PanningViewport { .. }
+            ) {
                 state.select_state = crate::interaction::SelectToolState::Idle;
             }
             true
@@ -154,8 +134,13 @@ pub fn dispatch_keyboard_event(
                 Key::ArrowDown => (0.0, -step),
                 _ => (0.0, 0.0),
             };
+            if state.select_all_layers_mode && !state.selected_companion_nodes.is_empty() {
+                state.translate_selected_across_all_layers(crate::core::FontPoint::new(dx, dy));
+                return true;
+            }
             if state.selected_nodes.is_empty() {
-                return state.nudge_selected_guide(dx, dy);
+                return state.nudge_selected_guide(dx, dy)
+                    || state.nudge_selected_anchors_or_components(dx, dy);
             }
             let before = state.snapshot();
             if ctrl_held && alt_held {
@@ -180,7 +165,10 @@ pub fn dispatch_keyboard_event(
             }
             if state.selected_nodes.len() == 1 {
                 let sel_id = state.selected_nodes[0];
-                if state.find_node(sel_id).is_some_and(|n| n.node_type == NodeType::OffCurve) {
+                if state
+                    .find_node(sel_id)
+                    .is_some_and(|n| n.node_type == NodeType::OffCurve)
+                {
                     for (c_idx, contour) in state.contours.iter_mut().enumerate() {
                         enforce_smooth_collinearity_on_handle_drag(
                             contour,
@@ -232,7 +220,9 @@ pub fn dispatch_keyboard_event(
                         .map(|n| n.id)
                         .collect();
                     let all_on_selected = !on_curve_ids.is_empty()
-                        && on_curve_ids.iter().all(|id| state.selected_nodes.contains(id));
+                        && on_curve_ids
+                            .iter()
+                            .all(|id| state.selected_nodes.contains(id));
                     if all_on_selected {
                         state.selected_nodes = state
                             .contours
@@ -248,6 +238,7 @@ pub fn dispatch_keyboard_event(
                 Key::D if cmd_active => {
                     state.selected_nodes.clear();
                     state.v040.selected_annotations.clear();
+                    state.clear_v070_selections();
                     state.assert_invariants();
                     true
                 }
@@ -292,6 +283,7 @@ pub fn dispatch_keyboard_event(
                     state.selected_nodes.clear();
                     state.selected_guide = None;
                     state.v040.selected_annotations.clear();
+                    state.clear_v070_selections();
                     state.v040.reset_in_flight_drags();
                     state.select_state = crate::interaction::SelectToolState::Idle;
                     state.pen_state = crate::interaction::PenToolState::Idle;
@@ -307,11 +299,9 @@ pub fn dispatch_keyboard_event(
                     if state.selected_nodes.is_empty() && state.selected_guide.is_some() {
                         return state.cycle_guide_tab(shift_active);
                     }
-                    if let Some(next_id) = cycle_selection_tab(
-                        &state.contours,
-                        &state.selected_nodes,
-                        shift_active,
-                    ) {
+                    if let Some(next_id) =
+                        cycle_selection_tab(&state.contours, &state.selected_nodes, shift_active)
+                    {
                         state.selected_nodes = vec![next_id];
                         state.assert_invariants();
                         return true;
@@ -325,7 +315,11 @@ pub fn dispatch_keyboard_event(
                     let before = state.snapshot();
                     let closed_flags = state.closed_flags();
                     let selected_copy = state.selected_nodes.clone();
-                    if toggle_selected_on_curve_smooth(&mut state.contours, &closed_flags, &selected_copy) {
+                    if toggle_selected_on_curve_smooth(
+                        &mut state.contours,
+                        &closed_flags,
+                        &selected_copy,
+                    ) {
                         state.sync_paths_from_contours();
                         state.record_mutation("Toggle Smooth", before);
                         state.assert_invariants();
@@ -334,51 +328,7 @@ pub fn dispatch_keyboard_event(
                     false
                 }
                 Key::Backspace | Key::Delete => {
-                    if state.selected_nodes.is_empty() {
-                        return state.delete_selected_guide();
-                    }
-                    let before = state.snapshot();
-                    let cut_open = shift_active || alt_active;
-                    if cut_open {
-                        for c_idx in 0..state.contours.len() {
-                            let has_sel = state.contours[c_idx].iter().any(|n| state.selected_nodes.contains(&n.id));
-                            if has_sel {
-                                let is_closed = state.is_contour_closed(c_idx);
-                                crate::core::cut_open_delete_nodes_in_contour(
-                                    &mut state.contours[c_idx],
-                                    is_closed,
-                                    &state.selected_nodes,
-                                );
-                                if !state.contours[c_idx].is_empty() {
-                                    state.set_contour_closed(c_idx, false);
-                                    state.active_open_contour = Some(c_idx);
-                                }
-                            }
-                        }
-                    } else {
-                        for c_idx in 0..state.contours.len() {
-                            let has_sel = state.contours[c_idx].iter().any(|n| state.selected_nodes.contains(&n.id));
-                            if has_sel {
-                                let is_closed = state.is_contour_closed(c_idx);
-                                crate::core::heal_delete_nodes(&mut state.contours[c_idx], is_closed, &state.selected_nodes, &mut state.next_node_id);
-                                if state.contours[c_idx].len() <= 1 {
-                                    state.set_contour_closed(c_idx, false);
-                                }
-                            }
-                        }
-                    }
-                    state.selected_nodes.clear();
-                    state.hovered_segment_hit = None;
-                    state.hovered_pen_close_target = None;
-                    state.hovered_pen_close_node = None;
-                    state.pending_segment_click = None;
-                    state.pending_pen_bcp_out = None;
-                    state.pending_pen_first_bcp_in = None;
-                    prune_empty_contours(state);
-                    state.sync_paths_from_contours();
-                    state.record_mutation(if cut_open { "Cut Contour Open" } else { "Delete Nodes" }, before);
-                    state.assert_invariants();
-                    true
+                    delete_selected_nodes_or_guide(state, shift_active, alt_active)
                 }
                 Key::Z if cmd_active && !shift_active => state.undo(),
                 Key::Z if cmd_active && shift_active => state.redo(),

@@ -1,21 +1,21 @@
-//! Test suite for Input Clipping and Pointer Isolation (TC-GLIFO-V01-02).
+//! Test suite for Input Clipping and Pointer Isolation (TC-GRAFIA-V01-02).
 //!
 //! Asserts that clicks outside the canvas rectangle (e.g. on toolbar or window chrome)
 //! do not add points, mutate the active glyph, or leak events into the canvas tool state machine.
 
 use egui::{vec2, Context, Event, PointerButton, Pos2, RawInput, Rect};
-use grafia::adapters::{CanvasTool, GlifoCanvasState, GlifoCanvasWidget};
-use grafia::tokens::GlifoTheme;
+use grafia::adapters::{CanvasTool, GrafiaCanvasState, GrafiaCanvasWidget};
+use grafia::tokens::GrafiaTheme;
 
-fn total_node_count(state: &GlifoCanvasState) -> usize {
+fn total_node_count(state: &GrafiaCanvasState) -> usize {
     state.contours.iter().map(|c| c.len()).sum()
 }
 
 #[test]
 fn test_pointer_down_outside_canvas_does_not_add_node_in_pen_tool() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     state.active_tool = CanvasTool::Pen;
 
     let initial_node_count = total_node_count(&state);
@@ -42,10 +42,11 @@ fn test_pointer_down_outside_canvas_does_not_add_node_in_pen_tool() {
     let mut full_output = ctx.run_ui(raw_input, |ui| {
         // Toolbar consumes the top 40 dp
         let (toolbar_rect, _) = ui.allocate_exact_size(vec2(800.0, 40.0), egui::Sense::click());
-        ui.painter().rect_filled(toolbar_rect, 0.0, egui::Color32::DARK_GRAY);
+        ui.painter()
+            .rect_filled(toolbar_rect, 0.0, egui::Color32::DARK_GRAY);
 
         // Canvas in the remaining area
-        GlifoCanvasWidget::new(&mut state, &theme).show(ui);
+        GrafiaCanvasWidget::new(&mut state, &theme).show(ui);
     });
     full_output.textures_delta.clear();
 
@@ -59,8 +60,8 @@ fn test_pointer_down_outside_canvas_does_not_add_node_in_pen_tool() {
 #[test]
 fn test_click_outside_canvas_does_not_clear_selection() {
     let ctx = Context::default();
-    let theme = GlifoTheme::sonoma_default();
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     state.active_tool = CanvasTool::Select;
 
     // Select the first node
@@ -85,7 +86,7 @@ fn test_click_outside_canvas_does_not_clear_selection() {
 
     let mut full_output = ctx.run_ui(raw_input, |ui| {
         let _ = ui.allocate_exact_size(vec2(800.0, 40.0), egui::Sense::click());
-        GlifoCanvasWidget::new(&mut state, &theme).show(ui);
+        GrafiaCanvasWidget::new(&mut state, &theme).show(ui);
     });
     full_output.textures_delta.clear();
 

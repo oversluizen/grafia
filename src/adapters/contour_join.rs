@@ -1,13 +1,13 @@
 //! Open-contour joining and closing operations for `PenTool` (`P`) and `SelectTool` (`V`)
 //! (`SPEC-002 §3.1.8 & §3.2.4`).
 
-use crate::adapters::state::GlifoCanvasState;
+use crate::adapters::state::GrafiaCanvasState;
 use crate::core::{FontPoint, Node, NodeId, NodeType};
 use crate::interaction::PenToolState;
 use crate::tokens::{COLLINEAR_MIN_LEN_EPSILON, CUBIC_ONE_THIRD, SELECT_NODE_HIT_RADIUS_DP};
 
 #[must_use]
-pub fn alloc_off_curve(state: &mut GlifoCanvasState, pt: FontPoint) -> Node {
+pub fn alloc_off_curve(state: &mut GrafiaCanvasState, pt: FontPoint) -> Node {
     let id = NodeId(state.next_node_id);
     state.next_node_id += 1;
     Node::new(id, pt.x.0, pt.y.0, NodeType::OffCurve)
@@ -24,17 +24,29 @@ pub fn lerp_one_third(from: FontPoint, to: FontPoint) -> FontPoint {
 /// Joins the active open contour `a_idx` to the hit endpoint `target_node` (`P0` if `is_b_start`,
 /// or `P_last` if `!is_b_start`) of another open contour `b_idx` (`b_idx != a_idx`) in `PenTool`.
 pub fn join_open_contours_in_pen(
-    state: &mut GlifoCanvasState,
+    state: &mut GrafiaCanvasState,
     a_idx: usize,
     b_idx: usize,
     target_node: Node,
     is_b_start: bool,
     font_pt: FontPoint,
 ) {
-    let a_out = state.pending_pen_bcp_out.filter(|&(c, _)| c == a_idx).map(|(_, pt)| pt);
-    let a_first_in = state.pending_pen_first_bcp_in.filter(|&(c, _)| c == a_idx).map(|(_, pt)| pt);
-    let b_out = state.pending_pen_bcp_out.filter(|&(c, _)| c == b_idx).map(|(_, pt)| pt);
-    let b_first_in = state.pending_pen_first_bcp_in.filter(|&(c, _)| c == b_idx).map(|(_, pt)| pt);
+    let a_out = state
+        .pending_pen_bcp_out
+        .filter(|&(c, _)| c == a_idx)
+        .map(|(_, pt)| pt);
+    let a_first_in = state
+        .pending_pen_first_bcp_in
+        .filter(|&(c, _)| c == a_idx)
+        .map(|(_, pt)| pt);
+    let b_out = state
+        .pending_pen_bcp_out
+        .filter(|&(c, _)| c == b_idx)
+        .map(|(_, pt)| pt);
+    let b_first_in = state
+        .pending_pen_first_bcp_in
+        .filter(|&(c, _)| c == b_idx)
+        .map(|(_, pt)| pt);
     state.pending_pen_bcp_out = None;
     state.pending_pen_first_bcp_in = None;
 
@@ -59,8 +71,7 @@ pub fn join_open_contours_in_pen(
 
     if a_out.is_some() || b_join_in.is_some() {
         let h1_pt = a_out.unwrap_or_else(|| lerp_one_third(a_last, b_join_in.unwrap()));
-        let h2_pt =
-            b_join_in.unwrap_or_else(|| lerp_one_third(target_node.point, a_out.unwrap()));
+        let h2_pt = b_join_in.unwrap_or_else(|| lerp_one_third(target_node.point, a_out.unwrap()));
         let h1 = alloc_off_curve(state, h1_pt);
         let h2 = alloc_off_curve(state, h2_pt);
         state.contours[a_idx].push(h1);
@@ -102,7 +113,7 @@ pub fn join_open_contours_in_pen(
 
 /// Synchronizes dragged `PenTool` handles `(bcp_in, bcp_out)` into contour `c_idx`.
 pub fn sync_pen_drag_handles_into_contour(
-    state: &mut GlifoCanvasState,
+    state: &mut GrafiaCanvasState,
     c_idx: usize,
     anchor: FontPoint,
     bcp_in: FontPoint,
@@ -240,7 +251,7 @@ struct EndpointSnapMatch {
 ///   endpoints into one `OnCurve` node and closes the contour (`closed = true`).
 /// - On **another** open contour (`b_idx != a_idx`): merges the two endpoints at the target
 ///   position and joins both open contours into a single open contour (`closed = false`).
-pub fn try_join_or_close_open_contours_on_select_release(state: &mut GlifoCanvasState) -> bool {
+pub fn try_join_or_close_open_contours_on_select_release(state: &mut GrafiaCanvasState) -> bool {
     let mut best_match: Option<EndpointSnapMatch> = None;
 
     for a_idx in 0..state.contours.len() {
@@ -326,10 +337,9 @@ pub fn try_join_or_close_open_contours_on_select_release(state: &mut GlifoCanvas
     let snap_dy = target_pt.y.0 - dragged_pt.y.0;
     if dragged_is_start {
         state.contours[a_idx][0].point = target_pt;
-        if state.contours[a_idx]
-            .get(1)
-            .is_some_and(|n| n.node_type == NodeType::OffCurve && !state.selected_nodes.contains(&n.id))
-        {
+        if state.contours[a_idx].get(1).is_some_and(|n| {
+            n.node_type == NodeType::OffCurve && !state.selected_nodes.contains(&n.id)
+        }) {
             state.contours[a_idx][1].point.x.0 += snap_dx;
             state.contours[a_idx][1].point.y.0 += snap_dy;
         }
@@ -338,7 +348,9 @@ pub fn try_join_or_close_open_contours_on_select_release(state: &mut GlifoCanvas
         state.contours[a_idx][a_len - 1].point = target_pt;
         if a_len >= 2
             && state.contours[a_idx][a_len - 2].node_type == NodeType::OffCurve
-            && !state.selected_nodes.contains(&state.contours[a_idx][a_len - 2].id)
+            && !state
+                .selected_nodes
+                .contains(&state.contours[a_idx][a_len - 2].id)
         {
             state.contours[a_idx][a_len - 2].point.x.0 += snap_dx;
             state.contours[a_idx][a_len - 2].point.y.0 += snap_dy;

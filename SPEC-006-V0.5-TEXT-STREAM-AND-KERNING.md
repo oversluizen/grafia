@@ -78,8 +78,9 @@ All mathematical invariants, defaults, and keyboard/pointer rules for `v0.5.0` a
      - With `Shift`: extends `selection_range` from the anchor caret index to `resolved_index`.
    - **Pointer Drag (`PointerMove` with `hypot >= 2.0` dp):**
      - Continuously updates `selection_range = Some((anchor_index.min(curr), anchor_index.max(curr)))` across the swept glyph slots.
-   - **Text Stream Editing Events in `ActiveTool::Text`:**
-     - `Backspace` deletes the selected slot range or the slot at `caret_index - 1`; `Delete` deletes the selected slot range or the slot at `caret_index`.
+   - **Text Stream Editing Events in `ActiveTool::Text` (`CanvasHostRequest::EditTextStream`):**
+     - `grafia` never synthesizes dummy `500 UPM` fallback glyphs internally. When the user types characters (`insert_text_at_caret`), presses `Backspace` (`delete_text_backward_at_caret`), or presses `Delete` (`delete_text_forward_at_caret`) while in `ActiveTool::Text`, `grafia` pushes `CanvasHostRequest::EditTextStream(TextStreamEditRequest { caret_index, selection_range, edit })` into `state.host_requests` (drained via `state.drain_host_requests()`).
+     - The **Host Font Model Backend** resolves the real `Glyph` geometry and kerning pairs from its font model and updates the stream cleanly via `state.set_text_stream_slots_with_caret(slots, active_index, caret_index)` (recording an atomic `"Edit Text Stream"` Undo snapshot) or `state.set_text_stream_slots(...)` + `state.set_text_caret_index(...)`.
      - `Left` / `Right` arrow keys without `Ctrl`/`Cmd`/`Opt` move `caret_index` by $\mp 1$ (or collapse/extend `selection_range` with `Shift`).
      - `Cmd+A` selects all slots `0..N`.
 
@@ -212,6 +213,22 @@ pub struct KerningDelta {
     pub new_kern_upm: i32,
 }
 
+/// Kind of text-stream edit requested while in `ActiveTool::Text`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum TextStreamEditKind {
+    InsertText(String),
+    Backspace,
+    DeleteForward,
+}
+
+/// Outbound Host-Port request emitted when typing or deleting in `ActiveTool::Text`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct TextStreamEditRequest {
+    pub caret_index: usize,
+    pub selection_range: Option<(usize, usize)>,
+    pub edit: TextStreamEditKind,
+}
+
 /// Kerning highlight wedge geometry produced for adjacent kerned slots `(k, k+1)`.
 #[derive(Clone, Debug, PartialEq)]
 pub struct KerningIndicatorQuad {
@@ -278,3 +295,4 @@ pub struct CanvasTextStream {
 | **`TC-V050-016`** | Same-glyph repeated slot synchronization (e.g. `"NON"` or `"HAHA"`) | Editing the contours, `LSB`, or `RSB` of `"N"` in slot `0` of `"NON"` immediately updates the geometry and advance width of every occurrence of `"N"` (slot `0` and slot `2`) in the strip. |
 | **`TC-V050-017`** | 1-to-1 `egui` $\leftrightarrow$ `tiny-skia` headless parity & Light/Dark (`AppearanceMode`) rendering for multi-glyph strip, kerning wedges, and measurement line | Rendering a multi-glyph strip with negative/positive kerning wedges and the text measurement line produces deterministic, non-empty pixel output across both `sonoma_default()` (Light) and `sonoma_dark()` (Dark) themes. |
 | **`TC-V050-018`** | State-dependent pull-based `arbtest` multi-glyph spacing, kerning, slot switching & editing fuzzing (`> 200` seeds, `12..=25` steps per chain) | Arbitrary sequences of slot insertion/deletion, caret moves, double-click slot switches, `LSB`/`RSB`/contour-shift shortcuts, left/right kerning delta mutations, measurement line drags, contour edits, and `Undo`/`Redo` preserve 100% of strip and glyph invariants. |
+| **`TC-V050-019`** | Pure Hexagonal `CanvasHostRequest::EditTextStream` typing, selection replacement, `Backspace`/`Delete` & `set_text_stream_slots_with_caret` with Undo | Typing characters or pressing `Backspace`/`Delete` in `ActiveTool::Text` emits `CanvasHostRequest::EditTextStream(TextStreamEditRequest)` without synthesizing dummy glyphs in `grafia`, and updating slots via `set_text_stream_slots_with_caret` supports full Undo/Redo. |

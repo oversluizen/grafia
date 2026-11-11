@@ -177,7 +177,8 @@ pub fn simplify_polyline_rdp(points: &[FontPoint], epsilon: f64) -> Vec<FontPoin
         let dist = if len_sq <= 1.0 {
             (pt.x.0 - first.x.0).hypot(pt.y.0 - first.y.0)
         } else {
-            let t = (((pt.x.0 - first.x.0) * dx + (pt.y.0 - first.y.0) * dy) / len_sq).clamp(0.0, 1.0);
+            let t =
+                (((pt.x.0 - first.x.0) * dx + (pt.y.0 - first.y.0) * dy) / len_sq).clamp(0.0, 1.0);
             let proj_x = first.x.0 + t * dx;
             let proj_y = first.y.0 + t * dy;
             (pt.x.0 - proj_x).hypot(pt.y.0 - proj_y)
@@ -230,7 +231,10 @@ pub fn fit_freehand_contour_nodes(
         } else if idx == 0 {
             (knots[1].x.0 - knots[0].x.0, knots[1].y.0 - knots[0].y.0)
         } else if idx + 1 == n {
-            (knots[n - 1].x.0 - knots[n - 2].x.0, knots[n - 1].y.0 - knots[n - 2].y.0)
+            (
+                knots[n - 1].x.0 - knots[n - 2].x.0,
+                knots[n - 1].y.0 - knots[n - 2].y.0,
+            )
         } else {
             (
                 (knots[idx + 1].x.0 - knots[idx - 1].x.0) * 0.5,
@@ -302,8 +306,18 @@ pub fn find_pixel_cell_contour_index(
         if nodes.iter().any(|n| n.node_type == NodeType::OffCurve) {
             continue;
         }
-        let mut xs = [nodes[0].point.x.0, nodes[1].point.x.0, nodes[2].point.x.0, nodes[3].point.x.0];
-        let mut ys = [nodes[0].point.y.0, nodes[1].point.y.0, nodes[2].point.y.0, nodes[3].point.y.0];
+        let mut xs = [
+            nodes[0].point.x.0,
+            nodes[1].point.x.0,
+            nodes[2].point.x.0,
+            nodes[3].point.x.0,
+        ];
+        let mut ys = [
+            nodes[0].point.y.0,
+            nodes[1].point.y.0,
+            nodes[2].point.y.0,
+            nodes[3].point.y.0,
+        ];
         xs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         ys.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         if (xs[0] - min_x).abs() <= PIXEL_CELL_MATCH_TOL_UPM

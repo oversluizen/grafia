@@ -38,6 +38,8 @@ pub struct Guide {
     pub lock_angle: bool,
     pub show_measurement: bool,
     pub name: Option<String>,
+    #[serde(default)]
+    pub alignment: crate::core::GuideAlignment,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -98,6 +100,7 @@ impl Guide {
             lock_angle: false,
             show_measurement: false,
             name: None,
+            alignment: crate::core::GuideAlignment::Lsb,
         }
     }
 
@@ -174,7 +177,8 @@ impl Guide {
             return Some(GuideHitKind::Knob(guide_ref));
         }
         let cursor_font = viewport.to_font(cursor_scr);
-        let tol_upm = f64::from(GUIDE_LINE_HIT_TOLERANCE_DP) / f64::from(viewport.zoom.max(f32::EPSILON));
+        let tol_upm =
+            f64::from(GUIDE_LINE_HIT_TOLERANCE_DP) / f64::from(viewport.zoom.max(f32::EPSILON));
         if self.perpendicular_distance(cursor_font) <= tol_upm {
             return Some(GuideHitKind::Line(guide_ref));
         }
@@ -226,10 +230,14 @@ pub fn calculate_guide_intersections(
         }
         for seg in extract_segments(contour, is_closed) {
             match seg {
-                ContourSegment::Line { start_idx, end_idx, .. } => {
+                ContourSegment::Line {
+                    start_idx, end_idx, ..
+                } => {
                     let a = contour[start_idx].point;
                     let b = contour[end_idx].point;
-                    if let Some(hit) = intersect_infinite_ray_with_segment(guide.position, ux, uy, a, b) {
+                    if let Some(hit) =
+                        intersect_infinite_ray_with_segment(guide.position, ux, uy, a, b)
+                    {
                         raw_hits.push(hit);
                     }
                 }
@@ -244,9 +252,13 @@ pub fn calculate_guide_intersections(
                         |el| {
                             if let PathEl::LineTo(p) = el {
                                 let curr = FontPoint::new(p.x, p.y);
-                                if let Some(hit) =
-                                    intersect_infinite_ray_with_segment(guide.position, ux, uy, prev, curr)
-                                {
+                                if let Some(hit) = intersect_infinite_ray_with_segment(
+                                    guide.position,
+                                    ux,
+                                    uy,
+                                    prev,
+                                    curr,
+                                ) {
                                     raw_hits.push(hit);
                                 }
                                 prev = curr;
@@ -263,7 +275,10 @@ pub fn calculate_guide_intersections(
 
     let mut intersections: Vec<FontPoint> = Vec::new();
     for (_t, pt) in raw_hits {
-        if intersections.last().is_none_or(|prev| prev.distance_to(pt) > 0.5) {
+        if intersections
+            .last()
+            .is_none_or(|prev| prev.distance_to(pt) > 0.5)
+        {
             intersections.push(pt);
         }
     }

@@ -1,8 +1,8 @@
 //! Shape canvas thumbnail projection and winding inspection.
 
 use crate::adapters::headless::kurbo_to_tiny_skia_path;
-use crate::adapters::state::GlifoCanvasState;
-use crate::tokens::{color32_to_tiny_skia, GlifoTheme, ShapeCanvasTokens};
+use crate::adapters::state::GrafiaCanvasState;
+use crate::tokens::{color32_to_tiny_skia, GrafiaTheme, ShapeCanvasTokens};
 use kurbo::{BezPath, Rect, Shape};
 use tiny_skia::{FillRule, Paint, Pixmap, Rect as TsRect, Stroke as TsStroke, Transform};
 
@@ -20,7 +20,12 @@ pub struct ShapeThumbnailProjection {
 impl ShapeThumbnailProjection {
     /// Computes a thumbnail projection fitting any `kurbo::BezPath` into `tokens` bounds.
     #[must_use]
-    pub fn compute(path: &BezPath, tokens: &ShapeCanvasTokens, node_count: usize, is_clockwise: bool) -> Self {
+    pub fn compute(
+        path: &BezPath,
+        tokens: &ShapeCanvasTokens,
+        node_count: usize,
+        is_clockwise: bool,
+    ) -> Self {
         let bbox = path.bounding_box();
         let avail_w = (tokens.thumbnail_width_dp - (2.0 * tokens.thumbnail_padding_dp)) as f64;
         let avail_h = (tokens.thumbnail_height_dp - (2.0 * tokens.thumbnail_padding_dp)) as f64;
@@ -41,7 +46,12 @@ impl ShapeThumbnailProjection {
             scale,
             offset_x,
             offset_y,
-            target_rect: Rect::new(0.0, 0.0, tokens.thumbnail_width_dp as f64, tokens.thumbnail_height_dp as f64),
+            target_rect: Rect::new(
+                0.0,
+                0.0,
+                tokens.thumbnail_width_dp as f64,
+                tokens.thumbnail_height_dp as f64,
+            ),
             fitted_path,
             is_clockwise,
             node_count,
@@ -52,8 +62,8 @@ impl ShapeThumbnailProjection {
 /// Renders `CanvasViewMode::ShapeThumbnail` cards into a `tiny_skia::Pixmap`.
 pub fn render_shape_thumbnails_tiny_skia(
     pixmap: &mut Pixmap,
-    state: &GlifoCanvasState,
-    theme: &GlifoTheme,
+    state: &GrafiaCanvasState,
+    theme: &GrafiaTheme,
 ) {
     if state.paths.is_empty() {
         return;
@@ -81,10 +91,18 @@ pub fn render_shape_thumbnails_tiny_skia(
         let translated = kurbo::Affine::translate((pad as f64, row_y as f64)) * proj.fitted_path;
         if let Some(ts_path) = kurbo_to_tiny_skia_path(&translated) {
             let mut fg_paint = Paint::default();
-            fg_paint.set_color(color32_to_tiny_skia(theme.shape_canvas.text_active_color32()));
+            fg_paint.set_color(color32_to_tiny_skia(
+                theme.shape_canvas.text_active_color32(),
+            ));
             fg_paint.anti_alias = true;
             if is_closed {
-                pixmap.fill_path(&ts_path, &fg_paint, FillRule::Winding, Transform::identity(), None);
+                pixmap.fill_path(
+                    &ts_path,
+                    &fg_paint,
+                    FillRule::Winding,
+                    Transform::identity(),
+                    None,
+                );
             } else {
                 let stroke = TsStroke {
                     width: theme.edit_canvas.contour_stroke_width_dp,

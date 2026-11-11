@@ -15,10 +15,23 @@ pub struct Modifiers {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum CanvasGesture {
-    ClickNode { id: NodeId, modifiers: Modifiers },
-    ClickEmptySpace { at: FontPoint, modifiers: Modifiers },
-    DragStart { origin: ScreenPoint, modifiers: Modifiers },
-    DragMove { current: ScreenPoint, delta: (f32, f32), modifiers: Modifiers },
+    ClickNode {
+        id: NodeId,
+        modifiers: Modifiers,
+    },
+    ClickEmptySpace {
+        at: FontPoint,
+        modifiers: Modifiers,
+    },
+    DragStart {
+        origin: ScreenPoint,
+        modifiers: Modifiers,
+    },
+    DragMove {
+        current: ScreenPoint,
+        delta: (f32, f32),
+        modifiers: Modifiers,
+    },
     DragEnd,
     Escape,
 }

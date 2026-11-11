@@ -4,14 +4,14 @@
 use egui::{Event, Key, Modifiers as EguiModifiers, PointerButton, Pos2, RawInput, Rect};
 use grafia::adapters::headless::{pixmap_to_rgba_image, rasterize_canvas_subregion};
 use grafia::adapters::input_dispatcher::InputDispatcher;
-use grafia::adapters::state::{CanvasTool, GlifoCanvasState};
+use grafia::adapters::state::{CanvasTool, GrafiaCanvasState};
 use grafia::core::{
     extract_segments, find_nearest_cubic_extremum, ContourSegment, FontPoint, Node, NodeId,
     NodeType, ScreenPoint,
 };
 use grafia::interaction::{PenToolState, SelectToolState};
 use grafia::render::{compute_open_contour_endpoint_ticks, compute_start_node_arrow_triangle};
-use grafia::tokens::GlifoTheme;
+use grafia::tokens::GrafiaTheme;
 use kurbo::{ParamCurve, ParamCurveDeriv};
 use rstest::rstest;
 
@@ -21,7 +21,7 @@ fn canvas_rect() -> Rect {
 
 #[allow(clippy::too_many_arguments)]
 fn run_dispatch(
-    state: &mut GlifoCanvasState,
+    state: &mut GrafiaCanvasState,
     events: Vec<Event>,
     shift: bool,
     alt: bool,
@@ -69,7 +69,7 @@ fn run_dispatch(
     changed
 }
 
-fn press_key(state: &mut GlifoCanvasState, key: Key, shift: bool, alt: bool, cmd: bool) -> bool {
+fn press_key(state: &mut GrafiaCanvasState, key: Key, shift: bool, alt: bool, cmd: bool) -> bool {
     let mods = EguiModifiers {
         alt,
         ctrl: cmd,
@@ -95,7 +95,7 @@ fn press_key(state: &mut GlifoCanvasState, key: Key, shift: bool, alt: bool, cmd
     )
 }
 
-fn assert_all_views_consistent(state: &GlifoCanvasState) {
+fn assert_all_views_consistent(state: &GrafiaCanvasState) {
     state.assert_invariants();
     assert_eq!(state.contours.len(), state.paths.len());
     assert_eq!(state.contours.len(), state.glyph.contours.len());
@@ -109,7 +109,7 @@ fn assert_all_views_consistent(state: &GlifoCanvasState) {
 
 #[test]
 fn test_spec002_a_full_undo_redo_across_all_mutations() {
-    let mut state = GlifoCanvasState::init_glyph_o();
+    let mut state = GrafiaCanvasState::init_glyph_o();
     let initial_contours = state.contours.clone();
     let initial_closed = state.closed_flags();
 
@@ -156,7 +156,7 @@ fn test_spec002_a_full_undo_redo_across_all_mutations() {
 
 #[test]
 fn test_spec002_b1_pen_click_and_drag_creates_persistent_cubic_beziers() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 1.0;
     state.viewport.pan_offset = ScreenPoint::new(100.0, 600.0);
     state.active_tool = CanvasTool::Pen;
@@ -223,7 +223,10 @@ fn test_spec002_b1_pen_click_and_drag_creates_persistent_cubic_beziers() {
     assert_eq!(state.contours[0][2].node_type, NodeType::OffCurve);
     assert!((state.contours[0][2].point.x.0 - 240.0).abs() < 1e-3);
     assert_eq!(state.contours[0][3].node_type, NodeType::Smooth);
-    assert_eq!(state.pending_pen_bcp_out, Some((0, FontPoint::new(360.0, 400.0))));
+    assert_eq!(
+        state.pending_pen_bcp_out,
+        Some((0, FontPoint::new(360.0, 400.0)))
+    );
 
     // 3. Click at (500, 200) -> consumes pending_pen_bcp_out (360, 400) so the second segment is also Cubic!
     let scr3 = state.viewport.to_screen(FontPoint::new(500.0, 200.0));
@@ -259,7 +262,7 @@ fn test_spec002_b1_pen_click_and_drag_creates_persistent_cubic_beziers() {
 
 #[test]
 fn test_spec002_b2_pen_alt_during_drag_creates_cusp_corner_and_freezes_bcp_in() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 1.0;
     state.viewport.pan_offset = ScreenPoint::new(100.0, 600.0);
     state.active_tool = CanvasTool::Pen;
@@ -319,7 +322,10 @@ fn test_spec002_b2_pen_alt_during_drag_creates_cusp_corner_and_freezes_bcp_in() 
                 pos: Pos2::new(scr2_alt.x.0, scr2_alt.y.0),
                 button: PointerButton::Primary,
                 pressed: false,
-                modifiers: EguiModifiers { alt: true, ..Default::default() },
+                modifiers: EguiModifiers {
+                    alt: true,
+                    ..Default::default()
+                },
             },
         ],
         false,
@@ -352,7 +358,7 @@ fn test_spec002_b2_pen_alt_during_drag_creates_cusp_corner_and_freezes_bcp_in() 
 
 #[test]
 fn test_spec002_b3_shift_pen_hover_and_click_snaps_to_cubic_extremum() {
-    let mut state = GlifoCanvasState::init_glyph_o();
+    let mut state = GrafiaCanvasState::init_glyph_o();
     // Delete the top extremum node of /o so the top arch spans a single cubic with an interior extremum at t = 0.5
     let top_id = state.contours[0][0].id;
     state.selected_nodes = vec![top_id];
@@ -388,7 +394,9 @@ fn test_spec002_b3_shift_pen_hover_and_click_snaps_to_cubic_extremum() {
     );
 
     let hover_pt_raw = cubic.eval(0.42);
-    let hover_scr = state.viewport.to_screen(FontPoint::new(hover_pt_raw.x, hover_pt_raw.y));
+    let hover_scr = state
+        .viewport
+        .to_screen(FontPoint::new(hover_pt_raw.x, hover_pt_raw.y));
     run_dispatch(
         &mut state,
         vec![Event::PointerMoved(Pos2::new(hover_scr.x.0, hover_scr.y.0))],
@@ -407,7 +415,7 @@ fn test_spec002_b3_shift_pen_hover_and_click_snaps_to_cubic_extremum() {
 
 #[test]
 fn test_spec002_b4_pen_resumes_and_closes_open_contour_after_shift_delete() {
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     let node0_id = state.contours[0][0].id;
     state.selected_nodes = vec![node0_id];
     assert!(press_key(&mut state, Key::Delete, true, false, false));
@@ -467,7 +475,10 @@ fn test_spec002_b4_pen_resumes_and_closes_open_contour_after_shift_delete() {
         false,
         2.0,
     );
-    assert!(state.is_contour_closed(0), "Clicking first node of resumed open contour 0 must close it");
+    assert!(
+        state.is_contour_closed(0),
+        "Clicking first node of resumed open contour 0 must close it"
+    );
     assert_eq!(state.pen_state, PenToolState::Idle);
 }
 
@@ -477,7 +488,7 @@ fn test_spec002_b4_pen_resumes_and_closes_open_contour_after_shift_delete() {
 
 #[test]
 fn test_spec002_c1_reference_segment_interaction_matrix_line_and_cubic() {
-    let mut state_a = GlifoCanvasState::init_glyph_a();
+    let mut state_a = GrafiaCanvasState::init_glyph_a();
     let p0_before = state_a.contours[0][0].point;
     let p1_before = state_a.contours[0][1].point;
     let p0_id = state_a.contours[0][0].id;
@@ -547,7 +558,7 @@ fn test_spec002_c1_reference_segment_interaction_matrix_line_and_cubic() {
     assert!((state_a.contours[0][0].point.x.0 - (p0_before.x.0 + 40.0)).abs() < 1e-2);
     assert!((state_a.contours[0][1].point.x.0 - (p1_before.x.0 + 40.0)).abs() < 1e-2);
 
-    let mut state_o = GlifoCanvasState::init_glyph_o();
+    let mut state_o = GrafiaCanvasState::init_glyph_o();
     let segs_o = extract_segments(&state_o.contours[0], true);
     let ContourSegment::Cubic {
         start_idx,
@@ -634,7 +645,7 @@ fn test_spec002_c1_reference_segment_interaction_matrix_line_and_cubic() {
 
 #[test]
 fn test_spec002_c2_delete_on_single_off_curve_bcp_converts_cubic_to_straight_line() {
-    let mut state = GlifoCanvasState::init_glyph_o();
+    let mut state = GrafiaCanvasState::init_glyph_o();
     let count_before = state.contours[0].len();
     assert_eq!(state.contours[0][1].node_type, NodeType::OffCurve);
     assert_eq!(state.contours[0][2].node_type, NodeType::OffCurve);
@@ -656,11 +667,15 @@ fn test_spec002_c2_delete_on_single_off_curve_bcp_converts_cubic_to_straight_lin
 
 #[test]
 fn test_spec002_c3_and_c4_shift_marquee_xor_and_alt_marquee_on_curve_only() {
-    let mut state = GlifoCanvasState::init_glyph_o();
+    let mut state = GrafiaCanvasState::init_glyph_o();
     let all_on_curve_ids: Vec<NodeId> = state
         .contours
         .iter()
-        .flat_map(|c| c.iter().filter(|n| n.node_type != NodeType::OffCurve).map(|n| n.id))
+        .flat_map(|c| {
+            c.iter()
+                .filter(|n| n.node_type != NodeType::OffCurve)
+                .map(|n| n.id)
+        })
         .collect();
 
     run_dispatch(
@@ -670,14 +685,20 @@ fn test_spec002_c3_and_c4_shift_marquee_xor_and_alt_marquee_on_curve_only() {
                 pos: Pos2::new(10.0, 10.0),
                 button: PointerButton::Primary,
                 pressed: true,
-                modifiers: EguiModifiers { alt: true, ..Default::default() },
+                modifiers: EguiModifiers {
+                    alt: true,
+                    ..Default::default()
+                },
             },
             Event::PointerMoved(Pos2::new(1200.0, 750.0)),
             Event::PointerButton {
                 pos: Pos2::new(1200.0, 750.0),
                 button: PointerButton::Primary,
                 pressed: false,
-                modifiers: EguiModifiers { alt: true, ..Default::default() },
+                modifiers: EguiModifiers {
+                    alt: true,
+                    ..Default::default()
+                },
             },
         ],
         false,
@@ -699,14 +720,20 @@ fn test_spec002_c3_and_c4_shift_marquee_xor_and_alt_marquee_on_curve_only() {
                 pos: Pos2::new(10.0, 10.0),
                 button: PointerButton::Primary,
                 pressed: true,
-                modifiers: EguiModifiers { shift: true, ..Default::default() },
+                modifiers: EguiModifiers {
+                    shift: true,
+                    ..Default::default()
+                },
             },
             Event::PointerMoved(Pos2::new(1200.0, 750.0)),
             Event::PointerButton {
                 pos: Pos2::new(1200.0, 750.0),
                 button: PointerButton::Primary,
                 pressed: false,
-                modifiers: EguiModifiers { shift: true, ..Default::default() },
+                modifiers: EguiModifiers {
+                    shift: true,
+                    ..Default::default()
+                },
             },
         ],
         true,
@@ -731,7 +758,7 @@ fn test_spec002_c3_and_c4_shift_marquee_xor_and_alt_marquee_on_curve_only() {
 
 #[test]
 fn test_spec002_c5_ctrl_alt_drag_mirrors_opposite_smooth_handle_symmetrically() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.contours = vec![vec![
         Node::new(NodeId(1), 0.0, 0.0, NodeType::Corner),
         Node::new(NodeId(2), 0.0, 55.0, NodeType::OffCurve),
@@ -761,7 +788,7 @@ fn test_spec002_c5_ctrl_alt_drag_mirrors_opposite_smooth_handle_symmetrically() 
 
 #[test]
 fn test_spec002_c6_and_c7_triple_click_and_two_stage_cmd_a_and_cmd_d() {
-    let mut state = GlifoCanvasState::init_glyph_o();
+    let mut state = GrafiaCanvasState::init_glyph_o();
     let total_on_curve = state
         .contours
         .iter()
@@ -779,8 +806,14 @@ fn test_spec002_c6_and_c7_triple_click_and_two_stage_cmd_a_and_cmd_d() {
     // Escape must clear selection WITHOUT opening any closed contour!
     assert!(press_key(&mut state, Key::Escape, false, false, false));
     assert!(state.selected_nodes.is_empty());
-    assert!(state.is_contour_closed(0), "Escape must not cut contour 0 open");
-    assert!(state.is_contour_closed(1), "Escape must not cut last contour 1 open");
+    assert!(
+        state.is_contour_closed(0),
+        "Escape must not cut contour 0 open"
+    );
+    assert!(
+        state.is_contour_closed(1),
+        "Escape must not cut last contour 1 open"
+    );
 
     assert!(press_key(&mut state, Key::A, false, false, true));
     assert_eq!(state.selected_nodes.len(), total_on_curve);
@@ -832,7 +865,7 @@ fn test_spec002_d_viewport_zoom_at_cursor_invariance_and_space_pan(
     #[case] cursor_scr: ScreenPoint,
     #[case] factor: f32,
 ) {
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     let font_before = state.viewport.to_font(cursor_scr);
     state.viewport.zoom_at_cursor(cursor_scr, factor);
     let font_after = state.viewport.to_font(cursor_scr);
@@ -882,11 +915,14 @@ fn test_spec002_d_viewport_zoom_at_cursor_invariance_and_space_pan(
 
 #[test]
 fn test_spec002_e_v010_edit_view_visual_elements_and_rasterization() {
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     state.fit_viewport_to_glyph(800.0, 600.0);
 
     let tri = compute_start_node_arrow_triangle(&state.contours[0], true, &state.viewport);
-    assert!(tri.is_some(), "Start-node direction arrow triangle must be computed for contour 0");
+    assert!(
+        tri.is_some(),
+        "Start-node direction arrow triangle must be computed for contour 0"
+    );
 
     state.set_contour_closed(0, false);
     let ticks = compute_open_contour_endpoint_ticks(&state.contours[0], &state.viewport);
@@ -896,12 +932,9 @@ fn test_spec002_e_v010_edit_view_visual_elements_and_rasterization() {
         "Open contour with >= 2 nodes must have 2 perpendicular endpoint cross-ticks"
     );
 
-    state.contours.push(vec![Node::new(
-        NodeId(999),
-        300.0,
-        350.0,
-        NodeType::Corner,
-    )]);
+    state
+        .contours
+        .push(vec![Node::new(NodeId(999), 300.0, 350.0, NodeType::Corner)]);
     state.sync_paths_from_contours();
     let pixmap = rasterize_canvas_subregion(&state, &state.theme, 800, 600);
     let img = pixmap_to_rgba_image(pixmap);
@@ -923,9 +956,10 @@ fn count_diff_pixels(a: &image::RgbaImage, b: &image::RgbaImage) -> usize {
 
 #[test]
 fn test_spec002_f1_alt_drag_on_smooth_on_curve_node_decouples_handles_and_preserves_smooth_type() {
-    let mut state = GlifoCanvasState::init_glyph_o();
+    let mut state = GrafiaCanvasState::init_glyph_o();
     state.fit_viewport_to_glyph(640.0, 480.0);
-    let before_img = pixmap_to_rgba_image(rasterize_canvas_subregion(&state, &state.theme, 640, 480));
+    let before_img =
+        pixmap_to_rgba_image(rasterize_canvas_subregion(&state, &state.theme, 640, 480));
 
     let anchor_before = state.contours[0][0].point;
     let h_out_before = state.contours[0][1].point;
@@ -936,7 +970,10 @@ fn test_spec002_f1_alt_drag_on_smooth_on_curve_node_decouples_handles_and_preser
     let scr1 = state
         .viewport
         .to_screen(FontPoint::new(anchor_before.x.0, anchor_before.y.0 + 75.0));
-    let alt_mods = EguiModifiers { alt: true, ..Default::default() };
+    let alt_mods = EguiModifiers {
+        alt: true,
+        ..Default::default()
+    };
 
     // Step 1: Mouse-down with Alt on Smooth node 0 MUST NOT toggle Smooth -> Corner or push phantom history!
     run_dispatch(
@@ -999,21 +1036,26 @@ fn test_spec002_f1_alt_drag_on_smooth_on_curve_node_decouples_handles_and_preser
         "Incoming OffCurve handle must remain fixed in world space during Alt + Drag on OnCurve anchor"
     );
 
-    let after_img = pixmap_to_rgba_image(rasterize_canvas_subregion(&state, &state.theme, 640, 480));
+    let after_img =
+        pixmap_to_rgba_image(rasterize_canvas_subregion(&state, &state.theme, 640, 480));
     assert!(count_diff_pixels(&before_img, &after_img) > 200);
 
     // Single Undo restores pre-drag state and leaves history empty (1 drag = 1 undo transaction)
     assert!(state.undo());
     assert_eq!(state.contours[0][0].point, anchor_before);
     assert_eq!(state.contours[0][0].node_type, NodeType::Smooth);
-    assert!(!state.history.can_undo(), "Single Undo after Alt+Drag must leave undo stack empty");
+    assert!(
+        !state.history.can_undo(),
+        "Single Undo after Alt+Drag must leave undo stack empty"
+    );
 }
 
 #[test]
 fn test_spec002_f2_option_drag_on_selected_contour_duplicates_contour() {
-    let mut state = GlifoCanvasState::init_glyph_o();
+    let mut state = GrafiaCanvasState::init_glyph_o();
     state.fit_viewport_to_glyph(640.0, 480.0);
-    let before_img = pixmap_to_rgba_image(rasterize_canvas_subregion(&state, &state.theme, 640, 480));
+    let before_img =
+        pixmap_to_rgba_image(rasterize_canvas_subregion(&state, &state.theme, 640, 480));
 
     // Select all nodes of outer contour 0
     state.selected_nodes = state.contours[0].iter().map(|n| n.id).collect();
@@ -1023,7 +1065,10 @@ fn test_spec002_f2_option_drag_on_selected_contour_duplicates_contour() {
         state.contours[0][0].point.x.0 + 140.0,
         state.contours[0][0].point.y.0 + 60.0,
     ));
-    let alt_mods = EguiModifiers { alt: true, ..Default::default() };
+    let alt_mods = EguiModifiers {
+        alt: true,
+        ..Default::default()
+    };
 
     run_dispatch(
         &mut state,
@@ -1063,17 +1108,23 @@ fn test_spec002_f2_option_drag_on_selected_contour_duplicates_contour() {
         (state.contours[2][0].point.x.0 - (orig_c0[0].point.x.0 + 140.0)).abs() < 1e-2,
         "Duplicated contour must be translated by the drag delta"
     );
-    let after_img = pixmap_to_rgba_image(rasterize_canvas_subregion(&state, &state.theme, 640, 480));
+    let after_img =
+        pixmap_to_rgba_image(rasterize_canvas_subregion(&state, &state.theme, 640, 480));
     assert!(count_diff_pixels(&before_img, &after_img) > 500);
 }
 
 #[test]
 fn test_spec002_f3_shift_drag_45_degree_axis_constrain_on_node_handle_and_pen() {
-    let mut state = GlifoCanvasState::init_glyph_o();
+    let mut state = GrafiaCanvasState::init_glyph_o();
     let p0 = state.contours[0][0].point;
     let scr0 = state.viewport.to_screen(p0);
-    let scr_drag = state.viewport.to_screen(FontPoint::new(p0.x.0 + 80.0, p0.y.0 + 12.0));
-    let shift_mods = EguiModifiers { shift: true, ..Default::default() };
+    let scr_drag = state
+        .viewport
+        .to_screen(FontPoint::new(p0.x.0 + 80.0, p0.y.0 + 12.0));
+    let shift_mods = EguiModifiers {
+        shift: true,
+        ..Default::default()
+    };
 
     // 1. Shift + Drag on OnCurve node
     run_dispatch(
@@ -1108,7 +1159,9 @@ fn test_spec002_f3_shift_drag_45_degree_axis_constrain_on_node_handle_and_pen() 
     // 2. Shift + Drag on OffCurve BCP handle (locks displacement to 45° diagonal when dx ≈ dy)
     let h1_before = state.contours[0][1].point;
     let scr_h1 = state.viewport.to_screen(h1_before);
-    let scr_h1_drag = state.viewport.to_screen(FontPoint::new(h1_before.x.0 + 60.0, h1_before.y.0 + 52.0));
+    let scr_h1_drag = state
+        .viewport
+        .to_screen(FontPoint::new(h1_before.x.0 + 60.0, h1_before.y.0 + 52.0));
     run_dispatch(
         &mut state,
         vec![
@@ -1141,7 +1194,7 @@ fn test_spec002_f3_shift_drag_45_degree_axis_constrain_on_node_handle_and_pen() 
     );
 
     // 3. Shift + Drag in PenTool handle extrusion (DraggingHandles)
-    let mut pen_state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut pen_state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     pen_state.viewport.zoom = 1.0;
     pen_state.viewport.pan_offset = ScreenPoint::new(100.0, 600.0);
     pen_state.active_tool = CanvasTool::Pen;
@@ -1194,13 +1247,16 @@ fn test_spec002_f3_shift_drag_45_degree_axis_constrain_on_node_handle_and_pen() 
 
 #[test]
 fn test_spec002_f4_pen_tool_cmd_temporary_select_tool_override_and_resume_open_path() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 1.0;
     state.viewport.pan_offset = ScreenPoint::new(100.0, 600.0);
     state.active_tool = CanvasTool::Pen;
 
     // 1. Place 2 open points in PenTool
-    for (t, pt) in [(1.0, FontPoint::new(100.0, 100.0)), (2.0, FontPoint::new(250.0, 250.0))] {
+    for (t, pt) in [
+        (1.0, FontPoint::new(100.0, 100.0)),
+        (2.0, FontPoint::new(250.0, 250.0)),
+    ] {
         let scr = state.viewport.to_screen(pt);
         run_dispatch(
             &mut state,
@@ -1231,7 +1287,11 @@ fn test_spec002_f4_pen_tool_cmd_temporary_select_tool_override_and_resume_open_p
     // 2. Hold Cmd while still in PenTool -> temporarily drag node 0 via SelectTool!
     let scr_n0 = state.viewport.to_screen(FontPoint::new(100.0, 100.0));
     let scr_n0_moved = state.viewport.to_screen(FontPoint::new(100.0, 180.0));
-    let cmd_mods = EguiModifiers { command: true, mac_cmd: true, ..Default::default() };
+    let cmd_mods = EguiModifiers {
+        command: true,
+        mac_cmd: true,
+        ..Default::default()
+    };
     run_dispatch(
         &mut state,
         vec![
@@ -1346,7 +1406,7 @@ fn test_spec002_f5_drag_curve_all_four_endpoint_combinations_and_alt_override() 
 
 #[test]
 fn test_spec002_f6_pen_tool_close_open_contour_by_clicking_and_dragging_node_0_and_mid_drag_undo() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 1.0;
     state.viewport.pan_offset = ScreenPoint::new(100.0, 600.0);
     state.active_tool = CanvasTool::Pen;
@@ -1382,7 +1442,9 @@ fn test_spec002_f6_pen_tool_close_open_contour_by_clicking_and_dragging_node_0_a
 
     // Click and drag on node 0 to close smoothly with both bcp_in and bcp_out
     let scr0 = state.viewport.to_screen(p0);
-    let scr0_drag = state.viewport.to_screen(FontPoint::new(p0.x.0 - 60.0, p0.y.0 + 40.0));
+    let scr0_drag = state
+        .viewport
+        .to_screen(FontPoint::new(p0.x.0 - 60.0, p0.y.0 + 40.0));
     run_dispatch(
         &mut state,
         vec![
@@ -1431,7 +1493,10 @@ fn test_spec002_f6_pen_tool_close_open_contour_by_clicking_and_dragging_node_0_a
         false,
         4.0,
     );
-    assert!(matches!(state.select_state, SelectToolState::DraggingNodes { .. }));
+    assert!(matches!(
+        state.select_state,
+        SelectToolState::DraggingNodes { .. }
+    ));
     assert!(press_key(&mut state, Key::Z, false, false, true));
     assert_eq!(state.select_state, SelectToolState::Idle);
     assert_eq!(state.contours, snap_before_drag);
@@ -1443,26 +1508,41 @@ fn test_spec002_f7_reverse_contour_visual_pixel_delta_in_all_three_modes_and_mak
     use grafia::locator::{contour_winding_label, ShapeLocatorRenderer};
 
     // (a) Closed contour in EditWireframe: Reverse Contour flips the blue direction arrow 180°
-    let mut state_w = GlifoCanvasState::init_glyph_a();
+    let mut state_w = GrafiaCanvasState::init_glyph_a();
     state_w.fit_viewport_to_glyph(640.0, 480.0);
-    let img_w_before = pixmap_to_rgba_image(rasterize_canvas_subregion(&state_w, &state_w.theme, 640, 480));
+    let img_w_before = pixmap_to_rgba_image(rasterize_canvas_subregion(
+        &state_w,
+        &state_w.theme,
+        640,
+        480,
+    ));
     assert_eq!(contour_winding_label(&state_w.contours[0]), "CW");
     assert_eq!(contour_winding_label(&state_w.contours[1]), "CCW");
 
     assert!(state_w.reverse_selected_or_all_contours());
     assert_eq!(contour_winding_label(&state_w.contours[0]), "CCW");
     assert_eq!(contour_winding_label(&state_w.contours[1]), "CW");
-    let img_w_after = pixmap_to_rgba_image(rasterize_canvas_subregion(&state_w, &state_w.theme, 640, 480));
+    let img_w_after = pixmap_to_rgba_image(rasterize_canvas_subregion(
+        &state_w,
+        &state_w.theme,
+        640,
+        480,
+    ));
     assert!(
         count_diff_pixels(&img_w_before, &img_w_after) >= 30,
         "Reversing closed contour in EditWireframe must visibly flip the start-node direction arrow"
     );
 
     // (b) Closed inner counter of /A in PreviewFilled (Non-Zero Winding): reversing ONLY inner counter fills the hole solid black!
-    let mut state_p = GlifoCanvasState::init_glyph_a();
+    let mut state_p = GrafiaCanvasState::init_glyph_a();
     state_p.fit_viewport_to_glyph(640.0, 480.0);
     state_p.view_mode = CanvasViewMode::PreviewFilled;
-    let img_p_before = pixmap_to_rgba_image(rasterize_canvas_subregion(&state_p, &state_p.theme, 640, 480));
+    let img_p_before = pixmap_to_rgba_image(rasterize_canvas_subregion(
+        &state_p,
+        &state_p.theme,
+        640,
+        480,
+    ));
     let hole_scr = state_p.viewport.to_screen(FontPoint::new(300.0, 320.0));
     let (hx, hy) = (hole_scr.x.0.round() as u32, hole_scr.y.0.round() as u32);
     assert_eq!(
@@ -1474,7 +1554,12 @@ fn test_spec002_f7_reverse_contour_visual_pixel_delta_in_all_three_modes_and_mak
     // Select only inner counter 1 and reverse it
     state_p.selected_nodes = vec![state_p.contours[1][0].id];
     assert!(state_p.reverse_selected_or_all_contours());
-    let img_p_reversed = pixmap_to_rgba_image(rasterize_canvas_subregion(&state_p, &state_p.theme, 640, 480));
+    let img_p_reversed = pixmap_to_rgba_image(rasterize_canvas_subregion(
+        &state_p,
+        &state_p.theme,
+        640,
+        480,
+    ));
     assert_eq!(
         img_p_reversed.get_pixel(hx, hy)[0],
         0,
@@ -1484,55 +1569,97 @@ fn test_spec002_f7_reverse_contour_visual_pixel_delta_in_all_three_modes_and_mak
 
     // Reverse inner counter again -> restores white counter hole!
     assert!(state_p.reverse_selected_or_all_contours());
-    let img_p_restored = pixmap_to_rgba_image(rasterize_canvas_subregion(&state_p, &state_p.theme, 640, 480));
+    let img_p_restored = pixmap_to_rgba_image(rasterize_canvas_subregion(
+        &state_p,
+        &state_p.theme,
+        640,
+        480,
+    ));
     assert_eq!(img_p_restored.get_pixel(hx, hy)[0], 255);
 
     // (c) Open contour: Reverse Contour jumps the start-node direction arrow to the opposite open endpoint
-    let mut state_open = GlifoCanvasState::init_glyph_a();
+    let mut state_open = GrafiaCanvasState::init_glyph_a();
     state_open.fit_viewport_to_glyph(640.0, 480.0);
     state_open.selected_nodes = vec![state_open.contours[0][0].id];
     assert!(press_key(&mut state_open, Key::Delete, true, false, false));
     assert!(!state_open.is_contour_closed(0));
     let open_first_before = state_open.contours[0].first().unwrap().point;
     let open_last_before = state_open.contours[0].last().unwrap().point;
-    let img_open_before = pixmap_to_rgba_image(rasterize_canvas_subregion(&state_open, &state_open.theme, 640, 480));
+    let img_open_before = pixmap_to_rgba_image(rasterize_canvas_subregion(
+        &state_open,
+        &state_open.theme,
+        640,
+        480,
+    ));
 
     state_open.selected_nodes = vec![state_open.contours[0][0].id];
     assert!(state_open.reverse_selected_or_all_contours());
-    assert_eq!(state_open.contours[0].first().unwrap().point, open_last_before);
-    assert_eq!(state_open.contours[0].last().unwrap().point, open_first_before);
-    let img_open_after = pixmap_to_rgba_image(rasterize_canvas_subregion(&state_open, &state_open.theme, 640, 480));
+    assert_eq!(
+        state_open.contours[0].first().unwrap().point,
+        open_last_before
+    );
+    assert_eq!(
+        state_open.contours[0].last().unwrap().point,
+        open_first_before
+    );
+    let img_open_after = pixmap_to_rgba_image(rasterize_canvas_subregion(
+        &state_open,
+        &state_open.theme,
+        640,
+        480,
+    ));
     assert!(
         count_diff_pixels(&img_open_before, &img_open_after) >= 20,
         "Reversing an open contour must jump the direction arrow to the opposite open endpoint"
     );
 
     // (d) Make Node First (`Cmd+Shift+F` / `make_selected_node_first`) rotates start node on closed contour
-    let mut state_mf = GlifoCanvasState::init_glyph_a();
+    let mut state_mf = GrafiaCanvasState::init_glyph_a();
     state_mf.fit_viewport_to_glyph(640.0, 480.0);
-    let img_mf_before = pixmap_to_rgba_image(rasterize_canvas_subregion(&state_mf, &state_mf.theme, 640, 480));
+    let img_mf_before = pixmap_to_rgba_image(rasterize_canvas_subregion(
+        &state_mf,
+        &state_mf.theme,
+        640,
+        480,
+    ));
     let target_new_first = state_mf.contours[0][2].id;
     state_mf.selected_nodes = vec![target_new_first];
     assert!(press_key(&mut state_mf, Key::F, true, false, true));
     assert_eq!(state_mf.contours[0][0].id, target_new_first);
-    let img_mf_after = pixmap_to_rgba_image(rasterize_canvas_subregion(&state_mf, &state_mf.theme, 640, 480));
+    let img_mf_after = pixmap_to_rgba_image(rasterize_canvas_subregion(
+        &state_mf,
+        &state_mf.theme,
+        640,
+        480,
+    ));
     assert!(
         count_diff_pixels(&img_mf_before, &img_mf_after) >= 20,
         "Make Node First must move the start-node direction arrow to the newly selected start node"
     );
 
     // (e) ShapeLocatorRenderer renders true cubic curves on /o (> 20 vertices in tessellated mesh for a 4-anchor oval)
-    let state_o = GlifoCanvasState::init_glyph_o();
-    let loc_renderer = ShapeLocatorRenderer::new(&state_o.glyph, grafia::locator::ShapeLocatorStyle::default());
-    let (ctx_mesh, focus_mesh) = loc_renderer.render_locator(grafia::core::ContourId(0), egui::vec2(96.0, 64.0));
-    assert!(ctx_mesh.vertices.len() > 20, "Context locator mesh on cubic /o must have > 20 curve vertices");
-    assert!(focus_mesh.vertices.len() > 20, "Focus locator mesh on cubic /o must have > 20 curve vertices");
+    let state_o = GrafiaCanvasState::init_glyph_o();
+    let loc_renderer = ShapeLocatorRenderer::new(
+        &state_o.glyph,
+        grafia::locator::ShapeLocatorStyle::default(),
+    );
+    let (ctx_mesh, focus_mesh) =
+        loc_renderer.render_locator(grafia::core::ContourId(0), egui::vec2(96.0, 64.0));
+    assert!(
+        ctx_mesh.vertices.len() > 20,
+        "Context locator mesh on cubic /o must have > 20 curve vertices"
+    );
+    assert!(
+        focus_mesh.vertices.len() > 20,
+        "Focus locator mesh on cubic /o must have > 20 curve vertices"
+    );
 }
 
 #[test]
-fn test_spec002_f8_shift_double_click_multi_contour_reversed_tab_alt_arrow_nudge_and_degenerate_2node_cubic() {
+fn test_spec002_f8_shift_double_click_multi_contour_reversed_tab_alt_arrow_nudge_and_degenerate_2node_cubic(
+) {
     // 1. Double-Click on contour 0 + Shift + Double-Click on contour 1 selects both contours (24 nodes)
-    let mut state = GlifoCanvasState::init_glyph_o();
+    let mut state = GrafiaCanvasState::init_glyph_o();
     let h0_scr = state.viewport.to_screen(state.contours[0][1].point);
     let h1_scr = state.viewport.to_screen(state.contours[1][1].point);
     for t in [1.0, 1.1] {
@@ -1562,7 +1689,10 @@ fn test_spec002_f8_shift_double_click_multi_contour_reversed_tab_alt_arrow_nudge
     }
     assert_eq!(state.selected_nodes.len(), 12);
 
-    let shift_mods = EguiModifiers { shift: true, ..Default::default() };
+    let shift_mods = EguiModifiers {
+        shift: true,
+        ..Default::default()
+    };
     for t in [2.0, 2.1] {
         run_dispatch(
             &mut state,
@@ -1588,10 +1718,14 @@ fn test_spec002_f8_shift_double_click_multi_contour_reversed_tab_alt_arrow_nudge
             t,
         );
     }
-    assert_eq!(state.selected_nodes.len(), 24, "Shift + Double-Click on inner ring must add second contour");
+    assert_eq!(
+        state.selected_nodes.len(),
+        24,
+        "Shift + Double-Click on inner ring must add second contour"
+    );
 
     // 2. Tab cycling respects winding direction before and after Reverse Contour
-    let mut state_tab = GlifoCanvasState::init_glyph_a();
+    let mut state_tab = GrafiaCanvasState::init_glyph_a();
     let id0 = state_tab.contours[0][0].id;
     let id1_orig = state_tab.contours[0][1].id;
     let id_last_orig = state_tab.contours[0].last().unwrap().id;
@@ -1610,7 +1744,7 @@ fn test_spec002_f8_shift_double_click_multi_contour_reversed_tab_alt_arrow_nudge
     );
 
     // 3. Alt + Arrow nudges OnCurve anchor without moving attached OffCurve handles, and Arrow on OffCurve preserves G1 Smooth
-    let mut state_nudge = GlifoCanvasState::init_glyph_o();
+    let mut state_nudge = GrafiaCanvasState::init_glyph_o();
     let n0_id = state_nudge.contours[0][0].id;
     let h_out_before = state_nudge.contours[0][1].point;
     let h_in_before = state_nudge.contours[0][11].point;
@@ -1626,18 +1760,24 @@ fn test_spec002_f8_shift_double_click_multi_contour_reversed_tab_alt_arrow_nudge
     );
 
     // Nudging an OffCurve handle without Alt rotates the opposite Smooth handle collinearly
-    let mut state_h_nudge = GlifoCanvasState::init_glyph_o();
+    let mut state_h_nudge = GrafiaCanvasState::init_glyph_o();
     let h1_id = state_h_nudge.contours[0][1].id;
     let h11_y_before = state_h_nudge.contours[0][11].point.y.0;
     state_h_nudge.selected_nodes = vec![h1_id];
-    assert!(press_key(&mut state_h_nudge, Key::ArrowUp, true, false, false));
+    assert!(press_key(
+        &mut state_h_nudge,
+        Key::ArrowUp,
+        true,
+        false,
+        false
+    ));
     assert!(
         state_h_nudge.contours[0][11].point.y.0 < h11_y_before - 1.0,
         "Nudging outgoing OffCurve handle upward must rotate incoming Smooth handle downward"
     );
 
     // 4. Degenerate 2-node closed cubic contour under Reverse Contour & Make Node First
-    let mut state_2n = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state_2n = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state_2n.contours = vec![vec![
         Node::new(NodeId(1), 100.0, 200.0, NodeType::Smooth),
         Node::new(NodeId(2), 100.0, 350.0, NodeType::OffCurve),
@@ -1657,16 +1797,20 @@ fn test_spec002_f8_shift_double_click_multi_contour_reversed_tab_alt_arrow_nudge
 }
 
 #[test]
-fn test_spec002_f9_curve_heal_top_extremum_o_pen_close_untwisted_and_multi_contour_closed_authority() {
+fn test_spec002_f9_curve_heal_top_extremum_o_pen_close_untwisted_and_multi_contour_closed_authority(
+) {
     // 1. Deleting top Smooth extremum (280, 510) of /o must heal the 180° arch so B(0.5) passes through y = 510.0
-    let mut state_o = GlifoCanvasState::init_glyph_o();
+    let mut state_o = GrafiaCanvasState::init_glyph_o();
     let top_id = state_o.contours[0][0].id;
     assert_eq!(state_o.contours[0][0].point, FontPoint::new(280.0, 510.0));
     state_o.selected_nodes = vec![top_id];
     assert!(press_key(&mut state_o, Key::Delete, false, false, false));
 
     let segs_o = extract_segments(&state_o.contours[0], true);
-    let ContourSegment::Cubic { cubic: top_arch, .. } = *segs_o.last().expect("closing top arch segment") else {
+    let ContourSegment::Cubic {
+        cubic: top_arch, ..
+    } = *segs_o.last().expect("closing top arch segment")
+    else {
         panic!("Expected healed top arch to be a Cubic segment");
     };
     let mid_arch = top_arch.eval(0.5);
@@ -1683,17 +1827,32 @@ fn test_spec002_f9_curve_heal_top_extremum_o_pen_close_untwisted_and_multi_conto
     );
 
     // 1b. Deleting 2 adjacent Smooth nodes on a 3-segment parallel-tangent top arch of /o must ALSO preserve y = 510.0
-    let mut state_o3 = GlifoCanvasState::init_glyph_o();
+    let mut state_o3 = GrafiaCanvasState::init_glyph_o();
     let top_orig_id = state_o3.contours[0][0].id;
     let seg0_o3 = extract_segments(&state_o3.contours[0], true)[0];
-    let split_top_id = grafia::core::split_contour_segment(&mut state_o3.contours[0], seg0_o3, 0.5, &mut state_o3.next_node_id);
-    let seg_last_o3 = *extract_segments(&state_o3.contours[0], true).last().unwrap();
-    let split_left_id = grafia::core::split_contour_segment(&mut state_o3.contours[0], seg_last_o3, 0.5, &mut state_o3.next_node_id);
+    let split_top_id = grafia::core::split_contour_segment(
+        &mut state_o3.contours[0],
+        seg0_o3,
+        0.5,
+        &mut state_o3.next_node_id,
+    );
+    let seg_last_o3 = *extract_segments(&state_o3.contours[0], true)
+        .last()
+        .unwrap();
+    let split_left_id = grafia::core::split_contour_segment(
+        &mut state_o3.contours[0],
+        seg_last_o3,
+        0.5,
+        &mut state_o3.next_node_id,
+    );
     state_o3.sync_paths_from_contours();
     state_o3.selected_nodes = vec![split_left_id, top_orig_id, split_top_id];
     assert!(press_key(&mut state_o3, Key::Delete, false, false, false));
     let segs_o3 = extract_segments(&state_o3.contours[0], true);
-    let ContourSegment::Cubic { cubic: top_arch_3, .. } = *segs_o3.last().expect("closing multi-seg healed top arch") else {
+    let ContourSegment::Cubic {
+        cubic: top_arch_3, ..
+    } = *segs_o3.last().expect("closing multi-seg healed top arch")
+    else {
         panic!("Expected multi-seg healed top arch to be a Cubic segment");
     };
     let mid_arch_3 = top_arch_3.eval(0.5);
@@ -1705,7 +1864,7 @@ fn test_spec002_f9_curve_heal_top_extremum_o_pen_close_untwisted_and_multi_conto
 
     // 2. PenTool click-and-drag close on start node 0 must orient bcp_out at cursor, bcp_in opposite,
     //    and align previous Corner outgoing handle h1 collinearly toward bcp_in (zero S-kink)
-    let mut pen_s = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut pen_s = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     pen_s.viewport.zoom = 1.0;
     pen_s.viewport.pan_offset = ScreenPoint::new(50.0, 650.0);
     pen_s.active_tool = CanvasTool::Pen;
@@ -1725,16 +1884,56 @@ fn test_spec002_f9_curve_heal_top_extremum_o_pen_close_untwisted_and_multi_conto
     run_dispatch(
         &mut pen_s,
         vec![
-            Event::PointerButton { pos: Pos2::new(s_p0.x.0, s_p0.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p0.x.0, s_p0.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p1.x.0, s_p1.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(s_p0.x.0, s_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p0.x.0, s_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p1.x.0, s_p1.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
             Event::PointerMoved(Pos2::new(s_p1_drag.x.0, s_p1_drag.y.0)),
-            Event::PointerButton { pos: Pos2::new(s_p1_drag.x.0, s_p1_drag.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p2.x.0, s_p2.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p2.x.0, s_p2.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p0.x.0, s_p0.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(s_p1_drag.x.0, s_p1_drag.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p2.x.0, s_p2.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p2.x.0, s_p2.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p0.x.0, s_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
             Event::PointerMoved(Pos2::new(s_close_drag.x.0, s_close_drag.y.0)),
-            Event::PointerButton { pos: Pos2::new(s_close_drag.x.0, s_close_drag.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(s_close_drag.x.0, s_close_drag.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
         ],
         false,
         false,
@@ -1750,13 +1949,22 @@ fn test_spec002_f9_curve_heal_top_extremum_o_pen_close_untwisted_and_multi_conto
     let c_len = pen_s.contours[0].len();
     let bcp_in_actual = pen_s.contours[0][c_len - 1].point;
     let close_h1_actual = pen_s.contours[0][c_len - 2].point;
-    let expected_bcp_in = FontPoint::new(2.0 * p0_f.x.0 - close_drag_f.x.0, 2.0 * p0_f.y.0 - close_drag_f.y.0);
+    let expected_bcp_in = FontPoint::new(
+        2.0 * p0_f.x.0 - close_drag_f.x.0,
+        2.0 * p0_f.y.0 - close_drag_f.y.0,
+    );
     let expected_close_h1 = FontPoint::new(
         p2_f.x.0 + (expected_bcp_in.x.0 - p2_f.x.0) / 3.0,
         p2_f.y.0 + (expected_bcp_in.y.0 - p2_f.y.0) / 3.0,
     );
-    assert!((bcp_out_actual.x.0 - close_drag_f.x.0).abs() < 1e-3 && (bcp_out_actual.y.0 - close_drag_f.y.0).abs() < 1e-3);
-    assert!((bcp_in_actual.x.0 - expected_bcp_in.x.0).abs() < 1e-3 && (bcp_in_actual.y.0 - expected_bcp_in.y.0).abs() < 1e-3);
+    assert!(
+        (bcp_out_actual.x.0 - close_drag_f.x.0).abs() < 1e-3
+            && (bcp_out_actual.y.0 - close_drag_f.y.0).abs() < 1e-3
+    );
+    assert!(
+        (bcp_in_actual.x.0 - expected_bcp_in.x.0).abs() < 1e-3
+            && (bcp_in_actual.y.0 - expected_bcp_in.y.0).abs() < 1e-3
+    );
     assert!(
         (close_h1_actual.x.0 - expected_close_h1.x.0).abs() < 1e-2
             && (close_h1_actual.y.0 - expected_close_h1.y.0).abs() < 1e-2,
@@ -1767,7 +1975,7 @@ fn test_spec002_f9_curve_heal_top_extremum_o_pen_close_untwisted_and_multi_conto
 
     // 2b. PenTool multi-step drag close on start node 0 when segment 0 was a straight Line (Corner -> Corner)
     //     must update segment 0's auto-synthesized h2 (contours[0][2]) on every PointerMoved event
-    let mut pen_line0 = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut pen_line0 = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     pen_line0.viewport.zoom = 1.0;
     pen_line0.viewport.pan_offset = ScreenPoint::new(50.0, 650.0);
     pen_line0.active_tool = CanvasTool::Pen;
@@ -1775,16 +1983,56 @@ fn test_spec002_f9_curve_heal_top_extremum_o_pen_close_untwisted_and_multi_conto
     run_dispatch(
         &mut pen_line0,
         vec![
-            Event::PointerButton { pos: Pos2::new(s_p0.x.0, s_p0.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p0.x.0, s_p0.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p1.x.0, s_p1.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p1.x.0, s_p1.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p2.x.0, s_p2.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p2.x.0, s_p2.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p0.x.0, s_p0.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(s_p0.x.0, s_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p0.x.0, s_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p1.x.0, s_p1.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p1.x.0, s_p1.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p2.x.0, s_p2.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p2.x.0, s_p2.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p0.x.0, s_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
             Event::PointerMoved(Pos2::new(s_close_step1.x.0, s_close_step1.y.0)),
             Event::PointerMoved(Pos2::new(s_close_drag.x.0, s_close_drag.y.0)),
-            Event::PointerButton { pos: Pos2::new(s_close_drag.x.0, s_close_drag.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(s_close_drag.x.0, s_close_drag.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
         ],
         false,
         false,
@@ -1808,11 +2056,14 @@ fn test_spec002_f9_curve_heal_top_extremum_o_pen_close_untwisted_and_multi_conto
 
     // 3. Multi-contour closed state authority: cutting contour 0 open on 2-contour /o must never
     //    corrupt contour 1 or lose open/closed state when active_contour_closed is mutated
-    let mut multi = GlifoCanvasState::init_glyph_o();
+    let mut multi = GrafiaCanvasState::init_glyph_o();
     let c0_n0 = multi.contours[0][0].id;
     multi.selected_nodes = vec![c0_n0];
     assert!(press_key(&mut multi, Key::Delete, true, false, false));
-    assert!(!multi.is_contour_closed(0), "Contour 0 must be open after Shift+Delete");
+    assert!(
+        !multi.is_contour_closed(0),
+        "Contour 0 must be open after Shift+Delete"
+    );
     assert!(multi.is_contour_closed(1), "Contour 1 must remain closed");
     multi.sync_paths_from_contours();
     assert!(!multi.is_contour_closed(0));
@@ -1841,14 +2092,15 @@ fn test_spec002_f10_calibrated_hit_testing_nearest_node_priority_over_segment() 
     );
 
     // 1. Clicking 5.5 dp away from node 0 right along segment 0 must hit node 0, NEVER segment 0!
-    let mut state = GlifoCanvasState::init_glyph_a();
+    let mut state = GrafiaCanvasState::init_glyph_a();
     let n0_id = state.contours[0][0].id;
     let p0_scr = state.viewport.to_screen(state.contours[0][0].point);
     let p1_scr = state.viewport.to_screen(state.contours[0][1].point);
     let dx = p1_scr.x.0 - p0_scr.x.0;
     let dy = p1_scr.y.0 - p0_scr.y.0;
     let len = dx.hypot(dy);
-    let click_near_n0 = ScreenPoint::new(p0_scr.x.0 + (dx / len) * 5.5, p0_scr.y.0 + (dy / len) * 5.5);
+    let click_near_n0 =
+        ScreenPoint::new(p0_scr.x.0 + (dx / len) * 5.5, p0_scr.y.0 + (dy / len) * 5.5);
 
     assert_eq!(
         state.hit_test_node(click_near_n0),
@@ -1886,7 +2138,7 @@ fn test_spec002_f10_calibrated_hit_testing_nearest_node_priority_over_segment() 
     );
 
     // 2. When two nodes are both within NODE_HIT_TEST_RADIUS_DP, hit_test_node returns the NEAREST node
-    let mut close_state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut close_state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     close_state.viewport.zoom = 1.0;
     close_state.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
     close_state.contours = vec![vec![
@@ -1907,7 +2159,7 @@ fn test_spec002_f10_calibrated_hit_testing_nearest_node_priority_over_segment() 
 
 #[test]
 fn test_spec002_f11_pen_tool_new_curve_close_priority_drag_threshold_and_first_bcp_in() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 1.0;
     state.viewport.pan_offset = ScreenPoint::new(50.0, 650.0);
     state.active_tool = CanvasTool::Pen;
@@ -1928,11 +2180,26 @@ fn test_spec002_f11_pen_tool_new_curve_close_priority_drag_threshold_and_first_b
     run_dispatch(
         &mut state,
         vec![
-            Event::PointerButton { pos: Pos2::new(s_p0.x.0, s_p0.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(s_p0.x.0, s_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
             Event::PointerMoved(Pos2::new(s_p0_drag.x.0, s_p0_drag.y.0)),
-            Event::PointerButton { pos: Pos2::new(s_p0_drag.x.0, s_p0_drag.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(s_p0_drag.x.0, s_p0_drag.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
         ],
-        false, false, false, false, false, 1.0,
+        false,
+        false,
+        false,
+        false,
+        false,
+        1.0,
     );
     assert_eq!(state.contours[0][0].node_type, NodeType::Smooth);
     assert_eq!(
@@ -1945,14 +2212,39 @@ fn test_spec002_f11_pen_tool_new_curve_close_priority_drag_threshold_and_first_b
     run_dispatch(
         &mut state,
         vec![
-            Event::PointerButton { pos: Pos2::new(s_p1.x.0, s_p1.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(s_p1.x.0, s_p1.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
             Event::PointerMoved(Pos2::new(s_p1_drag.x.0, s_p1_drag.y.0)),
-            Event::PointerButton { pos: Pos2::new(s_p1_drag.x.0, s_p1_drag.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p2.x.0, s_p2.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(s_p1_drag.x.0, s_p1_drag.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p2.x.0, s_p2.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
             Event::PointerMoved(Pos2::new(s_p2.x.0 + 1.5, s_p2.y.0)),
-            Event::PointerButton { pos: Pos2::new(s_p2.x.0 + 1.5, s_p2.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(s_p2.x.0 + 1.5, s_p2.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
         ],
-        false, false, false, false, false, 2.0,
+        false,
+        false,
+        false,
+        false,
+        false,
+        2.0,
     );
     assert_eq!(
         state.contours[0].last().unwrap().node_type,
@@ -1965,10 +2257,25 @@ fn test_spec002_f11_pen_tool_new_curve_close_priority_drag_threshold_and_first_b
     run_dispatch(
         &mut state,
         vec![
-            Event::PointerButton { pos: Pos2::new(s_p1.x.0, s_p1.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p1.x.0, s_p1.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(s_p1.x.0, s_p1.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p1.x.0, s_p1.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
         ],
-        false, false, false, false, false, 3.0,
+        false,
+        false,
+        false,
+        false,
+        false,
+        3.0,
     );
     assert_eq!(
         state.contours[0].len(),
@@ -1978,12 +2285,21 @@ fn test_spec002_f11_pen_tool_new_curve_close_priority_drag_threshold_and_first_b
 
     // 4. Hovering 5.0 dp from P0 (right over segment 0 / outgoing handle at 204,200) must set hovered_pen_close_target
     //    and keep hovered_segment_hit == None, and render a visible close halo!
-    let img_no_hover = pixmap_to_rgba_image(rasterize_canvas_subregion(&state, &state.theme, 640, 480));
+    let img_no_hover =
+        pixmap_to_rgba_image(rasterize_canvas_subregion(&state, &state.theme, 640, 480));
     let hover_close_scr = ScreenPoint::new(s_p0.x.0 + 5.0, s_p0.y.0);
     run_dispatch(
         &mut state,
-        vec![Event::PointerMoved(Pos2::new(hover_close_scr.x.0, hover_close_scr.y.0))],
-        false, false, false, false, false, 4.0,
+        vec![Event::PointerMoved(Pos2::new(
+            hover_close_scr.x.0,
+            hover_close_scr.y.0,
+        ))],
+        false,
+        false,
+        false,
+        false,
+        false,
+        4.0,
     );
     assert_eq!(
         state.hovered_pen_close_target,
@@ -1994,7 +2310,8 @@ fn test_spec002_f11_pen_tool_new_curve_close_priority_drag_threshold_and_first_b
         state.hovered_segment_hit, None,
         "Hovering near P0 to close must NEVER trigger segment-split ghost node on segment 0"
     );
-    let img_close_hover = pixmap_to_rgba_image(rasterize_canvas_subregion(&state, &state.theme, 640, 480));
+    let img_close_hover =
+        pixmap_to_rgba_image(rasterize_canvas_subregion(&state, &state.theme, 640, 480));
     assert!(
         count_diff_pixels(&img_no_hover, &img_close_hover) >= 8,
         "Hovering P0 to close must render a visible closing halo around P0"
@@ -2003,56 +2320,140 @@ fn test_spec002_f11_pen_tool_new_curve_close_priority_drag_threshold_and_first_b
     // 5. Clicking at hover_close_scr (with 1.0 dp micro-jitter) must close the contour on P0 (NOT split segment 0!),
     //    preserve P0's outgoing handle (204, 200), and insert pending_pen_first_bcp_in (196, 200) as closing h2!
     //    First verify that Undo + Redo before closing preserves BOTH pending_pen_first_bcp_in AND pending_pen_bcp_out!
-    let mut undo_pen = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut undo_pen = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     undo_pen.viewport.zoom = 1.0;
     undo_pen.viewport.pan_offset = ScreenPoint::new(50.0, 650.0);
     undo_pen.active_tool = CanvasTool::Pen;
     run_dispatch(
         &mut undo_pen,
         vec![
-            Event::PointerButton { pos: Pos2::new(s_p0.x.0, s_p0.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(s_p0.x.0, s_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
             Event::PointerMoved(Pos2::new(s_p0_drag.x.0, s_p0_drag.y.0)),
-            Event::PointerButton { pos: Pos2::new(s_p0_drag.x.0, s_p0_drag.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p1.x.0, s_p1.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(s_p0_drag.x.0, s_p0_drag.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p1.x.0, s_p1.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
             Event::PointerMoved(Pos2::new(s_p1_drag.x.0, s_p1_drag.y.0)),
-            Event::PointerButton { pos: Pos2::new(s_p1_drag.x.0, s_p1_drag.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(s_p1_drag.x.0, s_p1_drag.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
         ],
-        false, false, false, false, false, 1.0,
+        false,
+        false,
+        false,
+        false,
+        false,
+        1.0,
     );
     // Resuming on P1 with Alt+Drag must redirect pending_pen_bcp_out WITHOUT collapsing P1's existing incoming H2 or P0's outgoing H1!
     let h1_before_resume = undo_pen.contours[0][1].point;
     let h2_before_resume = undo_pen.contours[0][2].point;
     let s_p1_cusp = undo_pen.viewport.to_screen(FontPoint::new(400.0, 360.0));
-    let alt_mods = EguiModifiers { alt: true, ..Default::default() };
+    let alt_mods = EguiModifiers {
+        alt: true,
+        ..Default::default()
+    };
     run_dispatch(
         &mut undo_pen,
         vec![
-            Event::PointerButton { pos: Pos2::new(s_p1.x.0, s_p1.y.0), button: PointerButton::Primary, pressed: true, modifiers: alt_mods },
+            Event::PointerButton {
+                pos: Pos2::new(s_p1.x.0, s_p1.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: alt_mods,
+            },
             Event::PointerMoved(Pos2::new(s_p1_cusp.x.0, s_p1_cusp.y.0)),
-            Event::PointerButton { pos: Pos2::new(s_p1_cusp.x.0, s_p1_cusp.y.0), button: PointerButton::Primary, pressed: false, modifiers: alt_mods },
+            Event::PointerButton {
+                pos: Pos2::new(s_p1_cusp.x.0, s_p1_cusp.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: alt_mods,
+            },
         ],
-        false, true, false, false, false, 2.0,
+        false,
+        true,
+        false,
+        false,
+        false,
+        2.0,
     );
-    assert_eq!(undo_pen.contours[0][1].point, h1_before_resume, "Resuming on P_last must preserve previous node's explicit outgoing H1");
-    assert_eq!(undo_pen.contours[0][2].point, h2_before_resume, "Alt+Drag resume on P_last must freeze existing incoming H2");
-    assert_eq!(undo_pen.pending_pen_bcp_out, Some((0, FontPoint::new(400.0, 360.0))));
+    assert_eq!(
+        undo_pen.contours[0][1].point, h1_before_resume,
+        "Resuming on P_last must preserve previous node's explicit outgoing H1"
+    );
+    assert_eq!(
+        undo_pen.contours[0][2].point, h2_before_resume,
+        "Alt+Drag resume on P_last must freeze existing incoming H2"
+    );
+    assert_eq!(
+        undo_pen.pending_pen_bcp_out,
+        Some((0, FontPoint::new(400.0, 360.0)))
+    );
     assert!(undo_pen.undo(), "Undo resume on P1");
-    assert_eq!(undo_pen.pending_pen_bcp_out, Some((0, p1_drag)), "Undo must restore previous pending_pen_bcp_out");
+    assert_eq!(
+        undo_pen.pending_pen_bcp_out,
+        Some((0, p1_drag)),
+        "Undo must restore previous pending_pen_bcp_out"
+    );
     assert!(undo_pen.undo(), "Undo placing P1");
-    assert_eq!(undo_pen.pending_pen_bcp_out, Some((0, p0_drag)), "Undoing P1 must restore P0's pending_pen_bcp_out");
-    assert_eq!(undo_pen.pending_pen_first_bcp_in, Some((0, FontPoint::new(196.0, 200.0))));
+    assert_eq!(
+        undo_pen.pending_pen_bcp_out,
+        Some((0, p0_drag)),
+        "Undoing P1 must restore P0's pending_pen_bcp_out"
+    );
+    assert_eq!(
+        undo_pen.pending_pen_first_bcp_in,
+        Some((0, FontPoint::new(196.0, 200.0)))
+    );
 
     run_dispatch(
         &mut state,
         vec![
-            Event::PointerButton { pos: Pos2::new(hover_close_scr.x.0, hover_close_scr.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(hover_close_scr.x.0, hover_close_scr.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
             Event::PointerMoved(Pos2::new(hover_close_scr.x.0 + 1.0, hover_close_scr.y.0)),
-            Event::PointerButton { pos: Pos2::new(hover_close_scr.x.0 + 1.0, hover_close_scr.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(hover_close_scr.x.0 + 1.0, hover_close_scr.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
         ],
-        false, false, false, false, false, 5.0,
+        false,
+        false,
+        false,
+        false,
+        false,
+        5.0,
     );
-    assert!(state.is_contour_closed(0), "Clicking near P0 must close contour 0 instead of splitting segment 0");
-    assert_eq!(state.pending_pen_first_bcp_in, None, "pending_pen_first_bcp_in must be consumed upon closing");
+    assert!(
+        state.is_contour_closed(0),
+        "Clicking near P0 must close contour 0 instead of splitting segment 0"
+    );
+    assert_eq!(
+        state.pending_pen_first_bcp_in, None,
+        "pending_pen_first_bcp_in must be consumed upon closing"
+    );
     assert_eq!(
         state.contours[0][1].point,
         FontPoint::new(204.0, 200.0),
@@ -2073,9 +2474,9 @@ fn test_spec002_f11_pen_tool_new_curve_close_priority_drag_threshold_and_first_b
 
 #[test]
 fn test_spec002_f12_authentic_v010_reference_vector_cursors_and_canvas_gating() {
-    use grafia::tokens::GlifoCursorKind;
+    use grafia::tokens::GrafiaCursorKind;
 
-    let mut state = GlifoCanvasState::init_glyph_o();
+    let mut state = GrafiaCanvasState::init_glyph_o();
     let canvas_rect = Rect::from_min_size(Pos2::new(0.0, 0.0), egui::vec2(640.0, 480.0));
 
     // 1. Outside canvas_rect when idle -> None
@@ -2090,36 +2491,43 @@ fn test_spec002_f12_authentic_v010_reference_vector_cursors_and_canvas_gating() 
     let node0_scr = state.viewport.to_screen(state.contours[0][0].point);
     assert_eq!(
         state.desired_cursor_kind(canvas_rect, Some(empty_scr)),
-        Some(GlifoCursorKind::SelectArrow)
+        Some(GrafiaCursorKind::SelectArrow)
     );
     assert_eq!(
         state.desired_cursor_kind(canvas_rect, Some(node0_scr)),
-        Some(GlifoCursorKind::SelectElement)
+        Some(GrafiaCursorKind::SelectElement)
     );
 
     // 3. PenTool over empty canvas -> PenStandard; over segment -> PenPlus; over OnCurve/P0 -> PenElement
     state.active_tool = CanvasTool::Pen;
     assert_eq!(
         state.desired_cursor_kind(canvas_rect, Some(empty_scr)),
-        Some(GlifoCursorKind::PenStandard)
+        Some(GrafiaCursorKind::PenStandard)
     );
     assert_eq!(
         state.desired_cursor_kind(canvas_rect, Some(node0_scr)),
-        Some(GlifoCursorKind::PenElement)
+        Some(GrafiaCursorKind::PenElement)
     );
 
     let seg0 = extract_segments(&state.contours[0], true)[0];
-    let ContourSegment::Cubic { cubic, .. } = seg0 else { panic!("expected cubic"); };
+    let ContourSegment::Cubic { cubic, .. } = seg0 else {
+        panic!("expected cubic");
+    };
     let mid_pt = cubic.eval(0.5);
     let mid_scr = state.viewport.to_screen(FontPoint::new(mid_pt.x, mid_pt.y));
     run_dispatch(
         &mut state,
         vec![Event::PointerMoved(Pos2::new(mid_scr.x.0, mid_scr.y.0))],
-        false, false, false, false, false, 1.0,
+        false,
+        false,
+        false,
+        false,
+        false,
+        1.0,
     );
     assert_eq!(
         state.desired_cursor_kind(canvas_rect, Some(mid_scr)),
-        Some(GlifoCursorKind::PenPlus)
+        Some(GrafiaCursorKind::PenPlus)
     );
 
     // 4. Visual Pass 5 rendering in headless.rs when cursor_screen_pos is set
@@ -2128,7 +2536,8 @@ fn test_spec002_f12_authentic_v010_reference_vector_cursors_and_canvas_gating() 
     let base_img = pixmap_to_rgba_image(rasterize_canvas_subregion(&state, &state.theme, 640, 480));
 
     state.cursor_screen_pos = Some(ScreenPoint::new(120.0, 120.0));
-    let pen_std_img = pixmap_to_rgba_image(rasterize_canvas_subregion(&state, &state.theme, 640, 480));
+    let pen_std_img =
+        pixmap_to_rgba_image(rasterize_canvas_subregion(&state, &state.theme, 640, 480));
     assert!(
         count_diff_pixels(&base_img, &pen_std_img) >= 25,
         "Pass 5 must visibly render the Vector Canvas PenStandard fountain-pen nib vector cursor"
@@ -2142,14 +2551,15 @@ fn test_spec002_f12_authentic_v010_reference_vector_cursors_and_canvas_gating() 
         point: FontPoint::new(mid_pt.x, mid_pt.y),
         distance_font: 0.0,
     });
-    let pen_plus_img = pixmap_to_rgba_image(rasterize_canvas_subregion(&state, &state.theme, 640, 480));
+    let pen_plus_img =
+        pixmap_to_rgba_image(rasterize_canvas_subregion(&state, &state.theme, 640, 480));
     assert!(
         count_diff_pixels(&base_img, &pen_plus_img) >= 35,
         "Pass 5 must visibly render the Vector Canvas PenPlus cursor and ghost node"
     );
 
     // 5. Render an open contour with pending_pen_first_bcp_in, hovered_pen_close_target halo, and PenElement cursor
-    let mut pen_open = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut pen_open = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     pen_open.viewport.zoom = 1.0;
     pen_open.viewport.pan_offset = ScreenPoint::new(40.0, 420.0);
     pen_open.active_tool = CanvasTool::Pen;
@@ -2171,9 +2581,15 @@ fn test_spec002_f12_authentic_v010_reference_vector_cursors_and_canvas_gating() 
     pen_open.hovered_pen_close_target = Some((0, NodeId(1)));
     pen_open.cursor_screen_pos = Some(p0_scr);
 
-    let out_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/visual_verification");
+    let out_dir =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target/visual_verification");
     let _ = std::fs::create_dir_all(&out_dir);
-    let close_img = pixmap_to_rgba_image(rasterize_canvas_subregion(&pen_open, &pen_open.theme, 640, 480));
+    let close_img = pixmap_to_rgba_image(rasterize_canvas_subregion(
+        &pen_open,
+        &pen_open.theme,
+        640,
+        480,
+    ));
     close_img
         .save(out_dir.join("v010_cursors_and_pen_close.png"))
         .expect("Failed to save visual verification PNG");
@@ -2184,7 +2600,7 @@ fn test_spec002_f13_ctrl_alt_drag_slides_on_curve_node_along_line_and_cubic_pres
     use kurbo::ParamCurveNearest;
 
     // 1. Slide an OnCurve node along a straight Line segment on /A with Cmd + Ctrl + Drag
-    let mut state_a = GlifoCanvasState::init_glyph_a();
+    let mut state_a = GrafiaCanvasState::init_glyph_a();
     let p0_orig = state_a.contours[0][0].point;
     let p1_orig = state_a.contours[0][1].point;
     let line0 = kurbo::Line::new(
@@ -2197,7 +2613,12 @@ fn test_spec002_f13_ctrl_alt_drag_slides_on_curve_node_along_line_and_cubic_pres
         p0_orig.y.0 + (p1_orig.y.0 - p0_orig.y.0) * 0.25 - 20.0,
     );
     let target_line_scr = state_a.viewport.to_screen(target_line_pt);
-    let cmd_ctrl_mods = EguiModifiers { command: true, mac_cmd: true, ctrl: true, ..Default::default() };
+    let cmd_ctrl_mods = EguiModifiers {
+        command: true,
+        mac_cmd: true,
+        ctrl: true,
+        ..Default::default()
+    };
 
     run_dispatch(
         &mut state_a,
@@ -2216,11 +2637,19 @@ fn test_spec002_f13_ctrl_alt_drag_slides_on_curve_node_along_line_and_cubic_pres
                 modifiers: cmd_ctrl_mods,
             },
         ],
-        false, false, true, true, false, 1.0,
+        false,
+        false,
+        true,
+        true,
+        false,
+        1.0,
     );
 
     let p0_slid = state_a.contours[0][0].point;
-    assert!(p0_slid.distance_to(p0_orig) > 20.0, "Node 0 must slide along segment 0");
+    assert!(
+        p0_slid.distance_to(p0_orig) > 20.0,
+        "Node 0 must slide along segment 0"
+    );
     let nearest_on_line = line0.nearest(kurbo::Point::new(p0_slid.x.0, p0_slid.y.0), 1e-6);
     assert!(
         nearest_on_line.distance_sq.sqrt() < 1e-3,
@@ -2229,13 +2658,17 @@ fn test_spec002_f13_ctrl_alt_drag_slides_on_curve_node_along_line_and_cubic_pres
     );
 
     // 2. Slide an OnCurve node along a Cubic curve on /o with Cmd + Ctrl + Drag preserving curvature
-    let mut state_o = GlifoCanvasState::init_glyph_o();
+    let mut state_o = GrafiaCanvasState::init_glyph_o();
     let orig_segs = extract_segments(&state_o.contours[0], true);
-    let ContourSegment::Cubic { cubic: orig_c0, .. } = orig_segs[0] else { panic!("expected cubic"); };
+    let ContourSegment::Cubic { cubic: orig_c0, .. } = orig_segs[0] else {
+        panic!("expected cubic");
+    };
     let top_id = state_o.contours[0][0].id;
     let top_scr = state_o.viewport.to_screen(state_o.contours[0][0].point);
     let slide_target_pt = orig_c0.eval(0.2);
-    let slide_target_scr = state_o.viewport.to_screen(FontPoint::new(slide_target_pt.x, slide_target_pt.y));
+    let slide_target_scr = state_o
+        .viewport
+        .to_screen(FontPoint::new(slide_target_pt.x, slide_target_pt.y));
 
     run_dispatch(
         &mut state_o,
@@ -2254,7 +2687,12 @@ fn test_spec002_f13_ctrl_alt_drag_slides_on_curve_node_along_line_and_cubic_pres
                 modifiers: cmd_ctrl_mods,
             },
         ],
-        false, false, true, true, false, 2.0,
+        false,
+        false,
+        true,
+        true,
+        false,
+        2.0,
     );
 
     let slid_top = state_o.find_node(top_id).unwrap().point;
@@ -2263,7 +2701,9 @@ fn test_spec002_f13_ctrl_alt_drag_slides_on_curve_node_along_line_and_cubic_pres
         "Slid OnCurve node must move along the cubic curve"
     );
     let new_segs = extract_segments(&state_o.contours[0], true);
-    let ContourSegment::Cubic { cubic: new_c0, .. } = new_segs[0] else { panic!("expected cubic"); };
+    let ContourSegment::Cubic { cubic: new_c0, .. } = new_segs[0] else {
+        panic!("expected cubic");
+    };
     for u in [0.25, 0.5, 0.75] {
         let pt_new = new_c0.eval(u);
         let solve = orig_c0.nearest(pt_new, 1e-6);
@@ -2281,17 +2721,27 @@ fn test_spec002_f13_ctrl_alt_drag_slides_on_curve_node_along_line_and_cubic_pres
     assert_all_views_consistent(&state_o);
 
     // 3. Asymmetric split (t = 0.25) and heal on a parallel-tangent 180° arch must preserve peak y = 510.0 and symmetry
-    let mut state_asym = GlifoCanvasState::init_glyph_o();
+    let mut state_asym = GrafiaCanvasState::init_glyph_o();
     let top_n = state_asym.contours[0][0].id;
     state_asym.selected_nodes = vec![top_n];
     assert!(press_key(&mut state_asym, Key::Delete, false, false, false));
-    let arch_seg = *extract_segments(&state_asym.contours[0], true).last().unwrap();
-    let asym_id = grafia::core::split_contour_segment(&mut state_asym.contours[0], arch_seg, 0.25, &mut state_asym.next_node_id);
+    let arch_seg = *extract_segments(&state_asym.contours[0], true)
+        .last()
+        .unwrap();
+    let asym_id = grafia::core::split_contour_segment(
+        &mut state_asym.contours[0],
+        arch_seg,
+        0.25,
+        &mut state_asym.next_node_id,
+    );
     state_asym.sync_paths_from_contours();
     state_asym.selected_nodes = vec![asym_id];
     assert!(press_key(&mut state_asym, Key::Delete, false, false, false));
     let healed_segs = extract_segments(&state_asym.contours[0], true);
-    let ContourSegment::Cubic { cubic: healed_arch, .. } = *healed_segs.last().unwrap() else {
+    let ContourSegment::Cubic {
+        cubic: healed_arch, ..
+    } = *healed_segs.last().unwrap()
+    else {
         panic!("Expected healed arch to be Cubic");
     };
     let healed_mid = healed_arch.eval(0.5);
@@ -2317,13 +2767,16 @@ fn test_spec002_f13_ctrl_alt_drag_slides_on_curve_node_along_line_and_cubic_pres
         NodeId(1),
         FontPoint::new(135.0, 290.0)
     ));
-    assert!(oval_2n[0].point.y.0 > 240.0, "2-node closed cubic oval node must slide smoothly upward");
+    assert!(
+        oval_2n[0].point.y.0 > 240.0,
+        "2-node closed cubic oval node must slide smoothly upward"
+    );
 }
 
 #[test]
 fn test_spec002_f14_reference_build4108_golden_master_vectors_and_pen_close_scenarios() {
     // 1. Hit-test priority: already-selected node wins within SELECT_NODE_HIT_RADIUS_DP = 7.5 dp
-    let mut ht = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut ht = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     ht.viewport.zoom = 1.0;
     ht.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
     ht.contours = vec![vec![
@@ -2352,7 +2805,7 @@ fn test_spec002_f14_reference_build4108_golden_master_vectors_and_pen_close_scen
 
     // 2A. Reference Golden Master 1A-2: Ctrl + Alt + Drag on OnCurve node (setInterpolate:withPoint: / Nudge)
     let make_gm_arch = || {
-        let mut s = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+        let mut s = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
         s.viewport.zoom = 1.0;
         s.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
         s.contours = vec![vec![
@@ -2373,21 +2826,55 @@ fn test_spec002_f14_reference_build4108_golden_master_vectors_and_pen_close_scen
     let gm_nudge_before = gm_nudge.snapshot();
     let p3_scr = gm_nudge.viewport.to_screen(FontPoint::new(100.0, 100.0));
     let p3_drag_scr = gm_nudge.viewport.to_screen(FontPoint::new(120.0, 130.0));
-    let ctrl_alt_mods = EguiModifiers { alt: true, ctrl: true, ..Default::default() };
+    let ctrl_alt_mods = EguiModifiers {
+        alt: true,
+        ctrl: true,
+        ..Default::default()
+    };
     run_dispatch(
         &mut gm_nudge,
         vec![
-            Event::PointerButton { pos: Pos2::new(p3_scr.x.0, p3_scr.y.0), button: PointerButton::Primary, pressed: true, modifiers: ctrl_alt_mods },
+            Event::PointerButton {
+                pos: Pos2::new(p3_scr.x.0, p3_scr.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: ctrl_alt_mods,
+            },
             Event::PointerMoved(Pos2::new(p3_drag_scr.x.0, p3_drag_scr.y.0)),
-            Event::PointerButton { pos: Pos2::new(p3_drag_scr.x.0, p3_drag_scr.y.0), button: PointerButton::Primary, pressed: false, modifiers: ctrl_alt_mods },
+            Event::PointerButton {
+                pos: Pos2::new(p3_drag_scr.x.0, p3_drag_scr.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: ctrl_alt_mods,
+            },
         ],
-        false, true, true, false, false, 1.0,
+        false,
+        true,
+        true,
+        false,
+        false,
+        1.0,
     );
-    assert!((gm_nudge.contours[0][1].point.x.0 - 0.0).abs() < 1e-4 && (gm_nudge.contours[0][1].point.y.0 - 71.5).abs() < 1e-4);
-    assert!((gm_nudge.contours[0][2].point.x.0 - 54.0).abs() < 1e-4 && (gm_nudge.contours[0][2].point.y.0 - 130.0).abs() < 1e-4);
-    assert!((gm_nudge.contours[0][3].point.x.0 - 120.0).abs() < 1e-4 && (gm_nudge.contours[0][3].point.y.0 - 130.0).abs() < 1e-4);
-    assert!((gm_nudge.contours[0][4].point.x.0 - 164.0).abs() < 1e-4 && (gm_nudge.contours[0][4].point.y.0 - 130.0).abs() < 1e-4);
-    assert!((gm_nudge.contours[0][5].point.x.0 - 200.0).abs() < 1e-4 && (gm_nudge.contours[0][5].point.y.0 - 71.5).abs() < 1e-4);
+    assert!(
+        (gm_nudge.contours[0][1].point.x.0 - 0.0).abs() < 1e-4
+            && (gm_nudge.contours[0][1].point.y.0 - 71.5).abs() < 1e-4
+    );
+    assert!(
+        (gm_nudge.contours[0][2].point.x.0 - 54.0).abs() < 1e-4
+            && (gm_nudge.contours[0][2].point.y.0 - 130.0).abs() < 1e-4
+    );
+    assert!(
+        (gm_nudge.contours[0][3].point.x.0 - 120.0).abs() < 1e-4
+            && (gm_nudge.contours[0][3].point.y.0 - 130.0).abs() < 1e-4
+    );
+    assert!(
+        (gm_nudge.contours[0][4].point.x.0 - 164.0).abs() < 1e-4
+            && (gm_nudge.contours[0][4].point.y.0 - 130.0).abs() < 1e-4
+    );
+    assert!(
+        (gm_nudge.contours[0][5].point.x.0 - 200.0).abs() < 1e-4
+            && (gm_nudge.contours[0][5].point.y.0 - 71.5).abs() < 1e-4
+    );
     gm_nudge.assert_invariants();
     assert_all_views_consistent(&gm_nudge);
     let gm_nudge_after = gm_nudge.snapshot();
@@ -2399,16 +2886,43 @@ fn test_spec002_f14_reference_build4108_golden_master_vectors_and_pen_close_scen
     // 2B. Reference Golden Master 1A-2 via Ctrl + Alt + Arrow keyboard Nudge (2x Shift+Right = +20, 3x Shift+Up = +30)
     let mut gm_key_nudge = make_gm_arch();
     gm_key_nudge.selected_nodes = vec![NodeId(4)];
-    assert!(press_key(&mut gm_key_nudge, Key::ArrowRight, true, true, true));
-    assert!(press_key(&mut gm_key_nudge, Key::ArrowRight, true, true, true));
+    assert!(press_key(
+        &mut gm_key_nudge,
+        Key::ArrowRight,
+        true,
+        true,
+        true
+    ));
+    assert!(press_key(
+        &mut gm_key_nudge,
+        Key::ArrowRight,
+        true,
+        true,
+        true
+    ));
     assert!(press_key(&mut gm_key_nudge, Key::ArrowUp, true, true, true));
     assert!(press_key(&mut gm_key_nudge, Key::ArrowUp, true, true, true));
     assert!(press_key(&mut gm_key_nudge, Key::ArrowUp, true, true, true));
-    assert!((gm_key_nudge.contours[0][1].point.x.0 - 0.0).abs() < 1e-4 && (gm_key_nudge.contours[0][1].point.y.0 - 71.5).abs() < 1e-4);
-    assert!((gm_key_nudge.contours[0][2].point.x.0 - 54.0).abs() < 1e-4 && (gm_key_nudge.contours[0][2].point.y.0 - 130.0).abs() < 1e-4);
-    assert!((gm_key_nudge.contours[0][3].point.x.0 - 120.0).abs() < 1e-4 && (gm_key_nudge.contours[0][3].point.y.0 - 130.0).abs() < 1e-4);
-    assert!((gm_key_nudge.contours[0][4].point.x.0 - 164.0).abs() < 1e-4 && (gm_key_nudge.contours[0][4].point.y.0 - 130.0).abs() < 1e-4);
-    assert!((gm_key_nudge.contours[0][5].point.x.0 - 200.0).abs() < 1e-4 && (gm_key_nudge.contours[0][5].point.y.0 - 71.5).abs() < 1e-4);
+    assert!(
+        (gm_key_nudge.contours[0][1].point.x.0 - 0.0).abs() < 1e-4
+            && (gm_key_nudge.contours[0][1].point.y.0 - 71.5).abs() < 1e-4
+    );
+    assert!(
+        (gm_key_nudge.contours[0][2].point.x.0 - 54.0).abs() < 1e-4
+            && (gm_key_nudge.contours[0][2].point.y.0 - 130.0).abs() < 1e-4
+    );
+    assert!(
+        (gm_key_nudge.contours[0][3].point.x.0 - 120.0).abs() < 1e-4
+            && (gm_key_nudge.contours[0][3].point.y.0 - 130.0).abs() < 1e-4
+    );
+    assert!(
+        (gm_key_nudge.contours[0][4].point.x.0 - 164.0).abs() < 1e-4
+            && (gm_key_nudge.contours[0][4].point.y.0 - 130.0).abs() < 1e-4
+    );
+    assert!(
+        (gm_key_nudge.contours[0][5].point.x.0 - 200.0).abs() < 1e-4
+            && (gm_key_nudge.contours[0][5].point.y.0 - 71.5).abs() < 1e-4
+    );
     gm_key_nudge.assert_invariants();
     assert_all_views_consistent(&gm_key_nudge);
 
@@ -2420,15 +2934,34 @@ fn test_spec002_f14_reference_build4108_golden_master_vectors_and_pen_close_scen
     run_dispatch(
         &mut gm_mirror,
         vec![
-            Event::PointerButton { pos: Pos2::new(h_in_scr.x.0, h_in_scr.y.0), button: PointerButton::Primary, pressed: true, modifiers: ctrl_alt_mods },
+            Event::PointerButton {
+                pos: Pos2::new(h_in_scr.x.0, h_in_scr.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: ctrl_alt_mods,
+            },
             Event::PointerMoved(Pos2::new(h_in_drag_scr.x.0, h_in_drag_scr.y.0)),
-            Event::PointerButton { pos: Pos2::new(h_in_drag_scr.x.0, h_in_drag_scr.y.0), button: PointerButton::Primary, pressed: false, modifiers: ctrl_alt_mods },
+            Event::PointerButton {
+                pos: Pos2::new(h_in_drag_scr.x.0, h_in_drag_scr.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: ctrl_alt_mods,
+            },
         ],
-        false, true, true, false, false, 1.0,
+        false,
+        true,
+        true,
+        false,
+        false,
+        1.0,
     );
-    assert!((gm_mirror.contours[0][2].point.x.0 - 65.0).abs() < 1e-4 && (gm_mirror.contours[0][2].point.y.0 - 130.0).abs() < 1e-4);
     assert!(
-        (gm_mirror.contours[0][4].point.x.0 - 135.0).abs() < 1e-4 && (gm_mirror.contours[0][4].point.y.0 - 70.0).abs() < 1e-4,
+        (gm_mirror.contours[0][2].point.x.0 - 65.0).abs() < 1e-4
+            && (gm_mirror.contours[0][2].point.y.0 - 130.0).abs() < 1e-4
+    );
+    assert!(
+        (gm_mirror.contours[0][4].point.x.0 - 135.0).abs() < 1e-4
+            && (gm_mirror.contours[0][4].point.y.0 - 70.0).abs() < 1e-4,
         "setMirrored: opposite handle must mirror to (135.0, 70.0), got {:?}",
         gm_mirror.contours[0][4].point
     );
@@ -2441,18 +2974,38 @@ fn test_spec002_f14_reference_build4108_golden_master_vectors_and_pen_close_scen
     assert_eq!(gm_mirror.contours, gm_mirror_after.contours);
 
     // 3A & 3B. Reference Golden Master Test 2A & Test 2B: Cmd + Ctrl + Drag on Smooth OnCurve node (moveNodeOnPath: / shiftMiddle:) via run_dispatch
-    let cmd_ctrl_mods = EguiModifiers { command: true, mac_cmd: true, ctrl: true, ..Default::default() };
+    let cmd_ctrl_mods = EguiModifiers {
+        command: true,
+        mac_cmd: true,
+        ctrl: true,
+        ..Default::default()
+    };
     let mut gm_slide_2a = make_gm_arch();
     let gm_slide_2a_before = gm_slide_2a.snapshot();
     let s_2a_target = gm_slide_2a.viewport.to_screen(FontPoint::new(120.0, 100.0));
     run_dispatch(
         &mut gm_slide_2a,
         vec![
-            Event::PointerButton { pos: Pos2::new(p3_scr.x.0, p3_scr.y.0), button: PointerButton::Primary, pressed: true, modifiers: cmd_ctrl_mods },
+            Event::PointerButton {
+                pos: Pos2::new(p3_scr.x.0, p3_scr.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: cmd_ctrl_mods,
+            },
             Event::PointerMoved(Pos2::new(s_2a_target.x.0, s_2a_target.y.0)),
-            Event::PointerButton { pos: Pos2::new(s_2a_target.x.0, s_2a_target.y.0), button: PointerButton::Primary, pressed: false, modifiers: cmd_ctrl_mods },
+            Event::PointerButton {
+                pos: Pos2::new(s_2a_target.x.0, s_2a_target.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: cmd_ctrl_mods,
+            },
         ],
-        false, false, true, true, false, 1.0,
+        false,
+        false,
+        true,
+        true,
+        false,
+        1.0,
     );
     let p3_2a = gm_slide_2a.contours[0][3].point;
     let exact_2a_x = 4_294_360.0 / 35_937.0;
@@ -2476,11 +3029,26 @@ fn test_spec002_f14_reference_build4108_golden_master_vectors_and_pen_close_scen
     run_dispatch(
         &mut gm_slide_2b,
         vec![
-            Event::PointerButton { pos: Pos2::new(p3_scr.x.0, p3_scr.y.0), button: PointerButton::Primary, pressed: true, modifiers: cmd_ctrl_mods },
+            Event::PointerButton {
+                pos: Pos2::new(p3_scr.x.0, p3_scr.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: cmd_ctrl_mods,
+            },
             Event::PointerMoved(Pos2::new(s_2b_target.x.0, s_2b_target.y.0)),
-            Event::PointerButton { pos: Pos2::new(s_2b_target.x.0, s_2b_target.y.0), button: PointerButton::Primary, pressed: false, modifiers: cmd_ctrl_mods },
+            Event::PointerButton {
+                pos: Pos2::new(s_2b_target.x.0, s_2b_target.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: cmd_ctrl_mods,
+            },
         ],
-        false, false, true, true, false, 1.0,
+        false,
+        false,
+        true,
+        true,
+        false,
+        1.0,
     );
     let p3_2b = gm_slide_2b.contours[0][3].point;
     let exact_2b_x = 2_893_040.0 / 35_937.0;
@@ -2500,15 +3068,35 @@ fn test_spec002_f14_reference_build4108_golden_master_vectors_and_pen_close_scen
 
     // Verify bare Ctrl (without Cmd and without Alt) in SelectTool performs standard translation, NOT path sliding
     let mut gm_bare_ctrl = make_gm_arch();
-    let bare_ctrl_mods = EguiModifiers { command: false, mac_cmd: false, ctrl: true, ..Default::default() };
+    let bare_ctrl_mods = EguiModifiers {
+        command: false,
+        mac_cmd: false,
+        ctrl: true,
+        ..Default::default()
+    };
     run_dispatch(
         &mut gm_bare_ctrl,
         vec![
-            Event::PointerButton { pos: Pos2::new(p3_scr.x.0, p3_scr.y.0), button: PointerButton::Primary, pressed: true, modifiers: bare_ctrl_mods },
+            Event::PointerButton {
+                pos: Pos2::new(p3_scr.x.0, p3_scr.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: bare_ctrl_mods,
+            },
             Event::PointerMoved(Pos2::new(s_2a_target.x.0, s_2a_target.y.0)),
-            Event::PointerButton { pos: Pos2::new(s_2a_target.x.0, s_2a_target.y.0), button: PointerButton::Primary, pressed: false, modifiers: bare_ctrl_mods },
+            Event::PointerButton {
+                pos: Pos2::new(s_2a_target.x.0, s_2a_target.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: bare_ctrl_mods,
+            },
         ],
-        false, false, false, true, false, 1.0,
+        false,
+        false,
+        false,
+        true,
+        false,
+        1.0,
     );
     assert!(
         (gm_bare_ctrl.contours[0][3].point.x.0 - 120.0).abs() < 1e-4
@@ -2517,7 +3105,7 @@ fn test_spec002_f14_reference_build4108_golden_master_vectors_and_pen_close_scen
     );
 
     // 3C. Reference Golden Master Test 2C: Alt + Drag on a Smooth OnCurve point between straight line segments (nearest_point_on_line)
-    let mut gm_2c = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut gm_2c = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     gm_2c.viewport.zoom = 1.0;
     gm_2c.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
     gm_2c.contours = vec![vec![
@@ -2530,15 +3118,33 @@ fn test_spec002_f14_reference_build4108_golden_master_vectors_and_pen_close_scen
     let gm_2c_before = gm_2c.snapshot();
     let s_100 = gm_2c.viewport.to_screen(FontPoint::new(100.0, 100.0));
     let s_120_90 = gm_2c.viewport.to_screen(FontPoint::new(120.0, 90.0));
-    let alt_mods = EguiModifiers { alt: true, ..Default::default() };
+    let alt_mods = EguiModifiers {
+        alt: true,
+        ..Default::default()
+    };
     run_dispatch(
         &mut gm_2c,
         vec![
-            Event::PointerButton { pos: Pos2::new(s_100.x.0, s_100.y.0), button: PointerButton::Primary, pressed: true, modifiers: alt_mods },
+            Event::PointerButton {
+                pos: Pos2::new(s_100.x.0, s_100.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: alt_mods,
+            },
             Event::PointerMoved(Pos2::new(s_120_90.x.0, s_120_90.y.0)),
-            Event::PointerButton { pos: Pos2::new(s_120_90.x.0, s_120_90.y.0), button: PointerButton::Primary, pressed: false, modifiers: alt_mods },
+            Event::PointerButton {
+                pos: Pos2::new(s_120_90.x.0, s_120_90.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: alt_mods,
+            },
         ],
-        false, true, false, false, false, 1.0,
+        false,
+        true,
+        false,
+        false,
+        false,
+        1.0,
     );
     assert!(
         (gm_2c.contours[0][1].point.x.0 - 105.0).abs() < 1e-4
@@ -2549,7 +3155,10 @@ fn test_spec002_f14_reference_build4108_golden_master_vectors_and_pen_close_scen
     gm_2c.assert_invariants();
     assert_all_views_consistent(&gm_2c);
     let gm_2c_after = gm_2c.snapshot();
-    assert!(gm_2c.undo(), "Alt + Drag on Smooth line node must be undoable");
+    assert!(
+        gm_2c.undo(),
+        "Alt + Drag on Smooth line node must be undoable"
+    );
     assert_eq!(
         gm_2c.contours, gm_2c_before.contours,
         "Single Undo after Alt + Drag (Test 2C) must restore exact pre-drag contour without duplicate Toggle history entry"
@@ -2564,7 +3173,7 @@ fn test_spec002_f14_reference_build4108_golden_master_vectors_and_pen_close_scen
     // 4. PenTool Scenarios C1, C2, C3 (start point node[0] placed WITH drag, preserving contours[0][1]!)
     // Scenario C1: node[0] placed with drag -> node[1] placed without drag -> close on node[0] without drag
     //              preserves contours[0][1] AND converts node[0] from Smooth to Corner (half-line/half-curve checkConnection)!
-    let mut pen_c1 = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut pen_c1 = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     pen_c1.viewport.zoom = 1.0;
     pen_c1.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
     pen_c1.active_tool = CanvasTool::Pen;
@@ -2575,30 +3184,91 @@ fn test_spec002_f14_reference_build4108_golden_master_vectors_and_pen_close_scen
     run_dispatch(
         &mut pen_c1,
         vec![
-            Event::PointerButton { pos: Pos2::new(c_p0.x.0, c_p0.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(c_p0.x.0, c_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
             Event::PointerMoved(Pos2::new(c_p0_out.x.0, c_p0_out.y.0)),
-            Event::PointerButton { pos: Pos2::new(c_p0_out.x.0, c_p0_out.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(c_p1.x.0, c_p1.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(c_p1.x.0, c_p1.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(c_p2.x.0, c_p2.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(c_p2.x.0, c_p2.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(c_p0_out.x.0, c_p0_out.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(c_p1.x.0, c_p1.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(c_p1.x.0, c_p1.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(c_p2.x.0, c_p2.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(c_p2.x.0, c_p2.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
             Event::PointerMoved(Pos2::new(c_p0.x.0, c_p0.y.0)),
         ],
-        false, false, false, false, false, 1.0,
+        false,
+        false,
+        false,
+        false,
+        false,
+        1.0,
     );
-    assert_eq!(pen_c1.hovered_pen_close_node, Some(pen_c1.contours[0][0].id));
+    assert_eq!(
+        pen_c1.hovered_pen_close_node,
+        Some(pen_c1.contours[0][0].id)
+    );
     let pen_c1_open_snap = pen_c1.snapshot();
     run_dispatch(
         &mut pen_c1,
         vec![
-            Event::PointerButton { pos: Pos2::new(c_p0.x.0, c_p0.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(c_p0.x.0, c_p0.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(c_p0.x.0, c_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(c_p0.x.0, c_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
         ],
-        false, false, false, false, false, 2.0,
+        false,
+        false,
+        false,
+        false,
+        false,
+        2.0,
     );
     assert!(pen_c1.is_contour_closed(0));
-    assert_eq!(pen_c1.contours[0][1].point, FontPoint::new(140.0, 150.0), "Scenario C1 must preserve contours[0][1]");
-    assert_eq!(pen_c1.contours[0][0].node_type, NodeType::Corner, "Scenario C1 half-line/half-curve close without drag must set node[0] to Corner");
+    assert_eq!(
+        pen_c1.contours[0][1].point,
+        FontPoint::new(140.0, 150.0),
+        "Scenario C1 must preserve contours[0][1]"
+    );
+    assert_eq!(
+        pen_c1.contours[0][0].node_type,
+        NodeType::Corner,
+        "Scenario C1 half-line/half-curve close without drag must set node[0] to Corner"
+    );
     let c1_segs = extract_segments(&pen_c1.contours[0], true);
     assert!(
         matches!(c1_segs.last(), Some(ContourSegment::Line { .. })),
@@ -2615,7 +3285,7 @@ fn test_spec002_f14_reference_build4108_golden_master_vectors_and_pen_close_scen
     assert!(pen_c1.is_contour_closed(0));
 
     // Scenario C2: node[0] placed with drag -> close on node[0] WITH drag mirrors h2 = 2*node[0] - dragPt while preserving contours[0][1]!
-    let mut pen_c2 = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut pen_c2 = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     pen_c2.viewport.zoom = 1.0;
     pen_c2.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
     pen_c2.active_tool = CanvasTool::Pen;
@@ -2623,18 +3293,63 @@ fn test_spec002_f14_reference_build4108_golden_master_vectors_and_pen_close_scen
     run_dispatch(
         &mut pen_c2,
         vec![
-            Event::PointerButton { pos: Pos2::new(c_p0.x.0, c_p0.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(c_p0.x.0, c_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
             Event::PointerMoved(Pos2::new(c_p0_out.x.0, c_p0_out.y.0)),
-            Event::PointerButton { pos: Pos2::new(c_p0_out.x.0, c_p0_out.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(c_p1.x.0, c_p1.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(c_p1.x.0, c_p1.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(c_p2.x.0, c_p2.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(c_p2.x.0, c_p2.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(c_p0.x.0, c_p0.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(c_p0_out.x.0, c_p0_out.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(c_p1.x.0, c_p1.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(c_p1.x.0, c_p1.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(c_p2.x.0, c_p2.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(c_p2.x.0, c_p2.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(c_p0.x.0, c_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
             Event::PointerMoved(Pos2::new(c_close_drag.x.0, c_close_drag.y.0)),
-            Event::PointerButton { pos: Pos2::new(c_close_drag.x.0, c_close_drag.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(c_close_drag.x.0, c_close_drag.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
         ],
-        false, false, false, false, false, 1.0,
+        false,
+        false,
+        false,
+        false,
+        false,
+        1.0,
     );
     assert!(pen_c2.is_contour_closed(0));
     assert_eq!(pen_c2.contours[0][0].node_type, NodeType::Smooth);
@@ -2658,7 +3373,7 @@ fn test_spec002_f14_reference_build4108_golden_master_vectors_and_pen_close_scen
 
     // Scenario C3: node[0] placed with drag AND prevNode placed with drag (pending_pen_bcp_out = (200, 30)) ->
     //              close on node[0] with drag preserves both contours[0][1] and h1 = prev_out, and mirrors h2 = 2*node[0] - dragPt!
-    let mut pen_c3 = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut pen_c3 = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     pen_c3.viewport.zoom = 1.0;
     pen_c3.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
     pen_c3.active_tool = CanvasTool::Pen;
@@ -2666,25 +3381,82 @@ fn test_spec002_f14_reference_build4108_golden_master_vectors_and_pen_close_scen
     run_dispatch(
         &mut pen_c3,
         vec![
-            Event::PointerButton { pos: Pos2::new(c_p0.x.0, c_p0.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(c_p0.x.0, c_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
             Event::PointerMoved(Pos2::new(c_p0_out.x.0, c_p0_out.y.0)),
-            Event::PointerButton { pos: Pos2::new(c_p0_out.x.0, c_p0_out.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(c_p1.x.0, c_p1.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(c_p1.x.0, c_p1.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(c_p2.x.0, c_p2.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(c_p0_out.x.0, c_p0_out.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(c_p1.x.0, c_p1.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(c_p1.x.0, c_p1.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(c_p2.x.0, c_p2.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
             Event::PointerMoved(Pos2::new(c_p2_out.x.0, c_p2_out.y.0)),
-            Event::PointerButton { pos: Pos2::new(c_p2_out.x.0, c_p2_out.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(c_p0.x.0, c_p0.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(c_p2_out.x.0, c_p2_out.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(c_p0.x.0, c_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
             Event::PointerMoved(Pos2::new(c_close_drag.x.0, c_close_drag.y.0)),
-            Event::PointerButton { pos: Pos2::new(c_close_drag.x.0, c_close_drag.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(c_close_drag.x.0, c_close_drag.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
         ],
-        false, false, false, false, false, 1.0,
+        false,
+        false,
+        false,
+        false,
+        false,
+        1.0,
     );
     assert!(pen_c3.is_contour_closed(0));
-    assert_eq!(pen_c3.contours[0][1].point, FontPoint::new(140.0, 150.0), "Scenario C3 must preserve contours[0][1]");
+    assert_eq!(
+        pen_c3.contours[0][1].point,
+        FontPoint::new(140.0, 150.0),
+        "Scenario C3 must preserve contours[0][1]"
+    );
     let c3_len = pen_c3.contours[0].len();
-    assert_eq!(pen_c3.contours[0][c3_len - 2].point, FontPoint::new(200.0, 30.0), "Scenario C3 must preserve prevNode's explicit h1");
-    assert_eq!(pen_c3.contours[0][c3_len - 1].point, FontPoint::new(120.0, 70.0), "Scenario C3 must mirror dragPt into h2 = (120,70)");
+    assert_eq!(
+        pen_c3.contours[0][c3_len - 2].point,
+        FontPoint::new(200.0, 30.0),
+        "Scenario C3 must preserve prevNode's explicit h1"
+    );
+    assert_eq!(
+        pen_c3.contours[0][c3_len - 1].point,
+        FontPoint::new(120.0, 70.0),
+        "Scenario C3 must mirror dragPt into h2 = (120,70)"
+    );
     pen_c3.assert_invariants();
     assert_all_views_consistent(&pen_c3);
     let pen_c3_closed_snap = pen_c3.snapshot();
@@ -2694,7 +3466,7 @@ fn test_spec002_f14_reference_build4108_golden_master_vectors_and_pen_close_scen
     assert_eq!(pen_c3.contours, pen_c3_closed_snap.contours);
 
     // 5. Invariant validation on hovered_pen_close_node & Delete cleanup
-    let mut inv_state = GlifoCanvasState::init_glyph_a();
+    let mut inv_state = GrafiaCanvasState::init_glyph_a();
     inv_state.hovered_pen_close_node = Some(NodeId(99999));
     assert!(
         inv_state.validate_invariants().is_err(),
@@ -2703,7 +3475,10 @@ fn test_spec002_f14_reference_build4108_golden_master_vectors_and_pen_close_scen
     inv_state.hovered_pen_close_node = Some(inv_state.contours[0][0].id);
     inv_state.selected_nodes = vec![inv_state.contours[0][0].id];
     assert!(press_key(&mut inv_state, Key::Delete, false, false, false));
-    assert_eq!(inv_state.hovered_pen_close_node, None, "Delete must clear hovered_pen_close_node");
+    assert_eq!(
+        inv_state.hovered_pen_close_node, None,
+        "Delete must clear hovered_pen_close_node"
+    );
 }
 
 #[test]
@@ -2736,22 +3511,26 @@ fn test_spec002_f15_dual_oracle_reference_build4108_json_differential_golden_mas
             })
             .collect()
     };
-    let assert_nodes_match_json = |actual: &[Node], expected_arr: &serde_json::Value, label: &str| {
-        let exp = parse_nodes(expected_arr);
-        assert_eq!(actual.len(), exp.len(), "{label}: node count mismatch");
-        for (idx, (a, e)) in actual.iter().zip(exp.iter()).enumerate() {
-            assert!(
-                (a.point.x.0 - e.point.x.0).abs() < 1e-4
-                    && (a.point.y.0 - e.point.y.0).abs() < 1e-4,
-                "{label}[{idx}]: expected ({}, {}), got ({}, {})",
-                e.point.x.0,
-                e.point.y.0,
-                a.point.x.0,
-                a.point.y.0
-            );
-            assert_eq!(a.node_type, e.node_type, "{label}[{idx}]: node_type mismatch");
-        }
-    };
+    let assert_nodes_match_json =
+        |actual: &[Node], expected_arr: &serde_json::Value, label: &str| {
+            let exp = parse_nodes(expected_arr);
+            assert_eq!(actual.len(), exp.len(), "{label}: node count mismatch");
+            for (idx, (a, e)) in actual.iter().zip(exp.iter()).enumerate() {
+                assert!(
+                    (a.point.x.0 - e.point.x.0).abs() < 1e-4
+                        && (a.point.y.0 - e.point.y.0).abs() < 1e-4,
+                    "{label}[{idx}]: expected ({}, {}), got ({}, {})",
+                    e.point.x.0,
+                    e.point.y.0,
+                    a.point.x.0,
+                    a.point.y.0
+                );
+                assert_eq!(
+                    a.node_type, e.node_type,
+                    "{label}[{idx}]: node_type mismatch"
+                );
+            }
+        };
 
     // 1. De Casteljau split at t=0.5
     let dc = &gm["de_casteljau_split_t05"];
@@ -2768,7 +3547,7 @@ fn test_spec002_f15_dual_oracle_reference_build4108_json_differential_golden_mas
 
     // 2. Extremum snap with Shift + PenTool
     let ex = &gm["extremum_snap_shift_pen"];
-    let mut ex_state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut ex_state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     ex_state.viewport.zoom = 1.0;
     ex_state.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
     ex_state.active_tool = CanvasTool::Pen;
@@ -2779,7 +3558,10 @@ fn test_spec002_f15_dual_oracle_reference_build4108_json_differential_golden_mas
         ex["probe_point"]["x"].as_f64().unwrap(),
         ex["probe_point"]["y"].as_f64().unwrap(),
     ));
-    let shift_mods = EguiModifiers { shift: true, ..Default::default() };
+    let shift_mods = EguiModifiers {
+        shift: true,
+        ..Default::default()
+    };
     run_dispatch(
         &mut ex_state,
         vec![
@@ -2797,7 +3579,12 @@ fn test_spec002_f15_dual_oracle_reference_build4108_json_differential_golden_mas
                 modifiers: shift_mods,
             },
         ],
-        true, false, false, false, false, 1.0,
+        true,
+        false,
+        false,
+        false,
+        false,
+        1.0,
     );
     let exp_ex_pt = FontPoint::new(
         ex["expected_extremum_point"]["x"].as_f64().unwrap(),
@@ -2805,15 +3592,24 @@ fn test_spec002_f15_dual_oracle_reference_build4108_json_differential_golden_mas
     );
     assert!((ex_state.contours[0][3].point.x.0 - exp_ex_pt.x.0).abs() < 1e-4);
     assert!((ex_state.contours[0][3].point.y.0 - exp_ex_pt.y.0).abs() < 1e-4);
-    assert!((ex_state.contours[0][2].point.x.0 - ex["expected_left_bcp"]["x"].as_f64().unwrap()).abs() < 1e-4);
-    assert!((ex_state.contours[0][4].point.x.0 - ex["expected_right_bcp"]["x"].as_f64().unwrap()).abs() < 1e-4);
+    assert!(
+        (ex_state.contours[0][2].point.x.0 - ex["expected_left_bcp"]["x"].as_f64().unwrap()).abs()
+            < 1e-4
+    );
+    assert!(
+        (ex_state.contours[0][4].point.x.0 - ex["expected_right_bcp"]["x"].as_f64().unwrap()).abs()
+            < 1e-4
+    );
 
     // 3. Heal delete S-curve
     let hd = &gm["heal_delete_scurve"];
     let mut hd_nodes = parse_nodes(&hd["input_nodes"]);
     let del_id = hd_nodes[hd["delete_node_index"].as_u64().unwrap() as usize].id;
     grafia::core::heal_delete_nodes(&mut hd_nodes, false, &[del_id], &mut next_id);
-    assert_eq!(hd_nodes.len(), hd["expected_node_count"].as_u64().unwrap() as usize);
+    assert_eq!(
+        hd_nodes.len(),
+        hd["expected_node_count"].as_u64().unwrap() as usize
+    );
     let hd_cubic = kurbo::CubicBez::new(
         kurbo::Point::new(hd_nodes[0].point.x.0, hd_nodes[0].point.y.0),
         kurbo::Point::new(hd_nodes[1].point.x.0, hd_nodes[1].point.y.0),
@@ -2835,8 +3631,16 @@ fn test_spec002_f15_dual_oracle_reference_build4108_json_differential_golden_mas
     let ro = &gm["remove_off_curve_segment_handles"];
     let mut ro_nodes = parse_nodes(&ro["input_nodes"]);
     let ro_del_id = ro_nodes[ro["delete_node_index"].as_u64().unwrap() as usize].id;
-    assert!(grafia::core::remove_off_curve_segment_handles(&mut ro_nodes, true, ro_del_id));
-    assert_nodes_match_json(&ro_nodes, &ro["expected_nodes"], "remove_off_curve_segment_handles");
+    assert!(grafia::core::remove_off_curve_segment_handles(
+        &mut ro_nodes,
+        true,
+        ro_del_id
+    ));
+    assert_nodes_match_json(
+        &ro_nodes,
+        &ro["expected_nodes"],
+        "remove_off_curve_segment_handles",
+    );
 
     // 6. dragCurve 4 cases
     let dc4 = &gm["drag_curve_4_cases"];
@@ -2853,9 +3657,21 @@ fn test_spec002_f15_dual_oracle_reference_build4108_json_differential_golden_mas
     );
     for (case_key, p0_type, p3_type) in [
         ("case_a_corner_corner", NodeType::Corner, NodeType::Corner),
-        ("case_b_smooth_smooth_vertical_tangents", NodeType::Smooth, NodeType::Smooth),
-        ("case_c_smooth_corner_vertical_p0", NodeType::Smooth, NodeType::Corner),
-        ("case_d_corner_smooth_vertical_p3", NodeType::Corner, NodeType::Smooth),
+        (
+            "case_b_smooth_smooth_vertical_tangents",
+            NodeType::Smooth,
+            NodeType::Smooth,
+        ),
+        (
+            "case_c_smooth_corner_vertical_p0",
+            NodeType::Smooth,
+            NodeType::Corner,
+        ),
+        (
+            "case_d_corner_smooth_vertical_p3",
+            NodeType::Corner,
+            NodeType::Smooth,
+        ),
     ] {
         let mut nodes = vec![
             Node::new(NodeId(1), 0.0, -50.0, NodeType::Corner),
@@ -2867,15 +3683,7 @@ fn test_spec002_f15_dual_oracle_reference_build4108_json_differential_golden_mas
         ];
         let seg = extract_segments(&nodes, true)[1];
         grafia::core::apply_cubic_segment_belly_drag_with_alt(
-            &mut nodes,
-            true,
-            seg,
-            t_drag,
-            init_h1,
-            init_h2,
-            dx_drag,
-            dy_drag,
-            false,
+            &mut nodes, true, seg, t_drag, init_h1, init_h2, dx_drag, dy_drag, false,
         );
         let exp_h1 = &dc4[case_key]["expected_h1"];
         let exp_h2 = &dc4[case_key]["expected_h2"];
@@ -2896,7 +3704,7 @@ fn test_spec002_f15_dual_oracle_reference_build4108_json_differential_golden_mas
     // 7. Ctrl+Alt Nudge setInterpolate:withPoint: (1A-1 and 1A-2)
     for case_key in ["case_1a1_single_cubic", "case_1a2_two_segment_arch"] {
         let c = &gm["ctrl_alt_nudge_interpolate"][case_key];
-        let mut s = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+        let mut s = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
         s.contours = vec![parse_nodes(&c["input_nodes"])];
         s.active_contour_closed = true;
         s.sync_paths_from_contours();
@@ -2915,7 +3723,7 @@ fn test_spec002_f15_dual_oracle_reference_build4108_json_differential_golden_mas
 
     // 8. Ctrl+Alt setMirrored on OffCurve handle
     let sm = &gm["ctrl_alt_set_mirrored"];
-    let mut sm_state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut sm_state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     sm_state.contours = vec![parse_nodes(
         &gm["ctrl_alt_nudge_interpolate"]["case_1a2_two_segment_arch"]["input_nodes"],
     )];
@@ -2932,30 +3740,34 @@ fn test_spec002_f15_dual_oracle_reference_build4108_json_differential_golden_mas
         true,
     );
     assert!(
-        (sm_state.contours[0][2].point.x.0 - sm["expected_dragged_handle"]["x"].as_f64().unwrap()).abs() < 1e-4
-            && (sm_state.contours[0][2].point.y.0 - sm["expected_dragged_handle"]["y"].as_f64().unwrap()).abs() < 1e-4
+        (sm_state.contours[0][2].point.x.0 - sm["expected_dragged_handle"]["x"].as_f64().unwrap())
+            .abs()
+            < 1e-4
+            && (sm_state.contours[0][2].point.y.0
+                - sm["expected_dragged_handle"]["y"].as_f64().unwrap())
+            .abs()
+                < 1e-4
     );
     assert!(
-        (sm_state.contours[0][4].point.x.0 - sm["expected_opposite_handle"]["x"].as_f64().unwrap()).abs() < 1e-4
-            && (sm_state.contours[0][4].point.y.0 - sm["expected_opposite_handle"]["y"].as_f64().unwrap()).abs() < 1e-4
+        (sm_state.contours[0][4].point.x.0 - sm["expected_opposite_handle"]["x"].as_f64().unwrap())
+            .abs()
+            < 1e-4
+            && (sm_state.contours[0][4].point.y.0
+                - sm["expected_opposite_handle"]["y"].as_f64().unwrap())
+            .abs()
+                < 1e-4
     );
 
     // 9. Cmd+Ctrl Slide Node On Path (2A & 2B)
     let sl = &gm["cmd_ctrl_slide_node_on_path"];
-    let sl_init = parse_nodes(
-        &gm["ctrl_alt_nudge_interpolate"]["case_1a2_two_segment_arch"]["input_nodes"],
-    );
+    let sl_init =
+        parse_nodes(&gm["ctrl_alt_nudge_interpolate"]["case_1a2_two_segment_arch"]["input_nodes"]);
     let mut sl_2a = sl_init.clone();
     let mid_id = sl_2a[3].id;
     let dx_2a = sl["case_2a_target"]["x"].as_f64().unwrap() - sl_init[3].point.x.0;
     let dy_2a = sl["case_2a_target"]["y"].as_f64().unwrap() - sl_init[3].point.y.0;
     assert!(grafia::core::slide_smooth_node_on_cubic_path_shift_middle(
-        &mut sl_2a,
-        &sl_init,
-        true,
-        mid_id,
-        dx_2a,
-        dy_2a,
+        &mut sl_2a, &sl_init, true, mid_id, dx_2a, dy_2a,
     ));
     assert!((sl_2a[3].point.x.0 - sl["case_2a_expected_node"]["x"].as_f64().unwrap()).abs() < 1e-9);
     assert!((sl_2a[3].point.y.0 - sl["case_2a_expected_node"]["y"].as_f64().unwrap()).abs() < 1e-9);
@@ -2964,12 +3776,7 @@ fn test_spec002_f15_dual_oracle_reference_build4108_json_differential_golden_mas
     let dx_2b = sl["case_2b_target"]["x"].as_f64().unwrap() - sl_init[3].point.x.0;
     let dy_2b = sl["case_2b_target"]["y"].as_f64().unwrap() - sl_init[3].point.y.0;
     assert!(grafia::core::slide_smooth_node_on_cubic_path_shift_middle(
-        &mut sl_2b,
-        &sl_init,
-        true,
-        mid_id,
-        dx_2b,
-        dy_2b,
+        &mut sl_2b, &sl_init, true, mid_id, dx_2b, dy_2b,
     ));
     assert!((sl_2b[3].point.x.0 - sl["case_2b_expected_node"]["x"].as_f64().unwrap()).abs() < 1e-9);
     assert!((sl_2b[3].point.y.0 - sl["case_2b_expected_node"]["y"].as_f64().unwrap()).abs() < 1e-9);
@@ -2991,11 +3798,19 @@ fn test_spec002_f15_dual_oracle_reference_build4108_json_differential_golden_mas
     ));
     assert!((sl2c_nodes[1].point.x.0 - sl2c["expected_point"]["x"].as_f64().unwrap()).abs() < 1e-6);
     assert!((sl2c_nodes[1].point.y.0 - sl2c["expected_point"]["y"].as_f64().unwrap()).abs() < 1e-6);
-    assert_eq!(sl2c_nodes[1].node_type, parse_node_type(sl2c["expected_node_type"].as_str().unwrap()));
+    assert_eq!(
+        sl2c_nodes[1].node_type,
+        parse_node_type(sl2c["expected_node_type"].as_str().unwrap())
+    );
 
     // 11. PenTool Close Scenarios A, B, C1, C2, C3 from Golden Master JSON
     let pcs = &gm["pen_close_scenarios"];
-    let gm_pt = |key: &str| FontPoint::new(pcs[key]["x"].as_f64().unwrap(), pcs[key]["y"].as_f64().unwrap());
+    let gm_pt = |key: &str| {
+        FontPoint::new(
+            pcs[key]["x"].as_f64().unwrap(),
+            pcs[key]["y"].as_f64().unwrap(),
+        )
+    };
     let p0_pt = gm_pt("p0");
     let p0_out_pt = gm_pt("p0_out");
     let p1_pt = gm_pt("p1");
@@ -3004,7 +3819,7 @@ fn test_spec002_f15_dual_oracle_reference_build4108_json_differential_golden_mas
     let close_drag_pt = gm_pt("close_drag");
 
     let new_pen_gm_state = || {
-        let mut s = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+        let mut s = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
         s.viewport.zoom = 1.0;
         s.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
         s.active_tool = CanvasTool::Pen;
@@ -3022,123 +3837,399 @@ fn test_spec002_f15_dual_oracle_reference_build4108_json_differential_golden_mas
     run_dispatch(
         &mut gm_pen_a,
         vec![
-            Event::PointerButton { pos: Pos2::new(s_p0.x.0, s_p0.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p0.x.0, s_p0.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p1.x.0, s_p1.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p1.x.0, s_p1.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p2.x.0, s_p2.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p2.x.0, s_p2.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p0.x.0, s_p0.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p0.x.0, s_p0.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(s_p0.x.0, s_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p0.x.0, s_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p1.x.0, s_p1.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p1.x.0, s_p1.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p2.x.0, s_p2.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p2.x.0, s_p2.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p0.x.0, s_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p0.x.0, s_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
         ],
-        false, false, false, false, false, 1.0,
+        false,
+        false,
+        false,
+        false,
+        false,
+        1.0,
     );
     assert!(gm_pen_a.is_contour_closed(0));
-    assert_eq!(gm_pen_a.contours[0].len(), pcs["scenario_a_expected_count"].as_u64().unwrap() as usize);
-    assert_eq!(gm_pen_a.contours[0][0].node_type, parse_node_type(pcs["scenario_a_expected_node0_type"].as_str().unwrap()));
+    assert_eq!(
+        gm_pen_a.contours[0].len(),
+        pcs["scenario_a_expected_count"].as_u64().unwrap() as usize
+    );
+    assert_eq!(
+        gm_pen_a.contours[0][0].node_type,
+        parse_node_type(pcs["scenario_a_expected_node0_type"].as_str().unwrap())
+    );
 
     // Scenario B (start node[0] placed without drag -> close on node[0] WITH drag)
     let mut gm_pen_b = new_pen_gm_state();
     run_dispatch(
         &mut gm_pen_b,
         vec![
-            Event::PointerButton { pos: Pos2::new(s_p0.x.0, s_p0.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p0.x.0, s_p0.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p1.x.0, s_p1.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p1.x.0, s_p1.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p2.x.0, s_p2.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p2.x.0, s_p2.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p0.x.0, s_p0.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(s_p0.x.0, s_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p0.x.0, s_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p1.x.0, s_p1.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p1.x.0, s_p1.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p2.x.0, s_p2.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p2.x.0, s_p2.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p0.x.0, s_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
             Event::PointerMoved(Pos2::new(s_close_drag.x.0, s_close_drag.y.0)),
-            Event::PointerButton { pos: Pos2::new(s_close_drag.x.0, s_close_drag.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(s_close_drag.x.0, s_close_drag.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
         ],
-        false, false, false, false, false, 1.0,
+        false,
+        false,
+        false,
+        false,
+        false,
+        1.0,
     );
     assert!(gm_pen_b.is_contour_closed(0));
-    assert_eq!(gm_pen_b.contours[0][0].node_type, parse_node_type(pcs["scenario_b_expected_node0_type"].as_str().unwrap()));
-    assert_eq!(gm_pen_b.contours[0][1].point, gm_pt("scenario_b_expected_out_handle"));
-    assert_eq!(gm_pen_b.contours[0].last().unwrap().point, gm_pt("scenario_b_expected_in_handle"));
+    assert_eq!(
+        gm_pen_b.contours[0][0].node_type,
+        parse_node_type(pcs["scenario_b_expected_node0_type"].as_str().unwrap())
+    );
+    assert_eq!(
+        gm_pen_b.contours[0][1].point,
+        gm_pt("scenario_b_expected_out_handle")
+    );
+    assert_eq!(
+        gm_pen_b.contours[0].last().unwrap().point,
+        gm_pt("scenario_b_expected_in_handle")
+    );
 
     // Scenario C1, C2, C3 (start node[0] placed WITH drag)
     let mut gm_pen_c1 = new_pen_gm_state();
     run_dispatch(
         &mut gm_pen_c1,
         vec![
-            Event::PointerButton { pos: Pos2::new(s_p0.x.0, s_p0.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(s_p0.x.0, s_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
             Event::PointerMoved(Pos2::new(s_p0_out.x.0, s_p0_out.y.0)),
-            Event::PointerButton { pos: Pos2::new(s_p0_out.x.0, s_p0_out.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p1.x.0, s_p1.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p1.x.0, s_p1.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p2.x.0, s_p2.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p2.x.0, s_p2.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p0.x.0, s_p0.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p0.x.0, s_p0.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(s_p0_out.x.0, s_p0_out.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p1.x.0, s_p1.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p1.x.0, s_p1.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p2.x.0, s_p2.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p2.x.0, s_p2.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p0.x.0, s_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p0.x.0, s_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
         ],
-        false, false, false, false, false, 1.0,
+        false,
+        false,
+        false,
+        false,
+        false,
+        1.0,
     );
-    assert_eq!(gm_pen_c1.contours[0][0].node_type, parse_node_type(pcs["scenario_c1_expected_node0_type"].as_str().unwrap()));
-    assert_eq!(gm_pen_c1.contours[0][1].point, gm_pt("scenario_c1_expected_preserved_out_handle"));
+    assert_eq!(
+        gm_pen_c1.contours[0][0].node_type,
+        parse_node_type(pcs["scenario_c1_expected_node0_type"].as_str().unwrap())
+    );
+    assert_eq!(
+        gm_pen_c1.contours[0][1].point,
+        gm_pt("scenario_c1_expected_preserved_out_handle")
+    );
 
     let mut gm_pen_c2 = new_pen_gm_state();
     run_dispatch(
         &mut gm_pen_c2,
         vec![
-            Event::PointerButton { pos: Pos2::new(s_p0.x.0, s_p0.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(s_p0.x.0, s_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
             Event::PointerMoved(Pos2::new(s_p0_out.x.0, s_p0_out.y.0)),
-            Event::PointerButton { pos: Pos2::new(s_p0_out.x.0, s_p0_out.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p1.x.0, s_p1.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p1.x.0, s_p1.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p2.x.0, s_p2.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p2.x.0, s_p2.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p0.x.0, s_p0.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(s_p0_out.x.0, s_p0_out.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p1.x.0, s_p1.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p1.x.0, s_p1.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p2.x.0, s_p2.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p2.x.0, s_p2.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p0.x.0, s_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
             Event::PointerMoved(Pos2::new(s_close_drag.x.0, s_close_drag.y.0)),
-            Event::PointerButton { pos: Pos2::new(s_close_drag.x.0, s_close_drag.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(s_close_drag.x.0, s_close_drag.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
         ],
-        false, false, false, false, false, 1.0,
+        false,
+        false,
+        false,
+        false,
+        false,
+        1.0,
     );
-    assert_eq!(gm_pen_c2.contours[0][0].node_type, parse_node_type(pcs["scenario_c2_expected_node0_type"].as_str().unwrap()));
-    assert_eq!(gm_pen_c2.contours[0][1].point, gm_pt("scenario_c2_expected_preserved_out_handle"));
-    assert_eq!(gm_pen_c2.contours[0].last().unwrap().point, gm_pt("scenario_c2_expected_in_handle"));
+    assert_eq!(
+        gm_pen_c2.contours[0][0].node_type,
+        parse_node_type(pcs["scenario_c2_expected_node0_type"].as_str().unwrap())
+    );
+    assert_eq!(
+        gm_pen_c2.contours[0][1].point,
+        gm_pt("scenario_c2_expected_preserved_out_handle")
+    );
+    assert_eq!(
+        gm_pen_c2.contours[0].last().unwrap().point,
+        gm_pt("scenario_c2_expected_in_handle")
+    );
 
     let mut gm_pen_c3 = new_pen_gm_state();
     run_dispatch(
         &mut gm_pen_c3,
         vec![
-            Event::PointerButton { pos: Pos2::new(s_p0.x.0, s_p0.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(s_p0.x.0, s_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
             Event::PointerMoved(Pos2::new(s_p0_out.x.0, s_p0_out.y.0)),
-            Event::PointerButton { pos: Pos2::new(s_p0_out.x.0, s_p0_out.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p1.x.0, s_p1.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p1.x.0, s_p1.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p2.x.0, s_p2.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(s_p0_out.x.0, s_p0_out.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p1.x.0, s_p1.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p1.x.0, s_p1.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p2.x.0, s_p2.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
             Event::PointerMoved(Pos2::new(s_p2_out.x.0, s_p2_out.y.0)),
-            Event::PointerButton { pos: Pos2::new(s_p2_out.x.0, s_p2_out.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
-            Event::PointerButton { pos: Pos2::new(s_p0.x.0, s_p0.y.0), button: PointerButton::Primary, pressed: true, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(s_p2_out.x.0, s_p2_out.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
+            Event::PointerButton {
+                pos: Pos2::new(s_p0.x.0, s_p0.y.0),
+                button: PointerButton::Primary,
+                pressed: true,
+                modifiers: EguiModifiers::NONE,
+            },
             Event::PointerMoved(Pos2::new(s_close_drag.x.0, s_close_drag.y.0)),
-            Event::PointerButton { pos: Pos2::new(s_close_drag.x.0, s_close_drag.y.0), button: PointerButton::Primary, pressed: false, modifiers: EguiModifiers::NONE },
+            Event::PointerButton {
+                pos: Pos2::new(s_close_drag.x.0, s_close_drag.y.0),
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: EguiModifiers::NONE,
+            },
         ],
-        false, false, false, false, false, 1.0,
+        false,
+        false,
+        false,
+        false,
+        false,
+        1.0,
     );
     let c3_len = gm_pen_c3.contours[0].len();
-    assert_eq!(gm_pen_c3.contours[0][1].point, gm_pt("scenario_c3_expected_preserved_out_handle"));
-    assert_eq!(gm_pen_c3.contours[0][c3_len - 2].point, gm_pt("scenario_c3_expected_prev_out_handle"));
-    assert_eq!(gm_pen_c3.contours[0][c3_len - 1].point, gm_pt("scenario_c3_expected_in_handle"));
+    assert_eq!(
+        gm_pen_c3.contours[0][1].point,
+        gm_pt("scenario_c3_expected_preserved_out_handle")
+    );
+    assert_eq!(
+        gm_pen_c3.contours[0][c3_len - 2].point,
+        gm_pt("scenario_c3_expected_prev_out_handle")
+    );
+    assert_eq!(
+        gm_pen_c3.contours[0][c3_len - 1].point,
+        gm_pt("scenario_c3_expected_in_handle")
+    );
 
     // 12. Reverse Contour & Make Node First
     let rmf = &gm["reverse_and_make_first"];
     let mut rev_nodes = parse_nodes(&rmf["input_nodes"]);
     grafia::core::reverse_contour_nodes(&mut rev_nodes, true);
-    assert_nodes_match_json(&rev_nodes, &rmf["reversed_expected_nodes"], "reverse_contour_nodes");
+    assert_nodes_match_json(
+        &rev_nodes,
+        &rmf["reversed_expected_nodes"],
+        "reverse_contour_nodes",
+    );
 
     let mut mf_nodes = parse_nodes(&rmf["input_nodes"]);
     let mf_id = mf_nodes[rmf["make_first_index"].as_u64().unwrap() as usize].id;
-    assert!(grafia::core::make_selected_on_curve_node_first(&mut mf_nodes, true, &[mf_id]));
-    assert_nodes_match_json(&mf_nodes, &rmf["make_first_expected_nodes"], "make_selected_on_curve_node_first");
+    assert!(grafia::core::make_selected_on_curve_node_first(
+        &mut mf_nodes,
+        true,
+        &[mf_id]
+    ));
+    assert_nodes_match_json(
+        &mf_nodes,
+        &rmf["make_first_expected_nodes"],
+        "make_selected_on_curve_node_first",
+    );
 }
 
 #[test]
 fn test_spec002_f16_mid_drag_modifier_transitions_zero_length_handles_and_2node_closed_cubic() {
     // 1. Rapid mid-drag modifier combinations (None -> Alt -> Ctrl+Alt -> Cmd+Ctrl -> None -> PointerRelease)
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 1.0;
     state.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
     state.contours = vec![vec![
@@ -3167,32 +4258,67 @@ fn test_spec002_f16_mid_drag_modifier_transitions_zero_length_handles_and_2node_
             pressed: true,
             modifiers: EguiModifiers::NONE,
         }],
-        false, false, false, false, false, 1.0,
+        false,
+        false,
+        false,
+        false,
+        false,
+        1.0,
     );
 
     // Step B: Hold Alt mid-drag -> anchor moves to (120, 130), attached BCPs stay at (45, 100) and (155, 100)
     run_dispatch(
         &mut state,
-        vec![Event::PointerMoved(Pos2::new(target_scr.x.0, target_scr.y.0))],
-        false, true, false, false, false, 1.1,
+        vec![Event::PointerMoved(Pos2::new(
+            target_scr.x.0,
+            target_scr.y.0,
+        ))],
+        false,
+        true,
+        false,
+        false,
+        false,
+        1.1,
     );
-    assert!((state.contours[0][3].point.x.0 - 120.0).abs() < 1e-4 && (state.contours[0][3].point.y.0 - 130.0).abs() < 1e-4);
-    assert!((state.contours[0][2].point.x.0 - 45.0).abs() < 1e-4 && (state.contours[0][2].point.y.0 - 100.0).abs() < 1e-4);
+    assert!(
+        (state.contours[0][3].point.x.0 - 120.0).abs() < 1e-4
+            && (state.contours[0][3].point.y.0 - 130.0).abs() < 1e-4
+    );
+    assert!(
+        (state.contours[0][2].point.x.0 - 45.0).abs() < 1e-4
+            && (state.contours[0][2].point.y.0 - 100.0).abs() < 1e-4
+    );
 
     // Step C: Switch to Ctrl + Alt mid-drag -> setInterpolate:withPoint: Nudge
     run_dispatch(
         &mut state,
-        vec![Event::PointerMoved(Pos2::new(target_scr.x.0, target_scr.y.0))],
-        false, true, false, true, false, 1.2,
+        vec![Event::PointerMoved(Pos2::new(
+            target_scr.x.0,
+            target_scr.y.0,
+        ))],
+        false,
+        true,
+        false,
+        true,
+        false,
+        1.2,
     );
     assert!((state.contours[0][1].point.y.0 - 71.5).abs() < 1e-4);
-    assert!((state.contours[0][2].point.x.0 - 54.0).abs() < 1e-4 && (state.contours[0][2].point.y.0 - 130.0).abs() < 1e-4);
+    assert!(
+        (state.contours[0][2].point.x.0 - 54.0).abs() < 1e-4
+            && (state.contours[0][2].point.y.0 - 130.0).abs() < 1e-4
+    );
 
     // Step D: Switch to Cmd + Ctrl mid-drag -> moveNodeOnPath: / shiftMiddle: at s = 4/33
     run_dispatch(
         &mut state,
         vec![Event::PointerMoved(Pos2::new(slide_scr.x.0, slide_scr.y.0))],
-        false, false, true, true, false, 1.3,
+        false,
+        false,
+        true,
+        true,
+        false,
+        1.3,
     );
     let exact_2a_x = 4_294_360.0 / 35_937.0;
     let exact_2a_y = 3_524_660.0 / 35_937.0;
@@ -3211,11 +4337,25 @@ fn test_spec002_f16_mid_drag_modifier_transitions_zero_length_handles_and_2node_
                 modifiers: EguiModifiers::NONE,
             },
         ],
-        false, false, false, false, false, 1.4,
+        false,
+        false,
+        false,
+        false,
+        false,
+        1.4,
     );
-    assert!((state.contours[0][3].point.x.0 - 120.0).abs() < 1e-4 && (state.contours[0][3].point.y.0 - 130.0).abs() < 1e-4);
-    assert!((state.contours[0][2].point.x.0 - 65.0).abs() < 1e-4 && (state.contours[0][2].point.y.0 - 130.0).abs() < 1e-4);
-    assert!((state.contours[0][1].point.x.0 - 0.0).abs() < 1e-4 && (state.contours[0][1].point.y.0 - 55.0).abs() < 1e-4);
+    assert!(
+        (state.contours[0][3].point.x.0 - 120.0).abs() < 1e-4
+            && (state.contours[0][3].point.y.0 - 130.0).abs() < 1e-4
+    );
+    assert!(
+        (state.contours[0][2].point.x.0 - 65.0).abs() < 1e-4
+            && (state.contours[0][2].point.y.0 - 130.0).abs() < 1e-4
+    );
+    assert!(
+        (state.contours[0][1].point.x.0 - 0.0).abs() < 1e-4
+            && (state.contours[0][1].point.y.0 - 55.0).abs() < 1e-4
+    );
     state.assert_invariants();
     assert_all_views_consistent(&state);
     let after_snap = state.snapshot();
@@ -3255,13 +4395,16 @@ fn test_spec002_f16_mid_drag_modifier_transitions_zero_length_handles_and_2node_
         ),
         "slide_smooth_node_on_cubic_path_shift_middle must support 2-node closed cubic contours (n == 6)"
     );
-    assert!(fig8[3].point.y.0 > 15.0, "Smooth node on 2-node closed figure-8 cubic must slide along tangent");
+    assert!(
+        fig8[3].point.y.0 > 15.0,
+        "Smooth node on 2-node closed figure-8 cubic must slide along tangent"
+    );
 }
 
 #[test]
 fn test_spec002_f17_join_open_contours_in_pen_tool_and_select_tool() {
     // 1A. PenTool: Join active open contour A to start point P0 of open contour B
-    let mut state_pen = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state_pen = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state_pen.viewport.zoom = 1.0;
     state_pen.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
     state_pen.active_tool = CanvasTool::Pen;
@@ -3298,10 +4441,22 @@ fn test_spec002_f17_join_open_contours_in_pen_tool_and_select_tool() {
                 modifiers: EguiModifiers::NONE,
             },
         ],
-        false, false, false, false, false, 1.0,
+        false,
+        false,
+        false,
+        false,
+        false,
+        1.0,
     );
-    assert_eq!(state_pen.contours.len(), 1, "PenTool clicking P0 of open contour B must merge A and B into 1 open contour");
-    assert!(!state_pen.is_contour_closed(0), "Merged contour must remain open");
+    assert_eq!(
+        state_pen.contours.len(),
+        1,
+        "PenTool clicking P0 of open contour B must merge A and B into 1 open contour"
+    );
+    assert!(
+        !state_pen.is_contour_closed(0),
+        "Merged contour must remain open"
+    );
     assert_eq!(state_pen.contours[0].len(), 4);
     assert_eq!(state_pen.contours[0][0].point, FontPoint::new(0.0, 0.0));
     assert_eq!(state_pen.contours[0][1].point, FontPoint::new(100.0, 0.0));
@@ -3316,7 +4471,7 @@ fn test_spec002_f17_join_open_contours_in_pen_tool_and_select_tool() {
     assert_eq!(state_pen.contours, after_pen_join.contours);
 
     // 1B. PenTool: Join active open contour A (with pending_pen_bcp_out) to P_last of open contour B (reversing B and dragging cubic handles!)
-    let mut state_pen_rev = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state_pen_rev = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state_pen_rev.viewport.zoom = 1.0;
     state_pen_rev.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
     state_pen_rev.active_tool = CanvasTool::Pen;
@@ -3337,7 +4492,9 @@ fn test_spec002_f17_join_open_contours_in_pen_tool_and_select_tool() {
     state_pen_rev.sync_paths_from_contours();
 
     let b_last_scr = state_pen_rev.viewport.to_screen(FontPoint::new(200.0, 0.0));
-    let b_drag_scr = state_pen_rev.viewport.to_screen(FontPoint::new(240.0, 60.0));
+    let b_drag_scr = state_pen_rev
+        .viewport
+        .to_screen(FontPoint::new(240.0, 60.0));
     run_dispatch(
         &mut state_pen_rev,
         vec![
@@ -3355,20 +4512,38 @@ fn test_spec002_f17_join_open_contours_in_pen_tool_and_select_tool() {
                 modifiers: EguiModifiers::NONE,
             },
         ],
-        false, false, false, false, false, 1.0,
+        false,
+        false,
+        false,
+        false,
+        false,
+        1.0,
     );
-    assert_eq!(state_pen_rev.contours.len(), 1, "Joining onto P_last of B must merge A and reversed B into 1 open contour");
+    assert_eq!(
+        state_pen_rev.contours.len(),
+        1,
+        "Joining onto P_last of B must merge A and reversed B into 1 open contour"
+    );
     assert!(!state_pen_rev.is_contour_closed(0));
-    assert_eq!(state_pen_rev.contours[0].first().unwrap().point, FontPoint::new(0.0, 0.0));
-    assert_eq!(state_pen_rev.contours[0].last().unwrap().point, FontPoint::new(300.0, 0.0));
+    assert_eq!(
+        state_pen_rev.contours[0].first().unwrap().point,
+        FontPoint::new(0.0, 0.0)
+    );
+    assert_eq!(
+        state_pen_rev.contours[0].last().unwrap().point,
+        FontPoint::new(300.0, 0.0)
+    );
     let rev_segs = extract_segments(&state_pen_rev.contours[0], false);
     assert_eq!(rev_segs.len(), 3);
-    assert!(matches!(rev_segs[1], ContourSegment::Cubic { .. }), "Connecting segment with pending_pen_bcp_out + drag must be Cubic");
+    assert!(
+        matches!(rev_segs[1], ContourSegment::Cubic { .. }),
+        "Connecting segment with pending_pen_bcp_out + drag must be Cubic"
+    );
     state_pen_rev.assert_invariants();
     assert_all_views_consistent(&state_pen_rev);
 
     // 2A. SelectTool: Dragging P_last onto P0 of the SAME open contour (>= 2 remaining OnCurve nodes) merges endpoints and closes contour
-    let mut state_sel_close = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state_sel_close = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state_sel_close.viewport.zoom = 1.0;
     state_sel_close.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
     state_sel_close.active_tool = CanvasTool::Select;
@@ -3381,7 +4556,9 @@ fn test_spec002_f17_join_open_contours_in_pen_tool_and_select_tool() {
     state_sel_close.sync_paths_from_contours();
     let before_sel_close = state_sel_close.snapshot();
 
-    let p_last_scr = state_sel_close.viewport.to_screen(FontPoint::new(200.0, 50.0));
+    let p_last_scr = state_sel_close
+        .viewport
+        .to_screen(FontPoint::new(200.0, 50.0));
     let p0_scr = state_sel_close.viewport.to_screen(FontPoint::new(0.0, 0.0));
     run_dispatch(
         &mut state_sel_close,
@@ -3400,11 +4577,26 @@ fn test_spec002_f17_join_open_contours_in_pen_tool_and_select_tool() {
                 modifiers: EguiModifiers::NONE,
             },
         ],
-        false, false, false, false, false, 1.0,
+        false,
+        false,
+        false,
+        false,
+        false,
+        1.0,
     );
-    assert!(state_sel_close.is_contour_closed(0), "Dragging P_last onto P0 of same open contour in SelectTool must close contour");
-    assert_eq!(state_sel_close.contours[0].len(), 2, "Merged endpoints must leave 2 OnCurve nodes");
-    assert_eq!(state_sel_close.contours[0][0].point, FontPoint::new(0.0, 0.0));
+    assert!(
+        state_sel_close.is_contour_closed(0),
+        "Dragging P_last onto P0 of same open contour in SelectTool must close contour"
+    );
+    assert_eq!(
+        state_sel_close.contours[0].len(),
+        2,
+        "Merged endpoints must leave 2 OnCurve nodes"
+    );
+    assert_eq!(
+        state_sel_close.contours[0][0].point,
+        FontPoint::new(0.0, 0.0)
+    );
     state_sel_close.assert_invariants();
     assert_all_views_consistent(&state_sel_close);
     let after_sel_close = state_sel_close.snapshot();
@@ -3416,7 +4608,7 @@ fn test_spec002_f17_join_open_contours_in_pen_tool_and_select_tool() {
     assert!(state_sel_close.is_contour_closed(0));
 
     // 2B. SelectTool: Dragging endpoint of open contour A onto endpoint of open contour B merges endpoints and joins A and B into 1 open contour
-    let mut state_sel_join = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state_sel_join = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state_sel_join.viewport.zoom = 1.0;
     state_sel_join.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
     state_sel_join.active_tool = CanvasTool::Select;
@@ -3435,8 +4627,12 @@ fn test_spec002_f17_join_open_contours_in_pen_tool_and_select_tool() {
     state_sel_join.sync_paths_from_contours();
     let before_sel_join = state_sel_join.snapshot();
 
-    let a_end_scr = state_sel_join.viewport.to_screen(FontPoint::new(100.0, 50.0));
-    let b_end_scr = state_sel_join.viewport.to_screen(FontPoint::new(200.0, 100.0));
+    let a_end_scr = state_sel_join
+        .viewport
+        .to_screen(FontPoint::new(100.0, 50.0));
+    let b_end_scr = state_sel_join
+        .viewport
+        .to_screen(FontPoint::new(200.0, 100.0));
     run_dispatch(
         &mut state_sel_join,
         vec![
@@ -3454,14 +4650,39 @@ fn test_spec002_f17_join_open_contours_in_pen_tool_and_select_tool() {
                 modifiers: EguiModifiers::NONE,
             },
         ],
-        false, false, false, false, false, 1.0,
+        false,
+        false,
+        false,
+        false,
+        false,
+        1.0,
     );
-    assert_eq!(state_sel_join.contours.len(), 1, "Dropping A_last onto B_last in SelectTool must join A and B into 1 open contour");
-    assert!(!state_sel_join.is_contour_closed(0), "Joined contour from two open contours must remain open");
-    assert_eq!(state_sel_join.contours[0].len(), 3, "Two 2-node open contours merged at one shared endpoint must have 3 nodes");
-    assert_eq!(state_sel_join.contours[0][0].point, FontPoint::new(0.0, 0.0));
-    assert_eq!(state_sel_join.contours[0][1].point, FontPoint::new(200.0, 100.0));
-    assert_eq!(state_sel_join.contours[0][2].point, FontPoint::new(300.0, 0.0));
+    assert_eq!(
+        state_sel_join.contours.len(),
+        1,
+        "Dropping A_last onto B_last in SelectTool must join A and B into 1 open contour"
+    );
+    assert!(
+        !state_sel_join.is_contour_closed(0),
+        "Joined contour from two open contours must remain open"
+    );
+    assert_eq!(
+        state_sel_join.contours[0].len(),
+        3,
+        "Two 2-node open contours merged at one shared endpoint must have 3 nodes"
+    );
+    assert_eq!(
+        state_sel_join.contours[0][0].point,
+        FontPoint::new(0.0, 0.0)
+    );
+    assert_eq!(
+        state_sel_join.contours[0][1].point,
+        FontPoint::new(200.0, 100.0)
+    );
+    assert_eq!(
+        state_sel_join.contours[0][2].point,
+        FontPoint::new(300.0, 0.0)
+    );
     state_sel_join.assert_invariants();
     assert_all_views_consistent(&state_sel_join);
     let after_sel_join = state_sel_join.snapshot();
@@ -3471,7 +4692,7 @@ fn test_spec002_f17_join_open_contours_in_pen_tool_and_select_tool() {
     assert_eq!(state_sel_join.contours, after_sel_join.contours);
 
     // 2C. Boundary check: 2-node open contour dragging P_last onto P0 (< 2 remaining OnCurve nodes) must NOT collapse into a 1-node closed contour
-    let mut state_2node = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state_2node = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state_2node.viewport.zoom = 1.0;
     state_2node.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
     state_2node.active_tool = CanvasTool::Select;
@@ -3500,14 +4721,22 @@ fn test_spec002_f17_join_open_contours_in_pen_tool_and_select_tool() {
                 modifiers: EguiModifiers::NONE,
             },
         ],
-        false, false, false, false, false, 1.0,
+        false,
+        false,
+        false,
+        false,
+        false,
+        1.0,
     );
-    assert!(!state_2node.is_contour_closed(0), "2-node open contour without handles must not collapse into 1-node closed contour");
+    assert!(
+        !state_2node.is_contour_closed(0),
+        "2-node open contour without handles must not collapse into 1-node closed contour"
+    );
     assert_eq!(state_2node.contours[0].len(), 2);
     state_2node.assert_invariants();
 
     // 3. Chaining 3 open contours A -> B -> C in sequence in PenTool with multi-step Undo/Redo
-    let mut state_chain = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state_chain = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state_chain.viewport.zoom = 1.0;
     state_chain.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
     state_chain.active_tool = CanvasTool::Pen;
@@ -3550,9 +4779,18 @@ fn test_spec002_f17_join_open_contours_in_pen_tool_and_select_tool() {
                 modifiers: EguiModifiers::NONE,
             },
         ],
-        false, false, false, false, false, 1.0,
+        false,
+        false,
+        false,
+        false,
+        false,
+        1.0,
     );
-    assert_eq!(state_chain.contours.len(), 2, "First join A -> B must leave 2 open contours");
+    assert_eq!(
+        state_chain.contours.len(),
+        2,
+        "First join A -> B must leave 2 open contours"
+    );
     assert_eq!(
         state_chain.contours[0][4].node_type,
         NodeType::Corner,
@@ -3577,9 +4815,18 @@ fn test_spec002_f17_join_open_contours_in_pen_tool_and_select_tool() {
                 modifiers: EguiModifiers::NONE,
             },
         ],
-        false, false, false, false, false, 2.0,
+        false,
+        false,
+        false,
+        false,
+        false,
+        2.0,
     );
-    assert_eq!(state_chain.contours.len(), 1, "Second join (AB) -> C must leave 1 open contour");
+    assert_eq!(
+        state_chain.contours.len(),
+        1,
+        "Second join (AB) -> C must leave 1 open contour"
+    );
     let chain_s2 = state_chain.snapshot();
     assert!(state_chain.undo());
     assert_eq!(state_chain.contours, chain_s1.contours);
@@ -3594,7 +4841,7 @@ fn test_spec002_f17_join_open_contours_in_pen_tool_and_select_tool() {
 #[test]
 fn test_spec002_f18_multi_node_ctrl_alt_drag_and_arrow_nudge_interpolation_without_duplicate() {
     let make_contour = || {
-        let mut s = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+        let mut s = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
         s.viewport.zoom = 1.0;
         s.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
         s.contours = vec![vec![
@@ -3618,7 +4865,11 @@ fn test_spec002_f18_multi_node_ctrl_alt_drag_and_arrow_nudge_interpolation_witho
     s_drag.selected_nodes = vec![NodeId(4), NodeId(7)];
     let p4_scr = s_drag.viewport.to_screen(FontPoint::new(100.0, 100.0));
     let p4_drag_scr = s_drag.viewport.to_screen(FontPoint::new(120.0, 130.0));
-    let ctrl_alt_mods = EguiModifiers { alt: true, ctrl: true, ..Default::default() };
+    let ctrl_alt_mods = EguiModifiers {
+        alt: true,
+        ctrl: true,
+        ..Default::default()
+    };
 
     run_dispatch(
         &mut s_drag,
@@ -3637,7 +4888,12 @@ fn test_spec002_f18_multi_node_ctrl_alt_drag_and_arrow_nudge_interpolation_witho
                 modifiers: ctrl_alt_mods,
             },
         ],
-        false, true, false, true, false, 1.0,
+        false,
+        true,
+        false,
+        true,
+        false,
+        1.0,
     );
 
     assert_eq!(
@@ -3646,14 +4902,35 @@ fn test_spec002_f18_multi_node_ctrl_alt_drag_and_arrow_nudge_interpolation_witho
         "Ctrl + Alt + Drag on multiple OnCurve nodes must NOT trigger optionDragDuplicate"
     );
     // Boundary cubic segment [NodeId(1)..NodeId(4)] must be proportionally nudge-interpolated:
-    assert!((s_drag.contours[0][0].point.x.0 - 0.0).abs() < 1e-4 && (s_drag.contours[0][0].point.y.0 - 0.0).abs() < 1e-4);
-    assert!((s_drag.contours[0][1].point.x.0 - 0.0).abs() < 1e-4 && (s_drag.contours[0][1].point.y.0 - 71.5).abs() < 1e-4);
-    assert!((s_drag.contours[0][2].point.x.0 - 54.0).abs() < 1e-4 && (s_drag.contours[0][2].point.y.0 - 130.0).abs() < 1e-4);
-    assert!((s_drag.contours[0][3].point.x.0 - 120.0).abs() < 1e-4 && (s_drag.contours[0][3].point.y.0 - 130.0).abs() < 1e-4);
+    assert!(
+        (s_drag.contours[0][0].point.x.0 - 0.0).abs() < 1e-4
+            && (s_drag.contours[0][0].point.y.0 - 0.0).abs() < 1e-4
+    );
+    assert!(
+        (s_drag.contours[0][1].point.x.0 - 0.0).abs() < 1e-4
+            && (s_drag.contours[0][1].point.y.0 - 71.5).abs() < 1e-4
+    );
+    assert!(
+        (s_drag.contours[0][2].point.x.0 - 54.0).abs() < 1e-4
+            && (s_drag.contours[0][2].point.y.0 - 130.0).abs() < 1e-4
+    );
+    assert!(
+        (s_drag.contours[0][3].point.x.0 - 120.0).abs() < 1e-4
+            && (s_drag.contours[0][3].point.y.0 - 130.0).abs() < 1e-4
+    );
     // Interior cubic segment [NodeId(4)..NodeId(7)] has both endpoints selected, so handles (5) and (6) translate by (+20, +30):
-    assert!((s_drag.contours[0][4].point.x.0 - 175.0).abs() < 1e-4 && (s_drag.contours[0][4].point.y.0 - 130.0).abs() < 1e-4);
-    assert!((s_drag.contours[0][5].point.x.0 - 220.0).abs() < 1e-4 && (s_drag.contours[0][5].point.y.0 - 85.0).abs() < 1e-4);
-    assert!((s_drag.contours[0][6].point.x.0 - 220.0).abs() < 1e-4 && (s_drag.contours[0][6].point.y.0 - 30.0).abs() < 1e-4);
+    assert!(
+        (s_drag.contours[0][4].point.x.0 - 175.0).abs() < 1e-4
+            && (s_drag.contours[0][4].point.y.0 - 130.0).abs() < 1e-4
+    );
+    assert!(
+        (s_drag.contours[0][5].point.x.0 - 220.0).abs() < 1e-4
+            && (s_drag.contours[0][5].point.y.0 - 85.0).abs() < 1e-4
+    );
+    assert!(
+        (s_drag.contours[0][6].point.x.0 - 220.0).abs() < 1e-4
+            && (s_drag.contours[0][6].point.y.0 - 30.0).abs() < 1e-4
+    );
     s_drag.assert_invariants();
     assert_all_views_consistent(&s_drag);
 
@@ -3670,7 +4947,7 @@ fn test_spec002_f18_multi_node_ctrl_alt_drag_and_arrow_nudge_interpolation_witho
 
 #[test]
 fn test_spec002_f19_pen_resume_on_corner_line_endpoint_extrudes_only_bcp_out() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 1.0;
     state.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
     state.active_tool = CanvasTool::Pen;
@@ -3697,11 +4974,17 @@ fn test_spec002_f19_pen_resume_on_corner_line_endpoint_extrudes_only_bcp_out() {
             },
             Event::PointerMoved(Pos2::new(drag_out_scr.x.0, drag_out_scr.y.0)),
         ],
-        false, false, false, false, false, 1.0,
+        false,
+        false,
+        false,
+        false,
+        false,
+        1.0,
     );
 
     // Mid-drag visual check: P_last at (300, 100) must remain rendered as blue Corner/open-endpoint (not overwritten by a phantom bcp_in handle circle at anchor)
-    let mid_drag_img = pixmap_to_rgba_image(rasterize_canvas_subregion(&state, &state.theme, 640, 480));
+    let mid_drag_img =
+        pixmap_to_rgba_image(rasterize_canvas_subregion(&state, &state.theme, 640, 480));
     let px = mid_drag_img.get_pixel(p_last_scr.x.0 as u32, p_last_scr.y.0 as u32);
     let handle_c = state.theme.edit_canvas.bcp_handle_color32();
     assert_ne!(
@@ -3709,7 +4992,10 @@ fn test_spec002_f19_pen_resume_on_corner_line_endpoint_extrudes_only_bcp_out() {
         (handle_c.r(), handle_c.g(), handle_c.b()),
         "During DraggingHandles on resumed Corner P_last, anchor pixel must not be overwritten by phantom bcp_in handle circle"
     );
-    assert!(px[2] > 200, "Anchor pixel at P_last must keep its blue Corner/open-endpoint color, got {px:?}");
+    assert!(
+        px[2] > 200,
+        "Anchor pixel at P_last must keep its blue Corner/open-endpoint color, got {px:?}"
+    );
 
     run_dispatch(
         &mut state,
@@ -3719,7 +5005,12 @@ fn test_spec002_f19_pen_resume_on_corner_line_endpoint_extrudes_only_bcp_out() {
             pressed: false,
             modifiers: EguiModifiers::NONE,
         }],
-        false, false, false, false, false, 1.1,
+        false,
+        false,
+        false,
+        false,
+        false,
+        1.1,
     );
 
     assert_eq!(
@@ -3755,19 +5046,30 @@ fn test_spec002_f19_pen_resume_on_corner_line_endpoint_extrudes_only_bcp_out() {
                 modifiers: EguiModifiers::NONE,
             },
         ],
-        false, false, false, false, false, 2.0,
+        false,
+        false,
+        false,
+        false,
+        false,
+        2.0,
     );
     let segs = extract_segments(&state.contours[0], false);
     assert_eq!(segs.len(), 2);
-    assert!(matches!(segs[0], ContourSegment::Line { .. }), "First segment must remain a straight Line");
-    assert!(matches!(segs[1], ContourSegment::Cubic { .. }), "Second segment must be Cubic from pending_pen_bcp_out");
+    assert!(
+        matches!(segs[0], ContourSegment::Line { .. }),
+        "First segment must remain a straight Line"
+    );
+    assert!(
+        matches!(segs[1], ContourSegment::Cubic { .. }),
+        "Second segment must be Cubic from pending_pen_bcp_out"
+    );
     state.assert_invariants();
     assert_all_views_consistent(&state);
 }
 
 #[test]
 fn test_spec002_f20_pen_integer_grid_rounding_preserves_sub_unit_split_and_extremum_precision() {
-    let mut state = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     state.viewport.zoom = 1.0;
     state.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
     state.active_tool = CanvasTool::Pen;
@@ -3793,22 +5095,28 @@ fn test_spec002_f20_pen_integer_grid_rounding_preserves_sub_unit_split_and_extre
                 modifiers: EguiModifiers::NONE,
             },
         ],
-        false, false, false, false, false, 1.0,
+        false,
+        false,
+        false,
+        false,
+        false,
+        1.0,
     );
 
     assert_eq!(
         state.contours[0][0].point,
         FontPoint::new(123.0, 246.0),
-        "TC-GLIFO-015: PenTool click on empty space must snap new anchor to 1.0 UPM integer grid"
+        "TC-GRAFIA-015: PenTool click on empty space must snap new anchor to 1.0 UPM integer grid"
     );
     state.assert_invariants();
 }
 
 #[test]
-fn test_spec002_f21_live_clang_runtime_parity_alt_line_convert_nudge_zero_span_and_drag_curve_265() {
+fn test_spec002_f21_live_clang_runtime_parity_alt_line_convert_nudge_zero_span_and_drag_curve_265()
+{
     // 1. Option/Alt-Click on Line segment P0=(0,0) -> P1=(100,50) with round_to_grid (1.0 vs 0.0)
     let make_line_state = |grid_step: f64, round_grid: bool| {
-        let mut s = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+        let mut s = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
         s.viewport.zoom = 1.0;
         s.viewport.pan_offset = ScreenPoint::new(100.0, 500.0);
         s.active_tool = CanvasTool::Select;
@@ -3825,7 +5133,10 @@ fn test_spec002_f21_live_clang_runtime_parity_alt_line_convert_nudge_zero_span_a
 
     let mut s_grid = make_line_state(1.0, true);
     let mid_scr = s_grid.viewport.to_screen(FontPoint::new(50.0, 25.0));
-    let alt_mods = EguiModifiers { alt: true, ..Default::default() };
+    let alt_mods = EguiModifiers {
+        alt: true,
+        ..Default::default()
+    };
     run_dispatch(
         &mut s_grid,
         vec![
@@ -3842,7 +5153,12 @@ fn test_spec002_f21_live_clang_runtime_parity_alt_line_convert_nudge_zero_span_a
                 modifiers: alt_mods,
             },
         ],
-        false, true, false, false, false, 1.0,
+        false,
+        true,
+        false,
+        false,
+        false,
+        1.0,
     );
     assert_eq!(s_grid.contours[0].len(), 4);
     assert_eq!(
@@ -3873,7 +5189,12 @@ fn test_spec002_f21_live_clang_runtime_parity_alt_line_convert_nudge_zero_span_a
                 modifiers: alt_mods,
             },
         ],
-        false, true, false, false, false, 1.0,
+        false,
+        true,
+        false,
+        false,
+        false,
+        1.0,
     );
     assert_eq!(s_unrounded.contours[0].len(), 4);
     assert!(
@@ -3890,7 +5211,7 @@ fn test_spec002_f21_live_clang_runtime_parity_alt_line_convert_nudge_zero_span_a
     );
 
     // 2. Ctrl+Alt Nudge Overshoot Anchor Rule & Zero-Span Fallback (CanvasEngine spec_ref / spec_ref)
-    let mut s_overshoot = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut s_overshoot = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     s_overshoot.contours = vec![vec![
         Node::new(NodeId(1), 0.0, 0.0, NodeType::Corner),
         Node::new(NodeId(2), 30.0, 60.0, NodeType::OffCurve),
@@ -3927,7 +5248,7 @@ fn test_spec002_f21_live_clang_runtime_parity_alt_line_convert_nudge_zero_span_a
 
     // Zero-span fallback: P0=(0,0), H1=(30,0), H2=(70,60), P3=(100,0) nudged at P3 by (0, +20)
     // Because span_y == 0.0 and |H2.y - P3.y| = 60.0 > 0.1, H2.y must get weight 0.0 and stay at 60.0!
-    let mut s_zero_span = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut s_zero_span = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     s_zero_span.contours = vec![vec![
         Node::new(NodeId(1), 0.0, 0.0, NodeType::Corner),
         Node::new(NodeId(2), 30.0, 0.0, NodeType::OffCurve),
@@ -3947,7 +5268,7 @@ fn test_spec002_f21_live_clang_runtime_parity_alt_line_convert_nudge_zero_span_a
     );
 
     // When H2.y == P3.y == 0.0 (collinear with P3 on Y), H2.y moves with P3 (+20.0)
-    let mut s_collinear_span = GlifoCanvasState::new(GlifoTheme::sonoma_default());
+    let mut s_collinear_span = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
     s_collinear_span.contours = vec![vec![
         Node::new(NodeId(1), 0.0, 0.0, NodeType::Corner),
         Node::new(NodeId(2), 30.0, 0.0, NodeType::OffCurve),
@@ -3967,9 +5288,21 @@ fn test_spec002_f21_live_clang_runtime_parity_alt_line_convert_nudge_zero_span_a
 
     // 3. Cubic Segment Drag Weights (CanvasEngine spec_ref..spec_ref: 2.65*(1-t) and 2.65*t, plus 6000.0 UPM max handle length clamp)
     for (t, exp_h1, exp_h2) in [
-        (0.25, FontPoint::new(49.875, 99.75), FontPoint::new(76.625, 73.25)),
-        (0.50, FontPoint::new(43.25, 86.50), FontPoint::new(83.25, 86.50)),
-        (0.75, FontPoint::new(36.625, 73.25), FontPoint::new(89.875, 99.75)),
+        (
+            0.25,
+            FontPoint::new(49.875, 99.75),
+            FontPoint::new(76.625, 73.25),
+        ),
+        (
+            0.50,
+            FontPoint::new(43.25, 86.50),
+            FontPoint::new(83.25, 86.50),
+        ),
+        (
+            0.75,
+            FontPoint::new(36.625, 73.25),
+            FontPoint::new(89.875, 99.75),
+        ),
     ] {
         let mut nodes = vec![
             Node::new(NodeId(1), 0.0, 0.0, NodeType::Corner),
@@ -4028,9 +5361,13 @@ fn test_spec002_f21_live_clang_runtime_parity_alt_line_convert_nudge_zero_span_a
         locked_nodes[1].point
     );
     assert!(
-        (locked_nodes[2].point.distance_to(FontPoint::new(100.0, 0.0)) - 6000.0).abs() < 1e-4,
+        (locked_nodes[2]
+            .point
+            .distance_to(FontPoint::new(100.0, 0.0))
+            - 6000.0)
+            .abs()
+            < 1e-4,
         "Angle-locked handle length must be clamped to 6000.0 UPM, got {:?}",
         locked_nodes[2].point
     );
 }
-

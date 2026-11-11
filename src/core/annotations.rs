@@ -123,7 +123,12 @@ impl CanvasAnnotation {
     }
 
     /// Updates this annotation's geometry when its control handle is dragged (`spec_ref..spec_ref`).
-    pub fn apply_handle_drag(&mut self, initial_kind: &AnnotationKind, current_upm: FontPoint, start_upm: FontPoint) {
+    pub fn apply_handle_drag(
+        &mut self,
+        initial_kind: &AnnotationKind,
+        current_upm: FontPoint,
+        start_upm: FontPoint,
+    ) {
         let dx = current_upm.x.0 - start_upm.x.0;
         let dy = current_upm.y.0 - start_upm.y.0;
         match (&mut self.kind, initial_kind) {
@@ -144,9 +149,7 @@ impl CanvasAnnotation {
             }
             (
                 AnnotationKind::Circle { radius_upm },
-                AnnotationKind::Circle {
-                    radius_upm: init_r,
-                },
+                AnnotationKind::Circle { radius_upm: init_r },
             ) => {
                 // `AnnotationTool::moveSelectionLayer:shadowLayer:withPoint:withModifier:` (`spec_ref..spec_ref`):
                 // `width = max(shadow.width - dy, minWidth)`
@@ -194,10 +197,10 @@ pub fn hit_test_annotation_body(
         }
         match &ann.kind {
             AnnotationKind::Text { width_upm, .. } => {
-                let in_x = font_pt.x.0 >= ann.position.x.0
-                    && font_pt.x.0 <= ann.position.x.0 + *width_upm;
-                let in_y = (font_pt.y.0 - ann.position.y.0).abs()
-                    <= ANNOTATION_DEFAULT_TEXT_HEIGHT_UPM;
+                let in_x =
+                    font_pt.x.0 >= ann.position.x.0 && font_pt.x.0 <= ann.position.x.0 + *width_upm;
+                let in_y =
+                    (font_pt.y.0 - ann.position.y.0).abs() <= ANNOTATION_DEFAULT_TEXT_HEIGHT_UPM;
                 if in_x && in_y {
                     return Some(ann.id);
                 }

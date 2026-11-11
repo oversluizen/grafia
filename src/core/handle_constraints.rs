@@ -97,14 +97,18 @@ pub fn enforce_smooth_collinearity_on_handle_drag(
         None
     };
 
-    let anchor_and_opp = if let Some(p_idx) = prev_candidate.filter(|&i| contour[i].node_type != NodeType::OffCurve) {
+    let anchor_and_opp = if let Some(p_idx) =
+        prev_candidate.filter(|&i| contour[i].node_type != NodeType::OffCurve)
+    {
         let opp = if closed || p_idx > 0 {
             Some((p_idx + n - 1) % n)
         } else {
             None
         };
         Some((p_idx, opp))
-    } else if let Some(n_idx) = next_candidate.filter(|&i| contour[i].node_type != NodeType::OffCurve) {
+    } else if let Some(n_idx) =
+        next_candidate.filter(|&i| contour[i].node_type != NodeType::OffCurve)
+    {
         let opp = if closed || n_idx + 1 < n {
             Some((n_idx + 1) % n)
         } else {
@@ -159,7 +163,14 @@ pub fn convert_line_segment_to_cubic_with_grid(
     next_node_id: &mut u64,
     grid_step_upm: f64,
 ) -> Option<(NodeId, NodeId)> {
-    let ContourSegment::Line { start_idx, end_idx, line } = *segment else { return None; };
+    let ContourSegment::Line {
+        start_idx,
+        end_idx,
+        line,
+    } = *segment
+    else {
+        return None;
+    };
     let max_existing = contour.iter().map(|n| n.id.0).max().unwrap_or(0);
     if *next_node_id <= max_existing {
         *next_node_id = max_existing + 1;
@@ -174,7 +185,11 @@ pub fn convert_line_segment_to_cubic_with_grid(
     *next_node_id += 1;
     let h1 = Node::new(h1_id, p1.x.0, p1.y.0, NodeType::OffCurve);
     let h2 = Node::new(h2_id, p2.x.0, p2.y.0, NodeType::OffCurve);
-    let insert_pos = if end_idx > start_idx { end_idx } else { contour.len() };
+    let insert_pos = if end_idx > start_idx {
+        end_idx
+    } else {
+        contour.len()
+    };
     contour.insert(insert_pos, h1);
     contour.insert(insert_pos + 1, h2);
     Some((h1_id, h2_id))
@@ -332,12 +347,18 @@ pub fn fit_cubic_to_segment_chain(segments: &[ContourSegment]) -> (FontPoint, Fo
 
     if segments.len() >= 2 && t1.cross(t2).abs() <= COLLINEAR_MIN_LEN_EPSILON && t1.dot(t2) > 0.0 {
         let mid_chord = p0 + (p3 - p0) * 0.5;
-        let arch_h = samples.iter().map(|&(pt, _)| (pt - mid_chord).dot(t1)).fold(0.0_f64, f64::max);
+        let arch_h = samples
+            .iter()
+            .map(|&(pt, _)| (pt - mid_chord).dot(t1))
+            .fold(0.0_f64, f64::max);
         if arch_h > COLLINEAR_MIN_LEN_EPSILON {
             let alpha_arch = 2.0 * CUBIC_TWO_THIRDS * arch_h;
             let h1_u = p0 + t1 * alpha_arch;
             let h2_u = p3 + t2 * alpha_arch;
-            return (FontPoint::new(h1_u.x, h1_u.y), FontPoint::new(h2_u.x, h2_u.y));
+            return (
+                FontPoint::new(h1_u.x, h1_u.y),
+                FontPoint::new(h2_u.x, h2_u.y),
+            );
         }
     }
 

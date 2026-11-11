@@ -1,11 +1,11 @@
-//! `SPEC-004 §2.5` (`glifo v0.3.0`) Canvas Grid (`PathRenderer::drawGrid` @ `spec_ref` / `arm64 spec_ref`
+//! `SPEC-004 §2.5` (`grafia v0.3.0`) Canvas Grid (`PathRenderer::drawGrid` @ `spec_ref` / `arm64 spec_ref`
 //! & `FontMasterMetrics::roundingSettings` @ `spec_ref` / `arm64 spec_ref`):
 //! - Subdivision grid (`grid_sub_color = #40595940`, `0.4 dp` orthogonal / `0.6 dp` sloped) when
 //!   `show_grid && grid_subdivisions >= 2 && sub_step_px > 4.0 dp`.
 //! - Main grid (`grid_main_color = #80736666`, `0.5 dp` orthogonal / `0.7 dp` sloped) when
 //!   `show_grid && main_step_px > 8.0 dp`.
 
-use crate::adapters::state::GlifoCanvasState;
+use crate::adapters::state::GrafiaCanvasState;
 use crate::core::{FontPoint, ScreenPoint};
 use crate::tokens::{
     GRID_MAIN_LINE_WIDTH_DP, GRID_MAIN_MIN_STEP_DP, GRID_MAIN_SLOPED_LINE_WIDTH_DP,
@@ -15,7 +15,7 @@ use crate::tokens::{
 use egui::{Painter, Pos2, Rect, Stroke};
 use tiny_skia::{Paint, PathBuilder, Pixmap, Stroke as TsStroke, Transform};
 
-fn slope_shear_dx_per_dy(state: &GlifoCanvasState) -> Option<f64> {
+fn slope_shear_dx_per_dy(state: &GrafiaCanvasState) -> Option<f64> {
     if state.grid_slope_rise > 0
         && state.grid_slope_rise < GRID_MAX_SLOPE_COMPONENT
         && state.grid_slope_run != 0
@@ -28,7 +28,7 @@ fn slope_shear_dx_per_dy(state: &GlifoCanvasState) -> Option<f64> {
 }
 
 fn collect_grid_lines_for_step(
-    state: &GlifoCanvasState,
+    state: &GrafiaCanvasState,
     step_upm: f64,
     bounds: Rect,
     horiz_out: &mut Vec<(ScreenPoint, ScreenPoint)>,
@@ -39,8 +39,12 @@ fn collect_grid_lines_for_step(
     }
     let (min_scr_x, min_scr_y) = (bounds.left(), bounds.top());
     let (max_scr_x, max_scr_y) = (bounds.right(), bounds.bottom());
-    let tl_font = state.viewport.to_font(ScreenPoint::new(min_scr_x, min_scr_y));
-    let br_font = state.viewport.to_font(ScreenPoint::new(max_scr_x, max_scr_y));
+    let tl_font = state
+        .viewport
+        .to_font(ScreenPoint::new(min_scr_x, min_scr_y));
+    let br_font = state
+        .viewport
+        .to_font(ScreenPoint::new(max_scr_x, max_scr_y));
     let y_min = tl_font.y.0.min(br_font.y.0);
     let y_max = tl_font.y.0.max(br_font.y.0);
     let shear = slope_shear_dx_per_dy(state).unwrap_or(0.0);
@@ -80,7 +84,7 @@ fn collect_grid_lines_for_step(
     }
 }
 
-pub fn paint_v030_grid_egui(painter: &Painter, canvas_rect: Rect, state: &GlifoCanvasState) {
+pub fn paint_v030_grid_egui(painter: &Painter, canvas_rect: Rect, state: &GrafiaCanvasState) {
     if !state.show_grid || state.grid_step_upm <= 0.0 {
         return;
     }
@@ -99,7 +103,11 @@ pub fn paint_v030_grid_egui(painter: &Painter, canvas_rect: Rect, state: &GlifoC
         let col = state.theme.edit_canvas.grid_sub_color.to_color32();
         let h_stroke = Stroke::new(GRID_SUB_LINE_WIDTH_DP, col);
         let v_stroke = Stroke::new(
-            if is_sloped { GRID_SUB_SLOPED_LINE_WIDTH_DP } else { GRID_SUB_LINE_WIDTH_DP },
+            if is_sloped {
+                GRID_SUB_SLOPED_LINE_WIDTH_DP
+            } else {
+                GRID_SUB_LINE_WIDTH_DP
+            },
             col,
         );
         for (a, b) in h_lines {
@@ -113,11 +121,21 @@ pub fn paint_v030_grid_egui(painter: &Painter, canvas_rect: Rect, state: &GlifoC
     if draw_main {
         let mut h_lines = Vec::new();
         let mut v_lines = Vec::new();
-        collect_grid_lines_for_step(state, main_step_upm, canvas_rect, &mut h_lines, &mut v_lines);
+        collect_grid_lines_for_step(
+            state,
+            main_step_upm,
+            canvas_rect,
+            &mut h_lines,
+            &mut v_lines,
+        );
         let col = state.theme.edit_canvas.grid_main_color.to_color32();
         let h_stroke = Stroke::new(GRID_MAIN_LINE_WIDTH_DP, col);
         let v_stroke = Stroke::new(
-            if is_sloped { GRID_MAIN_SLOPED_LINE_WIDTH_DP } else { GRID_MAIN_LINE_WIDTH_DP },
+            if is_sloped {
+                GRID_MAIN_SLOPED_LINE_WIDTH_DP
+            } else {
+                GRID_MAIN_LINE_WIDTH_DP
+            },
             col,
         );
         for (a, b) in h_lines {
@@ -129,7 +147,7 @@ pub fn paint_v030_grid_egui(painter: &Painter, canvas_rect: Rect, state: &GlifoC
     }
 }
 
-pub fn render_v030_grid_tiny_skia(pixmap: &mut Pixmap, state: &GlifoCanvasState) {
+pub fn render_v030_grid_tiny_skia(pixmap: &mut Pixmap, state: &GrafiaCanvasState) {
     if !state.show_grid || state.grid_step_upm <= 0.0 {
         return;
     }
@@ -155,7 +173,11 @@ pub fn render_v030_grid_tiny_skia(pixmap: &mut Pixmap, state: &GlifoCanvasState)
             pixmap,
             &v_lines,
             col,
-            if is_sloped { GRID_SUB_SLOPED_LINE_WIDTH_DP } else { GRID_SUB_LINE_WIDTH_DP },
+            if is_sloped {
+                GRID_SUB_SLOPED_LINE_WIDTH_DP
+            } else {
+                GRID_SUB_LINE_WIDTH_DP
+            },
         );
     }
 
@@ -169,7 +191,11 @@ pub fn render_v030_grid_tiny_skia(pixmap: &mut Pixmap, state: &GlifoCanvasState)
             pixmap,
             &v_lines,
             col,
-            if is_sloped { GRID_MAIN_SLOPED_LINE_WIDTH_DP } else { GRID_MAIN_LINE_WIDTH_DP },
+            if is_sloped {
+                GRID_MAIN_SLOPED_LINE_WIDTH_DP
+            } else {
+                GRID_MAIN_LINE_WIDTH_DP
+            },
         );
     }
 }
@@ -195,7 +221,10 @@ fn stroke_segments_ts(
         pixmap.stroke_path(
             &path,
             &paint,
-            &TsStroke { width, ..Default::default() },
+            &TsStroke {
+                width,
+                ..Default::default()
+            },
             Transform::identity(),
             None,
         );

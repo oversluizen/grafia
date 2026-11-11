@@ -1,4 +1,4 @@
-//! `SPEC-004` (`glifo v0.3.0`) tokens: Local & Global Guides (`CanvasGuide`), Magnetic `SnapEngine`
+//! `SPEC-004` (`grafia v0.3.0`) tokens: Local & Global Guides (`CanvasGuide`), Magnetic `SnapEngine`
 //! (`SnapEngine`), and Alignment Zone Bands & Badges (`_drawAlignmentIndicator:`).
 //!
 //! Normative token definitions and specification constants
@@ -220,11 +220,11 @@ pub fn alignment_badge_stroke_color32() -> egui::Color32 {
 
 /// 3-way appearance preference designed for HostApp Preferences (`Light`, `Dark`, `System`).
 ///
-/// - `AppearanceMode::Light`: Explicit user choice — always resolves to `GlifoTheme::sonoma_default()`.
-/// - `AppearanceMode::Dark`: Explicit user choice — always resolves to `GlifoTheme::sonoma_dark()`.
-/// - `AppearanceMode::System`: System preference — resolves to `GlifoTheme::sonoma_dark()` when the
+/// - `AppearanceMode::Light`: Explicit user choice — always resolves to `GrafiaTheme::sonoma_default()`.
+/// - `AppearanceMode::Dark`: Explicit user choice — always resolves to `GrafiaTheme::sonoma_dark()`.
+/// - `AppearanceMode::System`: System preference — resolves to `GrafiaTheme::sonoma_dark()` when the
 ///   host OS / `egui` environment is in Dark Mode (`system_dark_mode == true`) and to
-///   `GlifoTheme::sonoma_default()` when in Light Mode (`system_dark_mode == false`).
+///   `GrafiaTheme::sonoma_default()` when in Light Mode (`system_dark_mode == false`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum AppearanceMode {
     #[default]
@@ -266,15 +266,15 @@ pub const DARK_METRICS_LABEL_HEX: &str = "#98989D";
 /// Sonoma Dark open contour endpoint tick color.
 pub const DARK_OPEN_ENDPOINT_HEX: &str = "#0A84FF";
 
-impl super::GlifoTheme {
-    /// Loads the Reference Vector (``) Sonoma Dark Mode theme from `tokens/glifo_theme_sonoma_dark.json`.
+impl super::GrafiaTheme {
+    /// Loads the Reference Vector (``) Sonoma Dark Mode theme from `tokens/grafia_theme_sonoma_dark.json`.
     #[must_use]
     pub fn sonoma_dark() -> Self {
-        let json_str = include_str!("../../tokens/glifo_theme_sonoma_dark.json");
-        serde_json::from_str(json_str).expect("glifo_theme_sonoma_dark.json must be valid JSON")
+        let json_str = include_str!("../../tokens/grafia_theme_sonoma_dark.json");
+        serde_json::from_str(json_str).expect("grafia_theme_sonoma_dark.json must be valid JSON")
     }
 
-    /// Resolves the appropriate `GlifoTheme` (`sonoma_default` or `sonoma_dark`) for the given
+    /// Resolves the appropriate `GrafiaTheme` (`sonoma_default` or `sonoma_dark`) for the given
     /// 3-way `AppearanceMode` (`Light`, `Dark`, `System`) and host OS `system_is_dark` flag.
     #[must_use]
     pub fn for_appearance(mode: AppearanceMode, system_is_dark: bool) -> Self {
@@ -289,7 +289,10 @@ impl super::GlifoTheme {
     #[must_use]
     pub fn is_dark(&self) -> bool {
         self.theme_name.contains("Dark")
-            || self.preview_canvas.fill_color.eq_ignore_ascii_case("#FFFFFF")
+            || self
+                .preview_canvas
+                .fill_color
+                .eq_ignore_ascii_case("#FFFFFF")
     }
 
     #[must_use]
@@ -344,6 +347,3 @@ pub fn locator_context_color_for_mode(is_dark: bool) -> egui::Color32 {
         super::locator_default_context_color()
     }
 }
-
-
-

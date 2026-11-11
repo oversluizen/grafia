@@ -1,7 +1,7 @@
-//! `SPEC-005` (`glifo v0.4.0`) tool state machines & `GlifoCanvasState` helper methods
+//! `SPEC-005` (`grafia v0.4.0`) tool state machines & `GrafiaCanvasState` helper methods
 //! for `Knife`, `Primitives`, `Measurement`, `Annotation`, `Pencil`, and `Pixel` tools.
 
-use crate::adapters::state::{CanvasTool, GlifoCanvasState};
+use crate::adapters::state::{CanvasTool, GrafiaCanvasState};
 use crate::core::{
     build_circle_contour_nodes, build_rectangle_contour_nodes, compute_layer_measurement_labels,
     compute_measurement_ray_intersections, compute_primitive_rect_upm, remove_overlap_in_contours,
@@ -9,10 +9,7 @@ use crate::core::{
     GlyphContour, MeasurementLayerLabels, NodeId, PrimitiveSubTool, ToolDialogRequest,
 };
 use crate::snapping::{Guide, GuideId, SelectedGuideRef};
-use crate::tokens::{
-    ANNOTATION_PASTE_OFFSET_UPM, KNIFE_MIN_DRAG_UPM, PIXEL_CUSTOM_GRID_MIN_UPM,
-    PIXEL_DEFAULT_STEP_UPM, PRIMITIVE_MIN_SIZE_UPM,
-};
+use crate::tokens::{KNIFE_MIN_DRAG_UPM, PIXEL_DEFAULT_STEP_UPM, PRIMITIVE_MIN_SIZE_UPM};
 use egui::Key;
 
 /// Active drag state for `KnifeTool` (`E` / `Shift+E` — `CanvasTool`).
@@ -93,7 +90,7 @@ pub struct PixelDragState {
     pub last_cell: Option<(i64, i64)>,
 }
 
-/// Bundled state for all `glifo v0.4.0` tools (`SPEC-005`).
+/// Bundled state for all `grafia v0.4.0` tools (`SPEC-005`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct V040ToolState {
     pub knife: KnifeDragState,
@@ -146,7 +143,7 @@ impl V040ToolState {
     }
 }
 
-impl GlifoCanvasState {
+impl GrafiaCanvasState {
     /// Programmatically inserts a rectangle or circle primitive contour with Undo recording
     /// (`CanvasTool::makePrimitiveWithDialog:` confirmation at `spec_ref`).
     pub fn insert_primitive(
@@ -248,93 +245,23 @@ impl GlifoCanvasState {
         true
     }
 
-    /// Selects all `CanvasAnnotation` items on the active glyph (`AnnotationTool::selectAll:` at `spec_ref`).
-    pub fn select_all_annotations(&mut self) {
-        self.v040.selected_annotations = self.glyph.annotations.iter().map(|a| a.id).collect();
-    }
-
-    /// Deletes all currently selected `CanvasAnnotation` items (`AnnotationTool::deleteBackward:` at `spec_ref`).
-    pub fn delete_selected_annotations(&mut self) -> bool {
-        if self.v040.selected_annotations.is_empty() {
-            return false;
-        }
-        let before = self.snapshot();
-        let selected = self.v040.selected_annotations.clone();
-        self.glyph
-            .annotations
-            .retain(|a| !selected.contains(&a.id));
-        self.v040.selected_annotations.clear();
-        self.record_mutation("Delete Annotations", before);
-        true
-    }
-
-    /// Copies all selected `CanvasAnnotation` items to the annotation clipboard (`Cmd/Ctrl + C`).
-    pub fn copy_selected_annotations(&mut self) -> bool {
-        let copied: Vec<CanvasAnnotation> = self
-            .glyph
-            .annotations
-            .iter()
-            .filter(|a| self.v040.selected_annotations.contains(&a.id))
-            .cloned()
-            .collect();
-        if copied.is_empty() {
-            return false;
-        }
-        self.v040.clipboard_annotations = copied;
-        true
-    }
-
-    /// Cuts all selected `CanvasAnnotation` items to the annotation clipboard (`Cmd/Ctrl + X`).
-    pub fn cut_selected_annotations(&mut self) -> bool {
-        if !self.copy_selected_annotations() {
-            return false;
-        }
-        self.delete_selected_annotations()
-    }
-
-    /// Pastes `clipboard_annotations` into the active glyph with `(+10, +10)` UPM offset (`Cmd/Ctrl + V`).
-    pub fn paste_clipboard_annotations(&mut self) -> bool {
-        if self.v040.clipboard_annotations.is_empty() {
-            return false;
-        }
-        let before = self.snapshot();
-        let mut new_selected = Vec::with_capacity(self.v040.clipboard_annotations.len());
-        for clip_ann in &mut self.v040.clipboard_annotations {
-            clip_ann.position = FontPoint::new(
-                clip_ann.position.x.0 + ANNOTATION_PASTE_OFFSET_UPM,
-                clip_ann.position.y.0 + ANNOTATION_PASTE_OFFSET_UPM,
-            );
-            let id = AnnotationId(self.v040.next_annotation_id);
-            self.v040.next_annotation_id += 1;
-            let mut pasted = clip_ann.clone();
-            pasted.id = id;
-            self.glyph.annotations.push(pasted);
-            new_selected.push(id);
-        }
-        self.v040.selected_annotations = new_selected;
-        self.record_mutation("Paste Annotations", before);
-        true
-    }
-
-    /// Returns the effective grid step in UPM for `PixelTool` (`X`).
-    #[must_use]
-    pub fn effective_pixel_step_upm(&self) -> f64 {
-        if self.grid_step_upm >= PIXEL_CUSTOM_GRID_MIN_UPM {
-            self.grid_step_upm
-        } else {
-            self.v040.pixel_size_upm.max(1.0)
-        }
-    }
-
     /// Executes Boolean `Remove Overlap` (`Cmd+Shift+O` / `GlyphLayer::removeOverlap` -> `BooleanPathEngine`).
     pub fn remove_overlap(&mut self) -> bool {
         let before = self.snapshot();
         let mut flags = self.closed_flags();
-        if !remove_overlap_in_contours(&mut self.contours, &mut flags, &self.selected_nodes, &mut self.next_node_id) {
+        if !remove_overlap_in_contours(
+            &mut self.contours,
+            &mut flags,
+            &self.selected_nodes,
+            &mut self.next_node_id,
+        ) {
             return false;
         }
-        let valid_ids: std::collections::HashSet<NodeId> =
-            self.contours.iter().flat_map(|c| c.iter().map(|n| n.id)).collect();
+        let valid_ids: std::collections::HashSet<NodeId> = self
+            .contours
+            .iter()
+            .flat_map(|c| c.iter().map(|n| n.id))
+            .collect();
         self.selected_nodes.retain(|id| valid_ids.contains(id));
         self.sync_contours_and_closed_flags(&flags);
         self.record_mutation("Remove Overlap", before);
@@ -345,12 +272,17 @@ impl GlifoCanvasState {
 
 /// Synchronizes temporary `Cmd + Ctrl + Opt` (`tempTrigger = spec_ref`) activation of `MeasurementTool`.
 pub fn sync_temp_measurement_modifier_override(
-    state: &mut GlifoCanvasState,
+    state: &mut GrafiaCanvasState,
     is_cmd: bool,
     is_ctrl: bool,
     is_alt: bool,
     is_space: bool,
 ) {
+    if state.active_tool == CanvasTool::Text {
+        state.temp_show_text_measurement_line = is_cmd && is_ctrl && is_alt && !is_space;
+        return;
+    }
+    state.temp_show_text_measurement_line = false;
     if is_cmd && is_ctrl && is_alt && !is_space && !state.temp_zoom_via_key_space {
         if state.active_tool != CanvasTool::Measurement {
             if state.temp_tool_before_override.is_none() {
@@ -372,56 +304,69 @@ pub fn sync_temp_measurement_modifier_override(
 
 /// Dispatches `SPEC-005` (`v0.4.0`) keyboard shortcuts (`E`, `F`/`Shift+F`, `L`, `A`/`Shift+A`/`Cmd+A`, `B`, `X`, `G`, `Backspace`/`Delete`, `Cmd+Shift+O`).
 pub fn dispatch_v040_keyboard_shortcut(
-    state: &mut GlifoCanvasState,
+    state: &mut GrafiaCanvasState,
     key: Key,
     shift_active: bool,
     alt_active: bool,
     cmd_active: bool,
 ) -> bool {
-    match key {
-        Key::E if !cmd_active && !alt_active => { state.activate_tool(CanvasTool::Knife); true }
-        Key::F if !cmd_active && !alt_active => {
-            if state.active_tool == CanvasTool::Primitives {
-                state.v040.primitive_sub_tool = state.v040.primitive_sub_tool.cycle_next();
-            } else {
+    if state.active_tool == CanvasTool::Annotation && cmd_active && !shift_active && !alt_active {
+        match key {
+            Key::A => {
+                state.select_all_annotations();
+                return true;
+            }
+            Key::C => return state.copy_selected_annotations(),
+            Key::X => return state.cut_selected_annotations(),
+            Key::V => return state.paste_clipboard_annotations(),
+            _ => {}
+        }
+    }
+    if !cmd_active && !alt_active {
+        match key {
+            Key::E => {
+                state.activate_tool(CanvasTool::Knife);
+                return true;
+            }
+            Key::F => {
+                if state.active_tool == CanvasTool::Primitives || shift_active {
+                    state.v040.primitive_sub_tool = state.v040.primitive_sub_tool.cycle_next();
+                }
                 state.activate_tool(CanvasTool::Primitives);
-                if shift_active { state.v040.primitive_sub_tool = state.v040.primitive_sub_tool.cycle_next(); }
+                return true;
             }
-            true
-        }
-        Key::L if !cmd_active && !alt_active => { state.activate_tool(CanvasTool::Measurement); true }
-        Key::G if !cmd_active && !alt_active && state.active_tool == CanvasTool::Measurement => {
-            state.promote_measurement_to_guide()
-        }
-        Key::A if !cmd_active && !alt_active => {
-            if state.active_tool == CanvasTool::Annotation && shift_active {
-                state.v040.annotation_sub_tool = state.v040.annotation_sub_tool.cycle_next();
-            } else {
+            Key::L => {
+                state.activate_tool(CanvasTool::Measurement);
+                return true;
+            }
+            Key::G if state.active_tool == CanvasTool::Measurement => {
+                return state.promote_measurement_to_guide();
+            }
+            Key::A => {
+                if shift_active {
+                    state.v040.annotation_sub_tool = state.v040.annotation_sub_tool.cycle_next();
+                }
                 state.activate_tool(CanvasTool::Annotation);
-                if shift_active { state.v040.annotation_sub_tool = state.v040.annotation_sub_tool.cycle_next(); }
+                return true;
             }
-            true
+            Key::B => {
+                state.activate_tool(CanvasTool::Pencil);
+                return true;
+            }
+            Key::X => {
+                state.activate_tool(CanvasTool::Pixel);
+                return true;
+            }
+            _ => {}
         }
-        Key::A if cmd_active && !shift_active && !alt_active && state.active_tool == CanvasTool::Annotation => {
-            state.select_all_annotations();
-            true
-        }
-        Key::C if cmd_active && !shift_active && !alt_active && state.active_tool == CanvasTool::Annotation => {
-            state.copy_selected_annotations()
-        }
-        Key::X if cmd_active && !shift_active && !alt_active && state.active_tool == CanvasTool::Annotation => {
-            state.cut_selected_annotations()
-        }
-        Key::V if cmd_active && !shift_active && !alt_active && state.active_tool == CanvasTool::Annotation => {
-            state.paste_clipboard_annotations()
-        }
+    }
+    match key {
         Key::Backspace | Key::Delete
-            if state.active_tool == CanvasTool::Annotation && !state.v040.selected_annotations.is_empty() =>
+            if state.active_tool == CanvasTool::Annotation
+                && !state.v040.selected_annotations.is_empty() =>
         {
             state.delete_selected_annotations()
         }
-        Key::B if !cmd_active && !alt_active => { state.activate_tool(CanvasTool::Pencil); true }
-        Key::X if !cmd_active && !alt_active => { state.activate_tool(CanvasTool::Pixel); true }
         Key::O if cmd_active && shift_active && !alt_active => state.remove_overlap(),
         _ => false,
     }
