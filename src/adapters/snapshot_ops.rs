@@ -3,9 +3,7 @@
 use crate::adapters::state::GrafiaCanvasState;
 use crate::adapters::v020_tools::V020DragState;
 use crate::adapters::v030_guides::GuideDragState;
-use crate::core::{
-    ContourId, FontPoint, Glyph, GlyphContour, NodeId, NodeType, ScreenPoint, ShapeBooleanRole,
-};
+use crate::core::{ContourId, Glyph, GlyphContour, NodeId, NodeType, ShapeBooleanRole};
 use crate::interaction::{CommandHistory, GlyphSnapshot, PenToolState, SelectToolState};
 use crate::snapping::GlyphMetrics;
 use crate::tokens::GlyphArchetype;
@@ -135,54 +133,6 @@ impl GrafiaCanvasState {
             background_contours: self.background_contours.clone(),
             anchors: self.anchors.clone(),
         }
-    }
-    pub fn try_begin_alt_select_node_press(
-        &mut self,
-        scr_pt: ScreenPoint,
-        font_pt: FontPoint,
-        mods: crate::interaction::Modifiers,
-    ) -> bool {
-        if !(mods.option && !mods.control) {
-            return false;
-        }
-        let Some(node_id) = self.hit_test_node(scr_pt) else {
-            return false;
-        };
-        let is_multi_sel_hit =
-            self.selected_nodes.len() >= 2 && self.selected_nodes.contains(&node_id);
-        let closed_flags = self.closed_flags();
-        let has_attached_bcp = crate::core::expanded_nodes_with_attached_handles(
-            &self.contours,
-            &closed_flags,
-            &[node_id],
-            true,
-        )
-        .len()
-            > 1;
-        if is_multi_sel_hit
-            || has_attached_bcp
-            || !self
-                .find_node(node_id)
-                .is_some_and(|n| n.node_type != crate::core::NodeType::OffCurve)
-        {
-            return false;
-        }
-        let before = self.snapshot();
-        if !self.selected_nodes.contains(&node_id) {
-            self.selected_nodes = vec![node_id];
-        }
-        self.active_drag_before_snapshot = Some(before);
-        self.record_drag_start();
-        crate::core::toggle_selected_on_curve_smooth(&mut self.contours, &closed_flags, &[node_id]);
-        self.sync_paths_from_contours();
-        self.select_state = SelectToolState::DraggingNodes {
-            selected: self.selected_nodes.clone(),
-            start_pt: font_pt,
-            current_pt: font_pt,
-            modifiers: mods,
-        };
-        self.assert_invariants();
-        true
     }
 
     pub fn load_preset_a(&mut self) {
@@ -380,8 +330,11 @@ impl GrafiaCanvasState {
     pub fn record_mutation(&mut self, label: &'static str, before: GlyphSnapshot) {
         let after = self.snapshot();
         if before != after {
+            let content_changed = before.has_content_change(&after);
             self.history.record(label, before, after);
-            self.bump_content_generation();
+            if content_changed {
+                self.bump_content_generation();
+            }
         }
     }
 

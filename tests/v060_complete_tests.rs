@@ -783,13 +783,43 @@ fn tc_v060_023_content_generation_and_preview_strip_cache_zero_idle_render() {
     assert_eq!(cache.render_count(), 1);
     let gen_0 = state.content_generation();
 
-    // Idle mouse hover, viewport pan/zoom, and node selection changes MUST NOT increment content_generation
+    // Idle mouse hover, viewport pan/zoom, and node/HUD selection changes MUST NOT increment content_generation
     state.cursor_screen_pos = Some(ScreenPoint::new(120.0, 240.0));
     state.last_pointer_screen_pos = Some(ScreenPoint::new(125.0, 245.0));
     state.viewport.pan_offset = ScreenPoint::new(40.0, 80.0);
     state.viewport.zoom = 1.75;
     state.select_all_nodes();
+    state.set_multi_selection_anchor(TransformGridAnchor::TopLeft);
+    state.set_multi_selection_proportional(true);
+    state.toggle_rulers();
+    assert!(!state.fit_selected_curves(0.65));
     state.set_system_dark_mode(false);
+    assert_eq!(state.content_generation(), gen_0);
+
+    // Clicking a node on the canvas without dragging (press + release at same point) MUST NOT increment content_generation
+    let node_pt = state.contours[0][0].point;
+    let node_scr = state.viewport.to_screen(node_pt);
+    assert!(grafia::adapters::select_interaction::handle_select_press(
+        &mut state,
+        node_scr,
+        node_pt,
+        grafia::interaction::Modifiers::default(),
+        false,
+        false,
+    ));
+    let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::new(960.0, 640.0));
+    let ctx = egui::Context::default();
+    let release_ev = vec![egui::Event::PointerButton {
+        pos: egui::Pos2::new(node_scr.x.0, node_scr.y.0),
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    }];
+    let mut out_click = ctx.run_ui(egui::RawInput::default(), |ui| {
+        let _ = grafia::adapters::input_dispatcher::InputDispatcher::for_canvas(&mut state, rect)
+            .dispatch_events(&release_ev, ui);
+    });
+    out_click.textures_delta.clear();
     assert_eq!(state.content_generation(), gen_0);
 
     // Calling get_or_render_rgba during idle / pan / zoom / selection is a 0-ms cache hit
@@ -798,7 +828,6 @@ fn tc_v060_023_content_generation_and_preview_strip_cache_zero_idle_render() {
     assert_eq!(cache.render_count(), 1);
 
     // Texture upload via egui::Context also hits cache without re-uploading when unchanged
-    let ctx = egui::Context::default();
     let mut updated_tex_first = false;
     let mut updated_tex_second = true;
     let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
@@ -807,16 +836,26 @@ fn tc_v060_023_content_generation_and_preview_strip_cache_zero_idle_render() {
         updated_tex_first = up1;
         updated_tex_second = up2;
     });
-    assert_eq!(out.textures_delta.set.len(), 2);
+    let set_count = out.textures_delta.set.len();
     out.textures_delta.clear();
+    assert_eq!(set_count, 1);
     assert!(updated_tex_first);
     assert!(!updated_tex_second);
     assert_eq!(cache.render_count(), 1);
 
+    // Navigating slots / caret in a text stream without changing glyph geometry MUST NOT increment content_generation
+    state.load_demo_text_strip();
+    let gen_strip = state.content_generation();
+    assert!(gen_strip > gen_0);
+    state.switch_active_slot(1);
+    state.step_active_slot(1);
+    state.set_caret_index(0);
+    assert_eq!(state.content_generation(), gen_strip);
+
     // Geometry mutation increments content_generation and triggers cache recomputation
     state.set_advance_width(740.0);
     let gen_1 = state.content_generation();
-    assert!(gen_1 > gen_0);
+    assert!(gen_1 > gen_strip);
     let (_, recomputed_mut) = cache.get_or_render_rgba(&state, &cfg);
     assert!(recomputed_mut);
     assert_eq!(cache.render_count(), 2);

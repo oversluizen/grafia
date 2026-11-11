@@ -426,6 +426,32 @@ fn test_guard_modularity_limits_gl1015() {
         }
     }
 
+    let tests_dir = manifest_dir.join("tests");
+    let mut test_files = Vec::new();
+    if tests_dir.exists() {
+        collect_rs_files(&tests_dir, &mut test_files);
+    }
+    for file_path in &test_files {
+        let content = fs::read_to_string(file_path)
+            .unwrap_or_else(|e| panic!("Failed to read {}: {e}", file_path.display()));
+        let relative_path = file_path
+            .strip_prefix(manifest_dir)
+            .unwrap_or(file_path)
+            .to_string_lossy();
+        for (line_idx, line) in content.lines().enumerate() {
+            let code_part = line.split("//").next().unwrap_or("").trim();
+            if !code_part.contains('"')
+                && !code_part.ends_with('\\')
+                && count_statement_semicolons(code_part) >= 2
+            {
+                violations.push(format!(
+                    "  - {relative_path}:{}: Multi-statement single-line cramming forbidden in tests (>= 2 semicolons): `{code_part}`",
+                    line_idx + 1
+                ));
+            }
+        }
+    }
+
     let fmt_status = std::process::Command::new("cargo")
         .args(["fmt", "--all", "--", "--check"])
         .current_dir(manifest_dir)
@@ -436,6 +462,22 @@ fn test_guard_modularity_limits_gl1015() {
             "  - `cargo fmt --all -- --check` failed: repository contains unformatted code."
                 .to_string(),
         );
+    }
+
+    if !test_files.is_empty() {
+        let mut rustfmt_cmd = std::process::Command::new("rustfmt");
+        rustfmt_cmd
+            .args(["--edition", "2021", "--check"])
+            .args(&test_files)
+            .current_dir(manifest_dir);
+        if let Ok(status) = rustfmt_cmd.status() {
+            if !status.success() {
+                violations.push(
+                    "  - `rustfmt --edition 2021 --check tests/*.rs` failed: unformatted test file(s)."
+                        .to_string(),
+                );
+            }
+        }
     }
 
     if !violations.is_empty() {

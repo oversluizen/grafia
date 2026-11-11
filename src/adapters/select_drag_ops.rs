@@ -71,6 +71,51 @@ pub fn duplicate_selected_contours_for_alt_drag(state: &mut GrafiaCanvasState) {
 }
 
 impl GrafiaCanvasState {
+    pub fn try_begin_alt_select_node_press(
+        &mut self,
+        scr_pt: crate::core::ScreenPoint,
+        font_pt: FontPoint,
+        mods: crate::interaction::Modifiers,
+    ) -> bool {
+        if !(mods.option && !mods.control) {
+            return false;
+        }
+        let Some(node_id) = self.hit_test_node(scr_pt) else {
+            return false;
+        };
+        let is_multi_sel_hit =
+            self.selected_nodes.len() >= 2 && self.selected_nodes.contains(&node_id);
+        let closed_flags = self.closed_flags();
+        let has_attached_bcp =
+            expanded_nodes_with_attached_handles(&self.contours, &closed_flags, &[node_id], true)
+                .len()
+                > 1;
+        if is_multi_sel_hit
+            || has_attached_bcp
+            || !self
+                .find_node(node_id)
+                .is_some_and(|n| n.node_type != NodeType::OffCurve)
+        {
+            return false;
+        }
+        let before = self.snapshot();
+        if !self.selected_nodes.contains(&node_id) {
+            self.selected_nodes = vec![node_id];
+        }
+        self.active_drag_before_snapshot = Some(before);
+        self.record_drag_start();
+        toggle_selected_on_curve_smooth(&mut self.contours, &closed_flags, &[node_id]);
+        self.sync_paths_from_contours();
+        self.select_state = SelectToolState::DraggingNodes {
+            selected: self.selected_nodes.clone(),
+            start_pt: font_pt,
+            current_pt: font_pt,
+            modifiers: mods,
+        };
+        self.assert_invariants();
+        true
+    }
+
     pub fn toggle_node_smooth_corner(&mut self, id: NodeId) {
         let before = self.snapshot();
         let closed_flags = self.closed_flags();

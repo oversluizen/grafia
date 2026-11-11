@@ -210,6 +210,46 @@ impl GlyphSnapshot {
         self.show_master_compatibility = show_master_compatibility;
         self
     }
+
+    /// Returns `true` if any geometry, layer, text-stream, anchor position/name, component transform/lock,
+    /// stroke, guide, or annotation field differs between `self` and `other` (ignoring pure selection or HUD flags).
+    #[must_use]
+    pub fn has_content_change(&self, other: &Self) -> bool {
+        let anchors_changed = self.anchors.len() != other.anchors.len()
+            || self
+                .anchors
+                .iter()
+                .zip(&other.anchors)
+                .any(|(a, b)| a.id != b.id || a.name != b.name || a.position != b.position);
+        let components_changed = self.components.len() != other.components.len()
+            || self.components.iter().zip(&other.components).any(|(a, b)| {
+                a.id != b.id
+                    || a.component_name != b.component_name
+                    || a.contours != b.contours
+                    || a.transform != b.transform
+                    || a.locked != b.locked
+                    || a.automatic_alignment != b.automatic_alignment
+            });
+        self.contours != other.contours
+            || self.closed_flags != other.closed_flags
+            || self.contour_meta != other.contour_meta
+            || self.pending_pen_bcp_out != other.pending_pen_bcp_out
+            || self.pending_pen_first_bcp_in != other.pending_pen_first_bcp_in
+            || self.guides != other.guides
+            || self.global_guides != other.global_guides
+            || self.annotations != other.annotations
+            || self.glyph_name != other.glyph_name
+            || self.glyph_width.to_bits() != other.glyph_width.to_bits()
+            || self.glyph_height.to_bits() != other.glyph_height.to_bits()
+            || self.text_stream_slots != other.text_stream_slots
+            || self.background_contours != other.background_contours
+            || self.editing_background_layer != other.editing_background_layer
+            || self.show_background != other.show_background
+            || anchors_changed
+            || components_changed
+            || self.contour_strokes != other.contour_strokes
+            || self.companion_master_layers != other.companion_master_layers
+    }
 }
 
 #[derive(Debug, Clone)]

@@ -306,7 +306,8 @@ impl GrafiaCanvasState {
             self.assert_invariants();
             true
         } else {
-            self.sync_paths_from_contours();
+            let valid: HashSet<NodeId> = self.contours.iter().flatten().map(|n| n.id).collect();
+            self.selected_nodes.retain(|id| valid.contains(id));
             false
         }
     }
@@ -334,7 +335,8 @@ impl GrafiaCanvasState {
             self.assert_invariants();
             true
         } else {
-            self.sync_paths_from_contours();
+            let valid: HashSet<NodeId> = self.contours.iter().flatten().map(|n| n.id).collect();
+            self.selected_nodes.retain(|id| valid.contains(id));
             false
         }
     }
@@ -354,7 +356,8 @@ impl GrafiaCanvasState {
             self.assert_invariants();
             true
         } else {
-            self.sync_paths_from_contours();
+            let valid: HashSet<NodeId> = self.contours.iter().flatten().map(|n| n.id).collect();
+            self.selected_nodes.retain(|id| valid.contains(id));
             false
         }
     }

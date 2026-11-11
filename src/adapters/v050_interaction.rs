@@ -103,10 +103,12 @@ impl GrafiaCanvasState {
         self.active_open_contour = (0..self.contours.len())
             .rev()
             .find(|&i| !self.is_contour_closed(i));
+        let prev_gen = self.content_generation;
         let suppress = self.suppress_text_stream_sync;
         self.suppress_text_stream_sync = true;
         self.sync_paths_from_contours();
         self.suppress_text_stream_sync = suppress;
+        self.content_generation = prev_gen;
     }
 
     /// Synchronizes the active editable `self.glyph` and `self.contours` back into `self.text_stream.slots`,

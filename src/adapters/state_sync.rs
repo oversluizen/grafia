@@ -188,6 +188,7 @@ impl GrafiaCanvasState {
         if c_idx + 1 == self.contours.len() || self.active_open_contour == Some(c_idx) {
             self.active_contour_closed = closed;
         }
+        self.bump_content_generation();
     }
 
     pub fn sync_paths_from_contours(&mut self) {
