@@ -1,0 +1,232 @@
+{
+  "oracle_metadata": {
+    "application": "Grafia CAGD Reference Oracle",
+    "version": "1.0.0",
+    "build": 4108,
+    "framework": "CAGD Cubic Bezier Standard",
+    "host": "deterministic-headless",
+    "spec_reference": "SPEC-002-V0.1-CANVAS-INTERACTION-AND-RENDERING.md"
+  },
+  "de_casteljau_split_t05": {
+    "operation": "split_contour_segment",
+    "split_t": 0.5,
+    "input_nodes": [
+      { "x": 0.0, "y": 0.0, "node_type": "corner" },
+      { "x": 0.0, "y": 100.0, "node_type": "off_curve" },
+      { "x": 100.0, "y": 100.0, "node_type": "off_curve" },
+      { "x": 100.0, "y": 0.0, "node_type": "corner" }
+    ],
+    "expected_nodes": [
+      { "x": 0.0, "y": 0.0, "node_type": "corner" },
+      { "x": 0.0, "y": 50.0, "node_type": "off_curve" },
+      { "x": 25.0, "y": 75.0, "node_type": "off_curve" },
+      { "x": 50.0, "y": 75.0, "node_type": "smooth" },
+      { "x": 75.0, "y": 75.0, "node_type": "off_curve" },
+      { "x": 100.0, "y": 50.0, "node_type": "off_curve" },
+      { "x": 100.0, "y": 0.0, "node_type": "corner" }
+    ]
+  },
+  "extremum_snap_shift_pen": {
+    "operation": "find_nearest_cubic_extremum",
+    "probe_point": { "x": 268.0, "y": 247.0 },
+    "input_nodes": [
+      { "x": 100.0, "y": 100.0, "node_type": "corner" },
+      { "x": 200.0, "y": 300.0, "node_type": "off_curve" },
+      { "x": 400.0, "y": 300.0, "node_type": "off_curve" },
+      { "x": 500.0, "y": 100.0, "node_type": "corner" }
+    ],
+    "expected_extremum_point": { "x": 300.0, "y": 250.0 },
+    "expected_left_bcp": { "x": 225.0, "y": 250.0 },
+    "expected_right_bcp": { "x": 375.0, "y": 250.0 }
+  },
+  "heal_delete_scurve": {
+    "operation": "heal_delete_nodes",
+    "input_nodes": [
+      { "x": 0.0, "y": 0.0, "node_type": "corner" },
+      { "x": 0.0, "y": 50.0, "node_type": "off_curve" },
+      { "x": 50.0, "y": 100.0, "node_type": "off_curve" },
+      { "x": 100.0, "y": 100.0, "node_type": "smooth" },
+      { "x": 150.0, "y": 100.0, "node_type": "off_curve" },
+      { "x": 200.0, "y": 150.0, "node_type": "off_curve" },
+      { "x": 200.0, "y": 200.0, "node_type": "corner" }
+    ],
+    "delete_node_index": 3,
+    "expected_midpoint_t05": { "x": 100.0, "y": 100.0 },
+    "expected_node_count": 4
+  },
+  "cut_open_delete_nodes": {
+    "operation": "cut_open_delete_nodes",
+    "input_closed": true,
+    "input_nodes": [
+      { "x": 0.0, "y": 0.0, "node_type": "corner" },
+      { "x": 0.0, "y": 100.0, "node_type": "corner" },
+      { "x": 100.0, "y": 100.0, "node_type": "corner" },
+      { "x": 100.0, "y": 0.0, "node_type": "corner" }
+    ],
+    "delete_node_index": 1,
+    "expected_closed": false,
+    "expected_nodes": [
+      { "x": 100.0, "y": 100.0, "node_type": "corner" },
+      { "x": 100.0, "y": 0.0, "node_type": "corner" },
+      { "x": 0.0, "y": 0.0, "node_type": "corner" }
+    ]
+  },
+  "remove_off_curve_segment_handles": {
+    "operation": "remove_off_curve_segment_handles",
+    "input_nodes": [
+      { "x": 0.0, "y": 0.0, "node_type": "smooth" },
+      { "x": 0.0, "y": 55.0, "node_type": "off_curve" },
+      { "x": 45.0, "y": 100.0, "node_type": "off_curve" },
+      { "x": 100.0, "y": 100.0, "node_type": "smooth" },
+      { "x": 100.0, "y": 0.0, "node_type": "corner" }
+    ],
+    "delete_node_index": 1,
+    "expected_nodes": [
+      { "x": 0.0, "y": 0.0, "node_type": "corner" },
+      { "x": 100.0, "y": 100.0, "node_type": "corner" },
+      { "x": 100.0, "y": 0.0, "node_type": "corner" }
+    ]
+  },
+  "drag_curve_4_cases": {
+    "operation": "apply_cubic_segment_belly_drag",
+    "t": 0.5,
+    "delta": { "dx": 18.0, "dy": 40.0 },
+    "initial_h1": { "x": 0.0, "y": 60.0 },
+    "initial_h2": { "x": 100.0, "y": 60.0 },
+    "case_a_corner_corner": {
+      "expected_h1": { "x": 23.85, "y": 113.0 },
+      "expected_h2": { "x": 123.85, "y": 113.0 }
+    },
+    "case_b_smooth_smooth_vertical_tangents": {
+      "expected_h1": { "x": 0.0, "y": 113.33333333333333 },
+      "expected_h2": { "x": 100.0, "y": 113.33333333333333 }
+    },
+    "case_c_smooth_corner_vertical_p0": {
+      "expected_h1": { "x": 0.0, "y": 113.33333333333333 },
+      "expected_h2": { "x": 136.0, "y": 113.33333333333333 }
+    },
+    "case_d_corner_smooth_vertical_p3": {
+      "expected_h1": { "x": 36.0, "y": 113.33333333333333 },
+      "expected_h2": { "x": 100.0, "y": 113.33333333333333 }
+    }
+  },
+  "ctrl_alt_nudge_interpolate": {
+    "operation": "apply_ctrl_alt_interpolate_nudge",
+    "case_1a1_single_cubic": {
+      "input_nodes": [
+        { "x": 0.0, "y": 0.0, "node_type": "corner" },
+        { "x": 100.0, "y": 200.0, "node_type": "off_curve" },
+        { "x": 200.0, "y": 200.0, "node_type": "off_curve" },
+        { "x": 300.0, "y": 0.0, "node_type": "corner" }
+      ],
+      "selected_index": 0,
+      "delta": { "dx": 30.0, "dy": 60.0 },
+      "expected_nodes": [
+        { "x": 30.0, "y": 60.0, "node_type": "corner" },
+        { "x": 120.0, "y": 200.0, "node_type": "off_curve" },
+        { "x": 210.0, "y": 200.0, "node_type": "off_curve" },
+        { "x": 300.0, "y": 0.0, "node_type": "corner" }
+      ]
+    },
+    "case_1a2_two_segment_arch": {
+      "input_nodes": [
+        { "x": 0.0, "y": 0.0, "node_type": "corner" },
+        { "x": 0.0, "y": 55.0, "node_type": "off_curve" },
+        { "x": 45.0, "y": 100.0, "node_type": "off_curve" },
+        { "x": 100.0, "y": 100.0, "node_type": "smooth" },
+        { "x": 155.0, "y": 100.0, "node_type": "off_curve" },
+        { "x": 200.0, "y": 55.0, "node_type": "off_curve" },
+        { "x": 200.0, "y": 0.0, "node_type": "corner" }
+      ],
+      "selected_index": 3,
+      "delta": { "dx": 20.0, "dy": 30.0 },
+      "expected_nodes": [
+        { "x": 0.0, "y": 0.0, "node_type": "corner" },
+        { "x": 0.0, "y": 71.5, "node_type": "off_curve" },
+        { "x": 54.0, "y": 130.0, "node_type": "off_curve" },
+        { "x": 120.0, "y": 130.0, "node_type": "smooth" },
+        { "x": 164.0, "y": 130.0, "node_type": "off_curve" },
+        { "x": 200.0, "y": 71.5, "node_type": "off_curve" },
+        { "x": 200.0, "y": 0.0, "node_type": "corner" }
+      ]
+    }
+  },
+  "ctrl_alt_set_mirrored": {
+    "operation": "apply_ctrl_alt_mirrored_handle_drag",
+    "dragged_index": 2,
+    "delta": { "dx": 20.0, "dy": 30.0 },
+    "expected_dragged_handle": { "x": 65.0, "y": 130.0 },
+    "expected_opposite_handle": { "x": 135.0, "y": 70.0 }
+  },
+  "cmd_ctrl_slide_node_on_path": {
+    "operation": "slide_on_curve_node_along_contour",
+    "case_2a_target": { "x": 120.0, "y": 100.0 },
+    "case_2a_expected_node": {
+      "x": 119.49689734813702,
+      "y": 98.07886022762056
+    },
+    "case_2b_target": { "x": 80.0, "y": 90.0 },
+    "case_2b_expected_node": {
+      "x": 80.50310265186298,
+      "y": 98.07886022762056
+    }
+  },
+  "alt_slide_smooth_line_node_2c": {
+    "operation": "slide_smooth_line_node_unlimited",
+    "input_nodes": [
+      { "x": 0.0, "y": 0.0, "node_type": "corner" },
+      { "x": 100.0, "y": 100.0, "node_type": "smooth" },
+      { "x": 200.0, "y": 200.0, "node_type": "corner" }
+    ],
+    "drag_target": { "x": 120.0, "y": 90.0 },
+    "expected_point": { "x": 105.0, "y": 105.0 },
+    "expected_node_type": "smooth"
+  },
+  "pen_close_scenarios": {
+    "operation": "pen_close_contour",
+    "p0": { "x": 100.0, "y": 100.0 },
+    "p0_out": { "x": 140.0, "y": 150.0 },
+    "p1": { "x": 300.0, "y": 200.0 },
+    "p2": { "x": 250.0, "y": 50.0 },
+    "p2_out": { "x": 200.0, "y": 30.0 },
+    "close_drag": { "x": 80.0, "y": 130.0 },
+    "scenario_a_expected_count": 3,
+    "scenario_a_expected_node0_type": "corner",
+    "scenario_b_expected_node0_type": "smooth",
+    "scenario_b_expected_out_handle": { "x": 80.0, "y": 130.0 },
+    "scenario_b_expected_in_handle": { "x": 120.0, "y": 70.0 },
+    "scenario_c1_expected_node0_type": "corner",
+    "scenario_c1_expected_preserved_out_handle": { "x": 140.0, "y": 150.0 },
+    "scenario_c2_expected_node0_type": "smooth",
+    "scenario_c2_expected_preserved_out_handle": { "x": 140.0, "y": 150.0 },
+    "scenario_c2_expected_in_handle": { "x": 120.0, "y": 70.0 },
+    "scenario_c3_expected_preserved_out_handle": { "x": 140.0, "y": 150.0 },
+    "scenario_c3_expected_prev_out_handle": { "x": 200.0, "y": 30.0 },
+    "scenario_c3_expected_in_handle": { "x": 120.0, "y": 70.0 }
+  },
+  "reverse_and_make_first": {
+    "operations": ["reverse_contour_nodes", "make_selected_on_curve_node_first"],
+    "input_nodes": [
+      { "x": 100.0, "y": 100.0, "node_type": "smooth" },
+      { "x": 140.0, "y": 150.0, "node_type": "off_curve" },
+      { "x": 260.0, "y": 200.0, "node_type": "off_curve" },
+      { "x": 300.0, "y": 200.0, "node_type": "corner" },
+      { "x": 250.0, "y": 50.0, "node_type": "corner" }
+    ],
+    "reversed_expected_nodes": [
+      { "x": 100.0, "y": 100.0, "node_type": "smooth" },
+      { "x": 250.0, "y": 50.0, "node_type": "corner" },
+      { "x": 300.0, "y": 200.0, "node_type": "corner" },
+      { "x": 260.0, "y": 200.0, "node_type": "off_curve" },
+      { "x": 140.0, "y": 150.0, "node_type": "off_curve" }
+    ],
+    "make_first_index": 3,
+    "make_first_expected_nodes": [
+      { "x": 300.0, "y": 200.0, "node_type": "corner" },
+      { "x": 250.0, "y": 50.0, "node_type": "corner" },
+      { "x": 100.0, "y": 100.0, "node_type": "smooth" },
+      { "x": 140.0, "y": 150.0, "node_type": "off_curve" },
+      { "x": 260.0, "y": 200.0, "node_type": "off_curve" }
+    ]
+  }
+}

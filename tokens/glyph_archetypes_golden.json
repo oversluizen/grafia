@@ -1,0 +1,140 @@
+{
+  "n": {
+    "glyph_name": "n",
+    "advance_width": 560.0,
+    "upm": 1000.0,
+    "ascender": 800.0,
+    "cap_height": 700.0,
+    "x_height": 500.0,
+    "baseline": 0.0,
+    "descender": -200.0,
+    "contours": [
+      {
+        "closed": true,
+        "nodes": [
+          { "x": 70.0, "y": 0.0, "node_type": "corner" },
+          { "x": 70.0, "y": 500.0, "node_type": "corner" },
+          { "x": 155.0, "y": 500.0, "node_type": "corner" },
+          { "x": 155.0, "y": 420.0, "node_type": "corner" },
+          { "x": 190.0, "y": 480.0, "node_type": "off_curve" },
+          { "x": 255.0, "y": 510.0, "node_type": "off_curve" },
+          { "x": 330.0, "y": 510.0, "node_type": "smooth" },
+          { "x": 435.0, "y": 510.0, "node_type": "off_curve" },
+          { "x": 490.0, "y": 440.0, "node_type": "off_curve" },
+          { "x": 490.0, "y": 320.0, "node_type": "smooth" },
+          { "x": 490.0, "y": 0.0, "node_type": "corner" },
+          { "x": 400.0, "y": 0.0, "node_type": "corner" },
+          { "x": 400.0, "y": 305.0, "node_type": "smooth" },
+          { "x": 400.0, "y": 385.0, "node_type": "off_curve" },
+          { "x": 360.0, "y": 425.0, "node_type": "off_curve" },
+          { "x": 295.0, "y": 425.0, "node_type": "smooth" },
+          { "x": 220.0, "y": 425.0, "node_type": "off_curve" },
+          { "x": 160.0, "y": 370.0, "node_type": "off_curve" },
+          { "x": 160.0, "y": 280.0, "node_type": "smooth" },
+          { "x": 160.0, "y": 0.0, "node_type": "corner" }
+        ]
+      }
+    ]
+  },
+  "o": {
+    "glyph_name": "o",
+    "advance_width": 560.0,
+    "upm": 1000.0,
+    "ascender": 800.0,
+    "cap_height": 700.0,
+    "x_height": 500.0,
+    "baseline": 0.0,
+    "descender": -200.0,
+    "contours": [
+      {
+        "closed": true,
+        "nodes": [
+          { "x": 280.0, "y": 510.0, "node_type": "smooth" },
+          { "x": 407.0, "y": 510.0, "node_type": "off_curve" },
+          { "x": 510.0, "y": 394.0, "node_type": "off_curve" },
+          { "x": 510.0, "y": 250.0, "node_type": "smooth" },
+          { "x": 510.0, "y": 106.0, "node_type": "off_curve" },
+          { "x": 407.0, "y": -10.0, "node_type": "off_curve" },
+          { "x": 280.0, "y": -10.0, "node_type": "smooth" },
+          { "x": 153.0, "y": -10.0, "node_type": "off_curve" },
+          { "x": 50.0, "y": 106.0, "node_type": "off_curve" },
+          { "x": 50.0, "y": 250.0, "node_type": "smooth" },
+          { "x": 50.0, "y": 394.0, "node_type": "off_curve" },
+          { "x": 153.0, "y": 510.0, "node_type": "off_curve" }
+        ]
+      },
+      {
+        "closed": true,
+        "nodes": [
+          { "x": 280.0, "y": 420.0, "node_type": "smooth" },
+          { "x": 185.0, "y": 420.0, "node_type": "off_curve" },
+          { "x": 140.0, "y": 345.0, "node_type": "off_curve" },
+          { "x": 140.0, "y": 250.0, "node_type": "smooth" },
+          { "x": 140.0, "y": 155.0, "node_type": "off_curve" },
+          { "x": 185.0, "y": 80.0, "node_type": "off_curve" },
+          { "x": 280.0, "y": 80.0, "node_type": "smooth" },
+          { "x": 375.0, "y": 80.0, "node_type": "off_curve" },
+          { "x": 420.0, "y": 155.0, "node_type": "off_curve" },
+          { "x": 420.0, "y": 250.0, "node_type": "smooth" },
+          { "x": 420.0, "y": 345.0, "node_type": "off_curve" },
+          { "x": 375.0, "y": 420.0, "node_type": "off_curve" }
+        ]
+      }
+    ]
+  },
+  "s": {
+    "glyph_name": "s",
+    "advance_width": 480.0,
+    "upm": 1000.0,
+    "ascender": 800.0,
+    "cap_height": 700.0,
+    "x_height": 500.0,
+    "baseline": 0.0,
+    "descender": -200.0,
+    "contours": [
+      {
+        "closed": true,
+        "nodes": [
+          { "x": 245.0, "y": -10.0, "node_type": "smooth" },
+          { "x": 140.0, "y": -10.0, "node_type": "off_curve" },
+          { "x": 65.0, "y": 35.0, "node_type": "off_curve" },
+          { "x": 50.0, "y": 115.0, "node_type": "corner" },
+          { "x": 135.0, "y": 135.0, "node_type": "corner" },
+          { "x": 150.0, "y": 80.0, "node_type": "off_curve" },
+          { "x": 190.0, "y": 55.0, "node_type": "off_curve" },
+          { "x": 245.0, "y": 55.0, "node_type": "smooth" },
+          { "x": 305.0, "y": 55.0, "node_type": "off_curve" },
+          { "x": 345.0, "y": 85.0, "node_type": "off_curve" },
+          { "x": 345.0, "y": 130.0, "node_type": "smooth" },
+          { "x": 345.0, "y": 175.0, "node_type": "off_curve" },
+          { "x": 300.0, "y": 198.0, "node_type": "off_curve" },
+          { "x": 215.0, "y": 220.0, "node_type": "smooth" },
+          { "x": 110.0, "y": 248.0, "node_type": "off_curve" },
+          { "x": 60.0, "y": 295.0, "node_type": "off_curve" },
+          { "x": 60.0, "y": 370.0, "node_type": "smooth" },
+          { "x": 60.0, "y": 455.0, "node_type": "off_curve" },
+          { "x": 135.0, "y": 510.0, "node_type": "off_curve" },
+          { "x": 240.0, "y": 510.0, "node_type": "smooth" },
+          { "x": 340.0, "y": 510.0, "node_type": "off_curve" },
+          { "x": 405.0, "y": 465.0, "node_type": "off_curve" },
+          { "x": 420.0, "y": 390.0, "node_type": "corner" },
+          { "x": 335.0, "y": 370.0, "node_type": "corner" },
+          { "x": 320.0, "y": 420.0, "node_type": "off_curve" },
+          { "x": 285.0, "y": 445.0, "node_type": "off_curve" },
+          { "x": 235.0, "y": 445.0, "node_type": "smooth" },
+          { "x": 180.0, "y": 445.0, "node_type": "off_curve" },
+          { "x": 145.0, "y": 418.0, "node_type": "off_curve" },
+          { "x": 145.0, "y": 375.0, "node_type": "smooth" },
+          { "x": 145.0, "y": 332.0, "node_type": "off_curve" },
+          { "x": 185.0, "y": 310.0, "node_type": "off_curve" },
+          { "x": 270.0, "y": 288.0, "node_type": "smooth" },
+          { "x": 375.0, "y": 260.0, "node_type": "off_curve" },
+          { "x": 430.0, "y": 210.0, "node_type": "off_curve" },
+          { "x": 430.0, "y": 130.0, "node_type": "smooth" },
+          { "x": 430.0, "y": 40.0, "node_type": "off_curve" },
+          { "x": 355.0, "y": -10.0, "node_type": "off_curve" }
+        ]
+      }
+    ]
+  }
+}

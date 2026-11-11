@@ -1,0 +1,125 @@
+[package]
+name = "grafia"
+version = "0.4.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = ["Jaco Oversluizen", "grafia contributors"]
+description = "Interactive 2D cubic Bezier contour, glyph, and vector canvas engine for egui with variable-font master compatibility and stylus brush support."
+repository = "https://github.com/oversluizen/grafia"
+documentation = "https://docs.rs/grafia"
+readme = "README.md"
+keywords = ["egui", "bezier", "glyph", "font-editor", "vector-canvas"]
+categories = ["gui", "graphics", "rendering::data-formats", "mathematics"]
+autotests = false
+
+[dependencies]
+kurbo = { version = "0.13", features = ["serde"] }
+lyon_tessellation = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+egui = { version = "0.37.0", default-features = false }
+tiny-skia = "0.11"
+image = { version = "0.25", default-features = false, features = ["png", "gif"] }
+
+[dev-dependencies]
+approx = "0.5"
+arbtest = "0.3"
+rstest = "0.24"
+image = "0.25"
+proptest = "1.6"
+eframe = { version = "0.37.0", features = ["glow", "wgpu"] }
+egui-macview = "0.6.3"
+
+[[test]]
+name = "architecture_guard_tests"
+path = "tests/architecture_guard_tests.rs"
+
+[[test]]
+name = "v010_core_canvas_tests"
+path = "tests/v010_core_canvas_tests.rs"
+
+[[test]]
+name = "visual_pixel_diff_tests"
+path = "tests/visual_pixel_diff_tests.rs"
+
+[[test]]
+name = "token_foundation_tests"
+path = "tests/token_foundation_tests.rs"
+
+[[test]]
+name = "egui_adapter_tests"
+path = "tests/egui_adapter_tests.rs"
+
+[[test]]
+name = "adversarial_m2_tests"
+path = "tests/adversarial_m2_tests.rs"
+
+[[test]]
+name = "reverify_m2_tests"
+path = "tests/reverify_m2_tests.rs"
+
+[[test]]
+name = "adversarial_m3_glyph_a_tests"
+path = "tests/adversarial_m3_glyph_a_tests.rs"
+
+[[test]]
+name = "adversarial_m3_tests"
+path = "tests/adversarial_m3_tests.rs"
+
+[[test]]
+name = "adversarial_m4_headless_tests"
+path = "tests/adversarial_m4_headless_tests.rs"
+
+[[test]]
+name = "adversarial_m4_ssim_tests"
+path = "tests/adversarial_m4_ssim_tests.rs"
+
+[[test]]
+name = "input_clipping_tests"
+path = "tests/input_clipping_tests.rs"
+
+[[test]]
+name = "shortcut_tests"
+path = "tests/shortcut_tests.rs"
+
+[[test]]
+name = "tessellation_mesh_tests"
+path = "tests/tessellation_mesh_tests.rs"
+
+[[test]]
+name = "shape_locator_tests"
+path = "tests/shape_locator_tests.rs"
+
+[[test]]
+name = "curve_manipulation_tests"
+path = "tests/curve_manipulation_tests.rs"
+
+[[test]]
+name = "wireframe_bezier_render_tests"
+path = "tests/wireframe_bezier_render_tests.rs"
+
+[[test]]
+name = "v010_chapter3_complete_tests"
+path = "tests/v010_chapter3_complete_tests.rs"
+
+[[test]]
+name = "v020_complete_tests"
+path = "tests/v020_complete_tests.rs"
+
+[[test]]
+name = "preview_canvas_panel_tests"
+path = "tests/preview_canvas_panel_tests.rs"
+
+[[test]]
+name = "v030_complete_tests"
+path = "tests/v030_complete_tests.rs"
+
+[[test]]
+name = "v040_complete_tests"
+path = "tests/v040_complete_tests.rs"
+
+[[example]]
+name = "vector_canvas_demo"
+path = "examples/vector_canvas_demo.rs"
+
+
