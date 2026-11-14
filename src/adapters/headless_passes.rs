@@ -42,72 +42,47 @@ fn stroke_pb(pixmap: &mut Pixmap, pb: PathBuilder, color: tiny_skia::Color, widt
     }
 }
 
-pub(crate) fn render_nodes(pixmap: &mut Pixmap, state: &GrafiaCanvasState, theme: &GrafiaTheme) {
-    let vp = state.active_slot_viewport();
-    crate::render::render_duplicate_warnings_tiny_skia(pixmap, state, theme);
-    crate::render::render_v030_alignment_badges_tiny_skia(pixmap, state);
-    let half_node = theme.edit_canvas.node_size_dp * 0.5;
-    let node_size = theme.edit_canvas.node_size_dp;
-    let handle_radius = theme.edit_canvas.bcp_handle_size_dp * 0.5;
-    let corner_color = color32_to_tiny_skia(theme.edit_canvas.corner_node_color32());
-    let smooth_color = color32_to_tiny_skia(theme.edit_canvas.smooth_node_color32());
-    let handle_color = color32_to_tiny_skia(theme.edit_canvas.bcp_handle_color32());
-    let arrow_color = color32_to_tiny_skia(theme.start_node_arrow_color32());
-    let open_color = color32_to_tiny_skia(theme.open_endpoint_color32());
-    let glow_color = color32_to_tiny_skia(theme.edit_canvas.selected_glow_color32());
-    let bg_color = color32_to_tiny_skia(theme.canvas_background_color32());
-    let sw = theme.edit_canvas.contour_stroke_width_dp;
+#[derive(Debug, Clone, Copy)]
+struct StartArrowAndOpenTickStyle {
+    bg_color: tiny_skia::Color,
+    arrow_color: tiny_skia::Color,
+    open_color: tiny_skia::Color,
+    stroke_width: f32,
+}
 
-    for (c_idx, contour) in state.contours.iter().enumerate() {
-        let is_closed = state.is_contour_closed(c_idx);
-        let is_single_open_point = !is_closed
-            && contour.len() == 1
-            && contour[0].node_type == NodeType::Corner
-            && state.pending_pen_bcp_out.is_none_or(|(c, _)| c != c_idx)
-            && state
-                .pending_pen_first_bcp_in
-                .is_none_or(|(c, _)| c != c_idx);
-        for node in contour {
-            let scr = vp.to_screen(node.point);
-            let (cx, cy) = (scr.x.0, scr.y.0);
-            if is_single_open_point {
-                let mut pb = PathBuilder::new();
-                pb.move_to(cx - half_node, cy - half_node);
-                pb.line_to(cx + half_node, cy + half_node);
-                pb.move_to(cx - half_node, cy + half_node);
-                pb.line_to(cx + half_node, cy - half_node);
-                stroke_pb(pixmap, pb, corner_color, sw);
-            } else {
-                match node.node_type {
-                    NodeType::Corner => {
-                        if let Some(rect) =
-                            Rect::from_xywh(cx - half_node, cy - half_node, node_size, node_size)
-                        {
-                            let mut paint = Paint::default();
-                            paint.set_color(corner_color);
-                            pixmap.fill_rect(rect, &paint, Transform::identity(), None);
-                        }
-                    }
-                    NodeType::Smooth => fill_circle(pixmap, cx, cy, half_node, smooth_color),
-                    NodeType::OffCurve => fill_circle(pixmap, cx, cy, handle_radius, handle_color),
-                }
-            }
+#[derive(Debug, Clone, Copy)]
+struct NodeGlyphRadiiDp {
+    cx: f32,
+    cy: f32,
+    half_node: f32,
+    node_size: f32,
+    handle_radius: f32,
+    stroke_width: f32,
+}
 
-            if state.selected_nodes.contains(&node.id) {
-                if let Some(g_rect) = Rect::from_xywh(
-                    cx - half_node - sw,
-                    cy - half_node - sw,
-                    node_size + sw * 2.0,
-                    node_size + sw * 2.0,
-                ) {
-                    let mut g_pb = PathBuilder::new();
-                    g_pb.push_rect(g_rect);
-                    stroke_pb(pixmap, g_pb, glow_color, sw * 2.0);
-                }
-            }
-        }
+#[derive(Debug, Clone, Copy)]
+struct NodeGlyphPaletteTs {
+    corner: tiny_skia::Color,
+    smooth: tiny_skia::Color,
+    handle: tiny_skia::Color,
+}
 
-        if let Some([tip, left, right]) = compute_start_node_arrow_triangle(contour, is_closed, &vp)
+fn render_start_arrow_and_open_ticks_ts(
+    pixmap: &mut Pixmap,
+    contour: &[crate::core::Node],
+    is_closed: bool,
+    vp: &crate::core::ViewportTransform,
+    show_nodes_oncurve: bool,
+    style: StartArrowAndOpenTickStyle,
+) {
+    let StartArrowAndOpenTickStyle {
+        bg_color,
+        arrow_color,
+        open_color,
+        stroke_width: sw,
+    } = style;
+    if show_nodes_oncurve {
+        if let Some([tip, left, right]) = compute_start_node_arrow_triangle(contour, is_closed, vp)
         {
             let mut pb = PathBuilder::new();
             pb.move_to(tip.x.0, tip.y.0);
@@ -141,28 +116,40 @@ pub(crate) fn render_nodes(pixmap: &mut Pixmap, state: &GrafiaCanvasState, theme
                 );
             }
         }
-
-        if !is_closed {
-            let mut pb = PathBuilder::new();
-            for (pa, pb_pt) in compute_open_contour_endpoint_ticks(contour, &vp) {
-                pb.move_to(pa.x.0, pa.y.0);
-                pb.line_to(pb_pt.x.0, pb_pt.y.0);
-            }
-            stroke_pb(pixmap, pb, open_color, sw);
-        }
     }
+    if !is_closed {
+        let mut pb = PathBuilder::new();
+        for (pa, pb_pt) in compute_open_contour_endpoint_ticks(contour, vp) {
+            pb.move_to(pa.x.0, pa.y.0);
+            pb.line_to(pb_pt.x.0, pb_pt.y.0);
+        }
+        stroke_pb(pixmap, pb, open_color, sw);
+    }
+}
+
+fn render_pen_drag_and_hover_handles_ts(
+    pixmap: &mut Pixmap,
+    state: &GrafiaCanvasState,
+    theme: &GrafiaTheme,
+    vp: &crate::core::ViewportTransform,
+) {
+    let half_node = theme.edit_canvas.node_size_dp * 0.5;
+    let handle_radius = theme.edit_canvas.bcp_handle_size_dp * 0.5;
+    let handle_color = color32_to_tiny_skia(theme.edit_canvas.bcp_handle_color32());
+    let smooth_color = color32_to_tiny_skia(theme.edit_canvas.smooth_node_color32());
+    let glow_color = color32_to_tiny_skia(theme.edit_canvas.selected_glow_color32());
 
     if let Some((_c_idx, bcp_out)) = state.pending_pen_bcp_out {
         let out_scr = vp.to_screen(bcp_out);
-        fill_circle(
+        crate::render::render_offcurve_handle_tiny_skia(
             pixmap,
             out_scr.x.0,
             out_scr.y.0,
             handle_radius,
+            theme.edit_canvas.handle_shape,
             handle_color,
         );
     }
-
     if let crate::interaction::PenToolState::DraggingHandles {
         anchor,
         bcp_out,
@@ -173,11 +160,17 @@ pub(crate) fn render_nodes(pixmap: &mut Pixmap, state: &GrafiaCanvasState, theme
         for h_pt in [bcp_out, bcp_in] {
             if h_pt != anchor {
                 let h_scr = vp.to_screen(h_pt);
-                fill_circle(pixmap, h_scr.x.0, h_scr.y.0, handle_radius, handle_color);
+                crate::render::render_offcurve_handle_tiny_skia(
+                    pixmap,
+                    h_scr.x.0,
+                    h_scr.y.0,
+                    handle_radius,
+                    theme.edit_canvas.handle_shape,
+                    handle_color,
+                );
             }
         }
     }
-
     if state.active_tool == CanvasTool::Pen {
         if let Some(hit) = state.hovered_segment_hit {
             let g_scr = vp.to_screen(hit.point);
@@ -185,6 +178,139 @@ pub(crate) fn render_nodes(pixmap: &mut Pixmap, state: &GrafiaCanvasState, theme
             pb.push_circle(g_scr.x.0, g_scr.y.0, half_node);
             stroke_pb(pixmap, pb, glow_color, GHOST_NODE_STROKE_WIDTH_DP);
             fill_circle(pixmap, g_scr.x.0, g_scr.y.0, half_node * 0.5, smooth_color);
+        }
+    }
+}
+
+pub(crate) fn render_nodes(pixmap: &mut Pixmap, state: &GrafiaCanvasState, theme: &GrafiaTheme) {
+    let vp = state.active_slot_viewport();
+    crate::render::render_duplicate_warnings_tiny_skia(pixmap, state, theme);
+    crate::render::render_alignment_badges_tiny_skia(pixmap, state);
+    let half_node = theme.edit_canvas.node_size_dp * 0.5;
+    let node_size = theme.edit_canvas.node_size_dp;
+    let handle_radius = theme.edit_canvas.bcp_handle_size_dp * 0.5;
+    let palette = NodeGlyphPaletteTs {
+        corner: color32_to_tiny_skia(theme.edit_canvas.corner_node_color32()),
+        smooth: color32_to_tiny_skia(theme.edit_canvas.smooth_node_color32()),
+        handle: color32_to_tiny_skia(theme.edit_canvas.bcp_handle_color32()),
+    };
+    let glow_color = color32_to_tiny_skia(theme.edit_canvas.selected_glow_color32());
+    let sw = theme.edit_canvas.contour_stroke_width_dp;
+    let tick_style = StartArrowAndOpenTickStyle {
+        bg_color: color32_to_tiny_skia(theme.canvas_background_color32()),
+        arrow_color: color32_to_tiny_skia(theme.start_node_arrow_color32()),
+        open_color: color32_to_tiny_skia(theme.open_endpoint_color32()),
+        stroke_width: sw,
+    };
+
+    for (c_idx, contour) in state.contours.iter().enumerate() {
+        let is_closed = state.is_contour_closed(c_idx);
+        let is_single_open_point = !is_closed
+            && contour.len() == 1
+            && contour[0].node_type == NodeType::Corner
+            && state.pending_pen_bcp_out.is_none_or(|(c, _)| c != c_idx)
+            && state
+                .pending_pen_first_bcp_in
+                .is_none_or(|(c, _)| c != c_idx);
+        for node in contour {
+            if (node.node_type == NodeType::OffCurve && !state.show_nodes_offcurve)
+                || (node.node_type != NodeType::OffCurve && !state.show_nodes_oncurve)
+            {
+                continue;
+            }
+            let scr = vp.to_screen(node.point);
+            let geom = NodeGlyphRadiiDp {
+                cx: scr.x.0,
+                cy: scr.y.0,
+                half_node,
+                node_size,
+                handle_radius,
+                stroke_width: sw,
+            };
+            render_single_node_glyph_ts(
+                pixmap,
+                theme,
+                node.node_type,
+                geom,
+                palette,
+                is_single_open_point,
+            );
+            if state.selected_nodes.contains(&node.id) {
+                if let Some(g_rect) = Rect::from_xywh(
+                    scr.x.0 - half_node - sw,
+                    scr.y.0 - half_node - sw,
+                    node_size + sw * 2.0,
+                    node_size + sw * 2.0,
+                ) {
+                    let mut g_pb = PathBuilder::new();
+                    g_pb.push_rect(g_rect);
+                    stroke_pb(pixmap, g_pb, glow_color, sw * 2.0);
+                }
+            }
+        }
+        render_start_arrow_and_open_ticks_ts(
+            pixmap,
+            contour,
+            is_closed,
+            &vp,
+            state.show_nodes_oncurve,
+            tick_style,
+        );
+    }
+    render_pen_drag_and_hover_handles_ts(pixmap, state, theme, &vp);
+}
+
+fn render_single_node_glyph_ts(
+    pixmap: &mut Pixmap,
+    theme: &GrafiaTheme,
+    node_type: NodeType,
+    geom: NodeGlyphRadiiDp,
+    colors: NodeGlyphPaletteTs,
+    is_single_open_point: bool,
+) {
+    let NodeGlyphRadiiDp {
+        cx,
+        cy,
+        half_node,
+        node_size,
+        handle_radius,
+        stroke_width: sw,
+    } = geom;
+    let NodeGlyphPaletteTs {
+        corner: corner_color,
+        smooth: smooth_color,
+        handle: handle_color,
+    } = colors;
+    if is_single_open_point {
+        let mut pb = PathBuilder::new();
+        pb.move_to(cx - half_node, cy - half_node);
+        pb.line_to(cx + half_node, cy + half_node);
+        pb.move_to(cx - half_node, cy + half_node);
+        pb.line_to(cx + half_node, cy - half_node);
+        stroke_pb(pixmap, pb, corner_color, sw);
+        return;
+    }
+    match node_type {
+        NodeType::Corner => {
+            if let Some(rect) =
+                Rect::from_xywh(cx - half_node, cy - half_node, node_size, node_size)
+            {
+                let mut paint = Paint::default();
+                paint.set_color(corner_color);
+                pixmap.fill_rect(rect, &paint, Transform::identity(), None);
+            }
+        }
+        NodeType::Smooth => fill_circle(pixmap, cx, cy, half_node, smooth_color),
+        NodeType::OffCurve => crate::render::render_offcurve_handle_tiny_skia(
+            pixmap,
+            cx,
+            cy,
+            handle_radius,
+            theme.edit_canvas.handle_shape,
+            handle_color,
+        ),
+        NodeType::HobbyStar { .. } | NodeType::EulerSpiro { .. } => {
+            crate::render::render_spline_node_marker_tiny_skia(pixmap, cx, cy, node_type, theme);
         }
     }
 }

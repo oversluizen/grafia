@@ -1,6 +1,6 @@
 //! Preview canvas filled silhouette projection and live glyph preview widget.
 
-pub use crate::render::preview_canvas_ts::{
+pub use crate::render::preview_panel_pixmap::{
     rasterize_preview_panel, render_preview_panel_into_rect,
 };
 
@@ -88,113 +88,158 @@ impl<'a> GrafiaPreviewWidget<'a> {
         let (rect, response) = ui.allocate_exact_size(size, Sense::hover());
 
         if ui.is_rect_visible(rect) {
-            let use_dark = self.state.theme.is_dark() ^ self.config.inverted;
-            let bg_color = if use_dark {
-                preview_panel_bg_inverted()
-            } else {
-                preview_panel_bg_normal()
-            };
-            ui.painter().rect_filled(rect, 0.0, bg_color);
+            self.paint_visible_preview_panel(ui, rect);
+        }
 
-            let border_stroke = Stroke::new(
+        response
+    }
+
+    fn paint_visible_preview_panel(&self, ui: &mut Ui, rect: egui::Rect) {
+        let use_dark = self.state.theme.is_dark() ^ self.config.inverted;
+        let bg_color = if use_dark {
+            preview_panel_bg_inverted()
+        } else {
+            preview_panel_bg_normal()
+        };
+        ui.painter().rect_filled(rect, 0.0, bg_color);
+
+        let border_stroke = Stroke::new(
+            PREVIEW_PANEL_BASELINE_STROKE_WIDTH_DP,
+            preview_panel_border_color(),
+        );
+        ui.painter()
+            .line_segment([rect.left_top(), rect.right_top()], border_stroke);
+
+        let asc = DEFAULT_ASCENDER_UPM;
+        let desc = DEFAULT_DESCENDER_UPM;
+        let v_span = (asc - desc).max(1.0);
+        let pad = self.config.padding_dp as f64;
+        let avail_h = (rect.height() as f64 - pad * 2.0).max(1.0);
+        let scale = (avail_h / v_span) * PREVIEW_PANEL_AUTOFIT_MARGIN;
+
+        let center_y = rect.center().y;
+        let normal_baseline_y = center_y + ((asc + desc) * 0.5 * scale) as f32;
+        let draw_baseline_y = if self.config.flipped {
+            2.0 * center_y - normal_baseline_y
+        } else {
+            normal_baseline_y
+        };
+
+        let adv_w = if let Some(last) = self.state.text_stream.slots.last() {
+            (last.origin_x_upm + last.glyph.width).max(DEFAULT_X_HEIGHT_UPM)
+        } else if self.state.glyph.width > 0.0 {
+            self.state.glyph.width
+        } else {
+            DEFAULT_X_HEIGHT_UPM
+        };
+        let origin_x_scr = rect.center().x - (adv_w * 0.5 * scale) as f32;
+
+        if self.config.show_baseline {
+            let baseline_stroke = Stroke::new(
                 PREVIEW_PANEL_BASELINE_STROKE_WIDTH_DP,
-                preview_panel_border_color(),
+                preview_panel_baseline_color(),
             );
-            ui.painter()
-                .line_segment([rect.left_top(), rect.right_top()], border_stroke);
-
-            let asc = DEFAULT_ASCENDER_UPM;
-            let desc = DEFAULT_DESCENDER_UPM;
-            let v_span = (asc - desc).max(1.0);
-            let pad = self.config.padding_dp as f64;
-            let avail_h = (rect.height() as f64 - pad * 2.0).max(1.0);
-            let scale = (avail_h / v_span) * PREVIEW_PANEL_AUTOFIT_MARGIN;
-
-            let center_y = rect.center().y;
-            let normal_baseline_y = center_y + ((asc + desc) * 0.5 * scale) as f32;
-            let draw_baseline_y = if self.config.flipped {
-                2.0 * center_y - normal_baseline_y
-            } else {
-                normal_baseline_y
-            };
-
-            let adv_w = if let Some(last) = self.state.text_stream.slots.last() {
-                (last.origin_x_upm + last.glyph.width).max(DEFAULT_X_HEIGHT_UPM)
-            } else if self.state.glyph.width > 0.0 {
-                self.state.glyph.width
-            } else {
-                DEFAULT_X_HEIGHT_UPM
-            };
-            let origin_x_scr = rect.center().x - (adv_w * 0.5 * scale) as f32;
-
-            if self.config.show_baseline {
-                let baseline_stroke = Stroke::new(
-                    PREVIEW_PANEL_BASELINE_STROKE_WIDTH_DP,
-                    preview_panel_baseline_color(),
-                );
-                ui.painter().line_segment(
-                    [
-                        Pos2::new(rect.left(), draw_baseline_y),
-                        Pos2::new(rect.right(), draw_baseline_y),
-                    ],
-                    baseline_stroke,
-                );
-            }
-
-            let temp_vp = ViewportTransform::new(
-                scale as f32,
-                ScreenPoint::new(origin_x_scr, normal_baseline_y),
-                self.state.glyph.upm,
+            ui.painter().line_segment(
+                [
+                    Pos2::new(rect.left(), draw_baseline_y),
+                    Pos2::new(rect.right(), draw_baseline_y),
+                ],
+                baseline_stroke,
             );
+        }
 
-            let fill_color = if use_dark {
-                preview_panel_fill_inverted()
-            } else {
-                preview_panel_fill_normal()
-            };
+        let temp_vp = ViewportTransform::new(
+            scale as f32,
+            ScreenPoint::new(origin_x_scr, normal_baseline_y),
+            self.state.glyph.upm,
+        );
 
-            if self.config.blur_radius_px > crate::tokens::PREVIEW_BLUR_ACTIVE_THRESHOLD_PX {
-                let rw = (rect.width().round().max(1.0)) as u32;
-                let rh = (rect.height().round().max(1.0)) as u32;
-                let pix = rasterize_preview_panel(self.state, &self.config, rw, rh);
-                let data = pix.data();
-                let w_us = rw as usize;
-                let h_us = rh as usize;
-                for y in 0..h_us {
-                    let mut x = 0usize;
-                    while x < w_us {
-                        let idx = (y * w_us + x) * crate::tokens::RGBA_CHANNEL_COUNT;
-                        let col = crate::tokens::preview_rgba_slice_to_color32(
-                            &data[idx..idx + crate::tokens::RGBA_CHANNEL_COUNT],
-                        );
-                        let mut end_x = x + 1;
-                        while end_x < w_us {
-                            let nidx = (y * w_us + end_x) * crate::tokens::RGBA_CHANNEL_COUNT;
-                            if data[nidx..nidx + crate::tokens::RGBA_CHANNEL_COUNT]
-                                != data[idx..idx + crate::tokens::RGBA_CHANNEL_COUNT]
-                            {
-                                break;
-                            }
-                            end_x += 1;
-                        }
-                        if col != bg_color {
-                            let r = egui::Rect::from_min_max(
-                                Pos2::new(rect.left() + x as f32, rect.top() + y as f32),
-                                Pos2::new(rect.left() + end_x as f32, rect.top() + (y + 1) as f32),
-                            );
-                            ui.painter().rect_filled(r, 0.0, col);
-                        }
-                        x = end_x;
+        let fill_color = if use_dark {
+            preview_panel_fill_inverted()
+        } else {
+            preview_panel_fill_normal()
+        };
+
+        if self.config.blur_radius_px > crate::tokens::PREVIEW_BLUR_ACTIVE_THRESHOLD_PX {
+            self.paint_blurred_preview_panel(ui, rect, bg_color, border_stroke);
+        } else {
+            self.paint_crisp_preview_meshes(ui, &temp_vp, center_y, fill_color);
+        }
+    }
+
+    fn paint_blurred_preview_panel(
+        &self,
+        ui: &mut Ui,
+        rect: egui::Rect,
+        bg_color: egui::Color32,
+        border_stroke: Stroke,
+    ) {
+        let rw = (rect.width().round().max(1.0)) as u32;
+        let rh = (rect.height().round().max(1.0)) as u32;
+        let pix = rasterize_preview_panel(self.state, &self.config, rw, rh);
+        let data = pix.data();
+        let w_us = rw as usize;
+        let h_us = rh as usize;
+        for y in 0..h_us {
+            let mut x = 0usize;
+            while x < w_us {
+                let idx = (y * w_us + x) * crate::tokens::RGBA_CHANNEL_COUNT;
+                let col = crate::tokens::preview_rgba_slice_to_color32(
+                    &data[idx..idx + crate::tokens::RGBA_CHANNEL_COUNT],
+                );
+                let mut end_x = x + 1;
+                while end_x < w_us {
+                    let nidx = (y * w_us + end_x) * crate::tokens::RGBA_CHANNEL_COUNT;
+                    if data[nidx..nidx + crate::tokens::RGBA_CHANNEL_COUNT]
+                        != data[idx..idx + crate::tokens::RGBA_CHANNEL_COUNT]
+                    {
+                        break;
                     }
+                    end_x += 1;
                 }
-                ui.painter()
-                    .line_segment([rect.left_top(), rect.right_top()], border_stroke);
-            } else if self.state.text_stream.slots.is_empty() {
-                let closed_flags = self.state.closed_flags();
-                let mut mesh = crate::render::tessellate_closed_contours_nonzero(
-                    &self.state.contours,
-                    &closed_flags,
-                    &temp_vp,
+                if col != bg_color {
+                    let r = egui::Rect::from_min_max(
+                        Pos2::new(rect.left() + x as f32, rect.top() + y as f32),
+                        Pos2::new(rect.left() + end_x as f32, rect.top() + (y + 1) as f32),
+                    );
+                    ui.painter().rect_filled(r, 0.0, col);
+                }
+                x = end_x;
+            }
+        }
+        ui.painter()
+            .line_segment([rect.left_top(), rect.right_top()], border_stroke);
+    }
+
+    fn paint_crisp_preview_meshes(
+        &self,
+        ui: &mut Ui,
+        temp_vp: &ViewportTransform,
+        center_y: f32,
+        fill_color: egui::Color32,
+    ) {
+        if self.state.text_stream.slots.is_empty() {
+            let closed_flags = self.state.closed_flags();
+            let mut mesh = crate::render::tessellate_closed_contours_nonzero(
+                &self.state.contours,
+                &closed_flags,
+                temp_vp,
+                fill_color,
+            );
+            if self.config.flipped {
+                for v in &mut mesh.vertices {
+                    v.pos.y = 2.0 * center_y - v.pos.y;
+                }
+            }
+            if !mesh.is_empty() {
+                ui.painter().add(Shape::mesh(mesh));
+            }
+        } else {
+            for slot in &self.state.text_stream.slots {
+                let slot_vp = temp_vp.with_origin_x_upm(slot.origin_x_upm);
+                let mut mesh = crate::render::tessellate_glyph_contours_nonzero(
+                    &slot.glyph.contours,
+                    &slot_vp,
                     fill_color,
                 );
                 if self.config.flipped {
@@ -205,27 +250,8 @@ impl<'a> GrafiaPreviewWidget<'a> {
                 if !mesh.is_empty() {
                     ui.painter().add(Shape::mesh(mesh));
                 }
-            } else {
-                for slot in &self.state.text_stream.slots {
-                    let slot_vp = temp_vp.with_origin_x_upm(slot.origin_x_upm);
-                    let mut mesh = crate::render::tessellate_glyph_contours_nonzero(
-                        &slot.glyph.contours,
-                        &slot_vp,
-                        fill_color,
-                    );
-                    if self.config.flipped {
-                        for v in &mut mesh.vertices {
-                            v.pos.y = 2.0 * center_y - v.pos.y;
-                        }
-                    }
-                    if !mesh.is_empty() {
-                        ui.painter().add(Shape::mesh(mesh));
-                    }
-                }
             }
         }
-
-        response
     }
 }
 

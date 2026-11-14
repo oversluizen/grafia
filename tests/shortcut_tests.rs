@@ -1,3 +1,12 @@
+#![allow(
+    clippy::too_many_lines,
+    clippy::cognitive_complexity,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::too_many_arguments,
+    clippy::iter_over_hash_type
+)]
 //! Test suite for Keyboard Shortcuts and Modifiers (TC-GRAFIA-V01-03..05, TC-1227, TC-1234, TC-1236).
 //!
 //! Asserts:

@@ -1,3 +1,12 @@
+#![allow(
+    clippy::too_many_lines,
+    clippy::cognitive_complexity,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::too_many_arguments,
+    clippy::iter_over_hash_type
+)]
 //! Integration tests for `GrafiaCanvasWidget` and `grafia::adapters` (STD-ARCH Verankeringswet).
 //!
 //! Tests:
@@ -2241,6 +2250,7 @@ fn test_grafia_host_bridge_load_edit_export_roundtrip() {
             position: 1400.0,
             size: 24.0,
         }],
+        ..Default::default()
     };
 
     state.load_glyph(custom_glyph.clone(), custom_metrics.clone());

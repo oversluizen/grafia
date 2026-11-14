@@ -1,16 +1,28 @@
 //! Core bezier curve operations, node types, and tangent alignment.
 
+use crate::core::canvas_entities::HobbyDirConstraint;
 use crate::core::coordinates::FontPoint;
+use crate::core::math_consts::{
+    COLLINEAR_MIN_LEN_EPSILON, DEFAULT_ANGLE_SNAP_DEG, FULL_CIRCLE_DEG,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct NodeId(pub u64);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum NodeType {
     Corner,
     Smooth,
     OffCurve,
+    HobbyStar {
+        tension_in: f64,
+        tension_out: f64,
+        dir_constraint: HobbyDirConstraint,
+    },
+    EulerSpiro {
+        dir_constraint: HobbyDirConstraint,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -23,6 +35,7 @@ pub struct Node {
 impl Node {
     #[must_use]
     pub fn new(id: NodeId, x: f64, y: f64, node_type: NodeType) -> Self {
+        debug_assert!(x.is_finite() && y.is_finite());
         Self {
             id,
             point: FontPoint::new(x, y),
@@ -38,7 +51,7 @@ pub fn align_collinear_opposite(
     bcp_in: FontPoint,
     bcp_out: FontPoint,
 ) -> FontPoint {
-    if anchor.distance_to(bcp_out) <= crate::tokens::COLLINEAR_MIN_LEN_EPSILON {
+    if anchor.distance_to(bcp_out) <= COLLINEAR_MIN_LEN_EPSILON {
         return bcp_in;
     }
     let angle_out = (bcp_out.y.0 - anchor.y.0).atan2(bcp_out.x.0 - anchor.x.0);
@@ -53,12 +66,13 @@ pub fn align_collinear_opposite(
 /// Snaps a displacement vector (dx, dy) to 0, 45, 90, or 135 degree axes.
 #[must_use]
 pub fn snap_vector_45_degrees(dx: f64, dy: f64) -> (f64, f64) {
+    debug_assert!(dx.is_finite() && dy.is_finite());
     if dx.abs() < 1e-6 && dy.abs() < 1e-6 {
         return (0.0, 0.0);
     }
     let rad = dy.atan2(dx);
-    let deg = rad.to_degrees().rem_euclid(crate::tokens::FULL_CIRCLE_DEG);
-    let step = crate::tokens::DEFAULT_ANGLE_SNAP_DEG;
+    let deg = rad.to_degrees().rem_euclid(FULL_CIRCLE_DEG);
+    let step = DEFAULT_ANGLE_SNAP_DEG;
     let snapped_deg = (deg / step).round() * step;
     let len = dx.hypot(dy);
     let snapped_rad = snapped_deg.to_radians();

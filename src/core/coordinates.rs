@@ -1,5 +1,6 @@
 //! Type-safe coordinate systems separating Font Units from Screen Logical Points (STD-ARCH Rule 1).
 
+use crate::core::math_consts::{MAX_VIEWPORT_ZOOM, MIN_VIEWPORT_ZOOM};
 use serde::{Deserialize, Serialize};
 
 /// Coordinate in font design units (Cartesian, Y-up, integers/f64).
@@ -90,8 +91,9 @@ pub struct ViewportTransform {
 impl ViewportTransform {
     #[must_use]
     pub fn new(zoom: f32, pan_offset: ScreenPoint, upm: u16) -> Self {
+        debug_assert!(zoom.is_finite() && upm > 0);
         Self {
-            zoom: zoom.max(crate::tokens::MIN_VIEWPORT_ZOOM),
+            zoom: zoom.max(MIN_VIEWPORT_ZOOM),
             pan_offset,
             upm,
         }
@@ -129,10 +131,7 @@ impl ViewportTransform {
     /// Zooms the viewport by `factor` while keeping `cursor_scr` pinned to the same font coordinate.
     pub fn zoom_at_cursor(&mut self, cursor_scr: ScreenPoint, factor: f32) {
         let anchor_font = self.to_font(cursor_scr);
-        self.zoom = (self.zoom * factor).clamp(
-            crate::tokens::MIN_VIEWPORT_ZOOM,
-            crate::tokens::MAX_VIEWPORT_ZOOM,
-        );
+        self.zoom = (self.zoom * factor).clamp(MIN_VIEWPORT_ZOOM, MAX_VIEWPORT_ZOOM);
         let pan_x = cursor_scr.x.0 - (anchor_font.x.0 as f32 * self.zoom);
         let pan_y = cursor_scr.y.0 + (anchor_font.y.0 as f32 * self.zoom);
         self.pan_offset = ScreenPoint::new(pan_x, pan_y);

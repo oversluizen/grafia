@@ -13,7 +13,7 @@ use crate::interaction::SelectToolState;
 /// Duplicates any contour(s) containing selected nodes when `Alt/Option + Drag` starts on a
 /// multi-node selection (`optionDragDuplicate` / `_duplicateSelection`, `SPEC-002 §3.1.8`).
 pub fn duplicate_selected_contours_for_alt_drag(state: &mut GrafiaCanvasState) {
-    for (id, pt, nt) in state.drag_start_node_types.clone() {
+    for (id, pt, nt) in state.drag_transients.drag_start_node_types.clone() {
         if let Some(node) = state.find_node_mut(id) {
             node.point = pt;
             node.node_type = nt;
@@ -102,7 +102,7 @@ impl GrafiaCanvasState {
         if !self.selected_nodes.contains(&node_id) {
             self.selected_nodes = vec![node_id];
         }
-        self.active_drag_before_snapshot = Some(before);
+        self.drag_transients.active_drag_before_snapshot = Some(before);
         self.record_drag_start();
         toggle_selected_on_curve_smooth(&mut self.contours, &closed_flags, &[node_id]);
         self.sync_paths_from_contours();
@@ -126,9 +126,9 @@ impl GrafiaCanvasState {
     }
 
     pub fn record_drag_start(&mut self) {
-        self.drag_start_font_positions.clear();
-        self.drag_start_contours = self.contours.clone();
-        self.drag_start_node_types = self
+        self.drag_transients.drag_start_font_positions.clear();
+        self.drag_transients.drag_start_contours = self.contours.clone();
+        self.drag_transients.drag_start_node_types = self
             .contours
             .iter()
             .flat_map(|c| c.iter().map(|n| (n.id, n.point, n.node_type)))
@@ -141,7 +141,9 @@ impl GrafiaCanvasState {
             true,
         ) {
             if let Some(node) = self.find_node(id) {
-                self.drag_start_font_positions.push((id, node.point));
+                self.drag_transients
+                    .drag_start_font_positions
+                    .push((id, node.point));
             }
         }
     }
@@ -172,7 +174,7 @@ impl GrafiaCanvasState {
         alt_held: bool,
         ctrl_held: bool,
     ) {
-        for (id, pt, nt) in self.drag_start_node_types.clone() {
+        for (id, pt, nt) in self.drag_transients.drag_start_node_types.clone() {
             if let Some(node) = self.find_node_mut(id) {
                 node.point = pt;
                 node.node_type = nt;
@@ -185,23 +187,123 @@ impl GrafiaCanvasState {
         };
         let selected_copy = self.selected_nodes.clone();
         let closed_flags = self.closed_flags();
-        let shadow_contours = if self.drag_start_contours.is_empty() {
+        let shadow_contours = if self.drag_transients.drag_start_contours.is_empty() {
             self.contours.clone()
         } else {
-            self.drag_start_contours.clone()
+            self.drag_transients.drag_start_contours.clone()
         };
         let has_on_curve_selected = selected_copy.iter().any(|&id| {
             self.find_node(id)
                 .is_some_and(|n| n.node_type != NodeType::OffCurve)
         });
+        if self.try_apply_single_on_curve_slide(
+            &selected_copy,
+            has_on_curve_selected,
+            &shadow_contours,
+            &closed_flags,
+            (snapped_dx, snapped_dy),
+            (ctrl_held, alt_held),
+        ) {
+            return;
+        }
+        let decouple_handles = alt_held && !ctrl_held && selected_copy.len() == 1;
+        for (id, start_pt) in self.drag_transients.drag_start_font_positions.clone() {
+            if let Some(node) = self.find_node_mut(id) {
+                node.point = if decouple_handles && !selected_copy.contains(&id) {
+                    start_pt
+                } else {
+                    FontPoint::new(start_pt.x.0 + snapped_dx, start_pt.y.0 + snapped_dy)
+                };
+            }
+        }
+        if ctrl_held && alt_held {
+            self.apply_ctrl_alt_drag_displacement(
+                has_on_curve_selected,
+                &shadow_contours,
+                &closed_flags,
+                &selected_copy,
+                (snapped_dx, snapped_dy),
+            );
+            return;
+        }
+        if let [sel_id] = selected_copy.as_slice() {
+            if self
+                .find_node(*sel_id)
+                .is_some_and(|n| n.node_type == NodeType::OffCurve)
+            {
+                for (c_idx, c) in self.contours.iter_mut().enumerate() {
+                    enforce_smooth_collinearity_on_handle_drag(
+                        c,
+                        closed_flags[c_idx],
+                        *sel_id,
+                        alt_held,
+                    );
+                }
+            }
+        }
+        self.sync_paths_from_contours();
+    }
 
-        if ctrl_held && !alt_held && selected_copy.len() == 1 && has_on_curve_selected {
-            let sel_id = selected_copy[0];
+    fn apply_ctrl_alt_drag_displacement(
+        &mut self,
+        has_on_curve_selected: bool,
+        shadow_contours: &[Vec<crate::core::Node>],
+        closed_flags: &[bool],
+        selected_copy: &[NodeId],
+        delta: (f64, f64),
+    ) {
+        if has_on_curve_selected {
+            apply_ctrl_alt_interpolate_nudge(
+                &mut self.contours,
+                shadow_contours,
+                closed_flags,
+                selected_copy,
+                delta.0,
+                delta.1,
+            );
+        } else {
+            for &sel_id in selected_copy {
+                for (c_idx, c) in self.contours.iter_mut().enumerate() {
+                    apply_ctrl_alt_mirrored_handle_drag(
+                        c,
+                        closed_flags[c_idx],
+                        sel_id,
+                        selected_copy,
+                    );
+                }
+            }
+        }
+        self.sync_paths_from_contours();
+    }
+
+    fn try_apply_single_on_curve_slide(
+        &mut self,
+        selected_copy: &[NodeId],
+        has_on_curve_selected: bool,
+        shadow_contours: &[Vec<crate::core::Node>],
+        closed_flags: &[bool],
+        delta: (f64, f64),
+        mods: (bool, bool),
+    ) -> bool {
+        let (snapped_dx, snapped_dy) = delta;
+        let (ctrl_held, alt_held) = mods;
+        if selected_copy.len() != 1 || !has_on_curve_selected {
+            return false;
+        }
+        let sel_id = selected_copy[0];
+        if ctrl_held && !alt_held {
             let start_pt = self
+                .drag_transients
                 .drag_start_font_positions
                 .iter()
                 .find(|&&(id, _)| id == sel_id)
-                .map_or_else(|| self.find_node(sel_id).unwrap().point, |&(_, p)| p);
+                .map_or_else(
+                    || {
+                        self.find_node(sel_id)
+                            .map_or_else(FontPoint::default, |n| n.point)
+                    },
+                    |&(_, p)| p,
+                );
             let target_pt = FontPoint::new(start_pt.x.0 + snapped_dx, start_pt.y.0 + snapped_dy);
             for (c_idx, contour) in self.contours.iter_mut().enumerate() {
                 if slide_smooth_node_on_cubic_path_shift_middle(
@@ -221,11 +323,9 @@ impl GrafiaCanvasState {
                 }
             }
             self.sync_paths_from_contours();
-            return;
+            return true;
         }
-
-        if alt_held && !ctrl_held && selected_copy.len() == 1 && has_on_curve_selected {
-            let sel_id = selected_copy[0];
+        if alt_held && !ctrl_held {
             for (c_idx, contour) in self.contours.iter_mut().enumerate() {
                 if slide_smooth_line_node_unlimited(
                     contour,
@@ -236,63 +336,10 @@ impl GrafiaCanvasState {
                     snapped_dy,
                 ) {
                     self.sync_paths_from_contours();
-                    return;
+                    return true;
                 }
             }
         }
-
-        let decouple_handles = alt_held && !ctrl_held && selected_copy.len() == 1;
-        for (id, start_pt) in self.drag_start_font_positions.clone() {
-            if let Some(node) = self.find_node_mut(id) {
-                node.point = if decouple_handles && !selected_copy.contains(&id) {
-                    start_pt
-                } else {
-                    FontPoint::new(start_pt.x.0 + snapped_dx, start_pt.y.0 + snapped_dy)
-                };
-            }
-        }
-
-        if ctrl_held && alt_held {
-            if has_on_curve_selected {
-                apply_ctrl_alt_interpolate_nudge(
-                    &mut self.contours,
-                    &shadow_contours,
-                    &closed_flags,
-                    &selected_copy,
-                    snapped_dx,
-                    snapped_dy,
-                );
-            } else {
-                for &sel_id in &selected_copy {
-                    for (c_idx, contour) in self.contours.iter_mut().enumerate() {
-                        apply_ctrl_alt_mirrored_handle_drag(
-                            contour,
-                            closed_flags[c_idx],
-                            sel_id,
-                            &selected_copy,
-                        );
-                    }
-                }
-            }
-            self.sync_paths_from_contours();
-            return;
-        }
-
-        if let [sel_id] = selected_copy.as_slice() {
-            if self
-                .find_node(*sel_id)
-                .is_some_and(|n| n.node_type == NodeType::OffCurve)
-            {
-                for (c_idx, contour) in self.contours.iter_mut().enumerate() {
-                    enforce_smooth_collinearity_on_handle_drag(
-                        contour,
-                        closed_flags[c_idx],
-                        *sel_id,
-                        alt_held,
-                    );
-                }
-            }
-        }
-        self.sync_paths_from_contours();
+        false
     }
 }

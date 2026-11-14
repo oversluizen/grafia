@@ -2,12 +2,12 @@
 //! `Cmd+Ctrl` (`moveNodeOnPath:` / `shiftMiddle:`), and `Alt` (`nearest_point_on_line`)
 //! node/handle manipulation operators (`SPEC-002 §3.1.3–3.1.4`).
 
-use crate::core::{FontPoint, Node, NodeId, NodeType};
-use crate::tokens::{
+use crate::core::math_consts::{
     BERNSTEIN_CUBIC_COEFF, COLLINEAR_MIN_LEN_EPSILON, NUDGE_PREV_SPAN_Y_MIN, NUDGE_RATIO_CLAMP_MAX,
     NUDGE_RATIO_CLAMP_MIN, NUDGE_SPAN_MIN, SHIFT_MIDDLE_MAX_T, SHIFT_MIDDLE_TANGENT_FACTOR,
     SOLVER_DET_EPSILON,
 };
+use crate::core::{FontPoint, Node, NodeId, NodeType};
 
 fn wrap_index(idx: isize, len: usize, closed: bool) -> Option<usize> {
     if len == 0 {
@@ -80,6 +80,67 @@ fn align_collinear_away_from_opposite(
     )
 }
 
+fn interpolate_adjacent_cubic_handles(
+    contour: &mut [Node],
+    shadow: &[Node],
+    closed: bool,
+    selected_nodes: &[NodeId],
+    i: usize,
+    delta: (f64, f64),
+    dir: isize,
+) {
+    let n = shadow.len();
+    let (dx, dy) = delta;
+    let p3 = shadow[i].point;
+    let (Some(h_near_idx), Some(h_far_idx), Some(opp_anchor_idx)) = (
+        wrap_index(i as isize + dir, n, closed),
+        wrap_index(i as isize + 2 * dir, n, closed),
+        wrap_index(i as isize + 3 * dir, n, closed),
+    ) else {
+        return;
+    };
+    if shadow[h_near_idx].node_type != NodeType::OffCurve
+        || shadow[h_far_idx].node_type != NodeType::OffCurve
+        || shadow[opp_anchor_idx].node_type == NodeType::OffCurve
+        || selected_nodes.contains(&shadow[opp_anchor_idx].id)
+    {
+        return;
+    }
+    let h_far = shadow[h_far_idx].point;
+    let opp = shadow[opp_anchor_idx].point;
+    let span_x = pick_far_coord(opp.x.0, h_far.x.0, p3.x.0) - p3.x.0;
+    let span_y = pick_far_coord(opp.y.0, h_far.y.0, p3.y.0) - p3.y.0;
+    let min_span_y = if dir > 0 {
+        NUDGE_SPAN_MIN
+    } else {
+        NUDGE_PREV_SPAN_Y_MIN
+    };
+
+    for hk_idx in [h_near_idx, h_far_idx] {
+        if !selected_nodes.contains(&shadow[hk_idx].id) {
+            let hk = shadow[hk_idx].point;
+            let cur = contour[hk_idx].point;
+            let nx = interp_coord(hk.x.0, cur.x.0, p3.x.0, span_x, NUDGE_SPAN_MIN, dx);
+            let ny = interp_coord(hk.y.0, cur.y.0, p3.y.0, span_y, min_span_y, dy);
+            contour[hk_idx].point = FontPoint::new(nx, ny);
+        }
+    }
+    if (span_x.abs() > NUDGE_SPAN_MIN || span_y.abs() > NUDGE_PREV_SPAN_Y_MIN)
+        && contour[opp_anchor_idx].node_type == NodeType::Smooth
+        && !selected_nodes.contains(&shadow[h_far_idx].id)
+    {
+        if let Some(beyond_idx) = wrap_index(i as isize + 4 * dir, n, closed) {
+            if beyond_idx != h_near_idx && contour[beyond_idx].node_type == NodeType::OffCurve {
+                contour[h_far_idx].point = align_collinear_away_from_opposite(
+                    contour[h_far_idx].point,
+                    contour[opp_anchor_idx].point,
+                    contour[beyond_idx].point,
+                );
+            }
+        }
+    }
+}
+
 /// Applies `setInterpolate:withPoint:` (Nudge) on unselected `OffCurve` handles of cubic segments
 /// adjacent to any selected `OnCurve` node (`Ctrl + Alt` + Drag or `Ctrl + Alt` + Arrows).
 pub fn apply_ctrl_alt_interpolate_nudge(
@@ -105,102 +166,16 @@ pub fn apply_ctrl_alt_interpolate_nudge(
             {
                 continue;
             }
-            let p3 = shadow[i].point;
-
-            // 1. Next cubic segment: shadow(i+1) = Q1 (Off), shadow(i+2) = Q2 (Off), shadow(i+3) = Q3 (On, unselected)
-            if let (Some(q1_idx), Some(q2_idx), Some(q3_idx)) = (
-                wrap_index(i as isize + 1, n, closed),
-                wrap_index(i as isize + 2, n, closed),
-                wrap_index(i as isize + 3, n, closed),
-            ) {
-                if shadow[q1_idx].node_type == NodeType::OffCurve
-                    && shadow[q2_idx].node_type == NodeType::OffCurve
-                    && shadow[q3_idx].node_type != NodeType::OffCurve
-                    && !selected_nodes.contains(&shadow[q3_idx].id)
-                {
-                    let q2 = shadow[q2_idx].point;
-                    let q3 = shadow[q3_idx].point;
-                    let span_x = pick_far_coord(q3.x.0, q2.x.0, p3.x.0) - p3.x.0;
-                    let span_y = pick_far_coord(q3.y.0, q2.y.0, p3.y.0) - p3.y.0;
-
-                    for qk_idx in [q1_idx, q2_idx] {
-                        if !selected_nodes.contains(&shadow[qk_idx].id) {
-                            let qk = shadow[qk_idx].point;
-                            let cur = contour[qk_idx].point;
-                            let nx =
-                                interp_coord(qk.x.0, cur.x.0, p3.x.0, span_x, NUDGE_SPAN_MIN, dx);
-                            let ny =
-                                interp_coord(qk.y.0, cur.y.0, p3.y.0, span_y, NUDGE_SPAN_MIN, dy);
-                            contour[qk_idx].point = FontPoint::new(nx, ny);
-                        }
-                    }
-                    if (span_x.abs() > NUDGE_SPAN_MIN || span_y.abs() > NUDGE_PREV_SPAN_Y_MIN)
-                        && contour[q3_idx].node_type == NodeType::Smooth
-                        && !selected_nodes.contains(&shadow[q2_idx].id)
-                    {
-                        if let Some(q4_idx) = wrap_index(i as isize + 4, n, closed) {
-                            if q4_idx != q1_idx && contour[q4_idx].node_type == NodeType::OffCurve {
-                                contour[q2_idx].point = align_collinear_away_from_opposite(
-                                    contour[q2_idx].point,
-                                    contour[q3_idx].point,
-                                    contour[q4_idx].point,
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-
-            // 2. Previous cubic segment: shadow(i-3) = P0 (On, unselected), shadow(i-2) = P1 (Off), shadow(i-1) = P2 (Off)
-            if let (Some(p0_idx), Some(p1_idx), Some(p2_idx)) = (
-                wrap_index(i as isize - 3, n, closed),
-                wrap_index(i as isize - 2, n, closed),
-                wrap_index(i as isize - 1, n, closed),
-            ) {
-                if shadow[p2_idx].node_type == NodeType::OffCurve
-                    && shadow[p1_idx].node_type == NodeType::OffCurve
-                    && shadow[p0_idx].node_type != NodeType::OffCurve
-                    && !selected_nodes.contains(&shadow[p0_idx].id)
-                {
-                    let p0 = shadow[p0_idx].point;
-                    let p1 = shadow[p1_idx].point;
-                    let span_x = p3.x.0 - pick_far_coord(p0.x.0, p1.x.0, p3.x.0);
-                    let span_y = p3.y.0 - pick_far_coord(p0.y.0, p1.y.0, p3.y.0);
-
-                    for pk_idx in [p1_idx, p2_idx] {
-                        if !selected_nodes.contains(&shadow[pk_idx].id) {
-                            let pk = shadow[pk_idx].point;
-                            let cur = contour[pk_idx].point;
-                            let nx =
-                                interp_coord(pk.x.0, cur.x.0, p3.x.0, -span_x, NUDGE_SPAN_MIN, dx);
-                            let ny = interp_coord(
-                                pk.y.0,
-                                cur.y.0,
-                                p3.y.0,
-                                -span_y,
-                                NUDGE_PREV_SPAN_Y_MIN,
-                                dy,
-                            );
-                            contour[pk_idx].point = FontPoint::new(nx, ny);
-                        }
-                    }
-                    if (span_x.abs() > NUDGE_SPAN_MIN || span_y.abs() > NUDGE_PREV_SPAN_Y_MIN)
-                        && contour[p0_idx].node_type == NodeType::Smooth
-                        && !selected_nodes.contains(&shadow[p1_idx].id)
-                    {
-                        if let Some(p_prev_idx) = wrap_index(i as isize - 4, n, closed) {
-                            if p_prev_idx != p2_idx
-                                && contour[p_prev_idx].node_type == NodeType::OffCurve
-                            {
-                                contour[p1_idx].point = align_collinear_away_from_opposite(
-                                    contour[p1_idx].point,
-                                    contour[p0_idx].point,
-                                    contour[p_prev_idx].point,
-                                );
-                            }
-                        }
-                    }
-                }
+            for dir in [1, -1] {
+                interpolate_adjacent_cubic_handles(
+                    contour,
+                    shadow,
+                    closed,
+                    selected_nodes,
+                    i,
+                    (dx, dy),
+                    dir,
+                );
             }
         }
     }
@@ -251,6 +226,91 @@ pub fn apply_ctrl_alt_mirrored_handle_drag(
             return;
         }
     }
+}
+
+fn slide_middle_toward_next(
+    contour: &mut [Node],
+    indices: [usize; 5],
+    pts: [FontPoint; 6],
+    target: FontPoint,
+    d1: f64,
+    d2: f64,
+) -> bool {
+    let [p1_i, p2_i, i, q1_i, q2_i] = indices;
+    let [p0, p1, p3, q1, q2, q3] = pts;
+    if d2 <= COLLINEAR_MIN_LEN_EPSILON {
+        return false;
+    }
+    let proj = project_point_onto_infinite_line(target, p3, q1);
+    let s = p3.distance_to(proj) / (BERNSTEIN_CUBIC_COEFF * d2);
+    if s <= 0.0 || s >= SHIFT_MIDDLE_MAX_T {
+        return true;
+    }
+    let (a0, a1, a2) = (lerp_pt(p3, q1, s), lerp_pt(q1, q2, s), lerp_pt(q2, q3, s));
+    let (b0, b1) = (lerp_pt(a0, a1, s), lerp_pt(a1, a2, s));
+    let p3_new = lerp_pt(b0, b1, s);
+    let (vx, vy) = (b1.x.0 - b0.x.0, b1.y.0 - b0.y.0);
+    let l_len = vx.hypot(vy);
+    if l_len <= COLLINEAR_MIN_LEN_EPSILON {
+        return true;
+    }
+    let (tau_x, tau_y) = (vx / l_len, vy / l_len);
+    let d_new = d1 + SHIFT_MIDDLE_TANGENT_FACTOR * (l_len + d2) * s;
+    contour[i].point = p3_new;
+    contour[q1_i].point = b1;
+    contour[q2_i].point = a2;
+    contour[p2_i].point = FontPoint::new(p3_new.x.0 - d_new * tau_x, p3_new.y.0 - d_new * tau_y);
+    if d1 > COLLINEAR_MIN_LEN_EPSILON {
+        let ratio = d_new / d1;
+        contour[p1_i].point = FontPoint::new(
+            p0.x.0 + ratio * (p1.x.0 - p0.x.0),
+            p0.y.0 + ratio * (p1.y.0 - p0.y.0),
+        );
+    }
+    true
+}
+
+fn slide_middle_toward_prev(
+    contour: &mut [Node],
+    indices: [usize; 5],
+    pts: [FontPoint; 6],
+    target: FontPoint,
+    d1: f64,
+    d2: f64,
+) -> bool {
+    let [p1_i, p2_i, i, q1_i, q2_i] = indices;
+    let [p0, p1, p2, p3, q2, q3] = pts;
+    if d1 <= COLLINEAR_MIN_LEN_EPSILON {
+        return false;
+    }
+    let proj = project_point_onto_infinite_line(target, p3, p2);
+    let abs_t = p3.distance_to(proj) / (BERNSTEIN_CUBIC_COEFF * d1);
+    if abs_t <= 0.0 || abs_t >= SHIFT_MIDDLE_MAX_T {
+        return true;
+    }
+    let u = 1.0 - abs_t;
+    let (a0, a1, a2) = (lerp_pt(p0, p1, u), lerp_pt(p1, p2, u), lerp_pt(p2, p3, u));
+    let (b0, b1) = (lerp_pt(a0, a1, u), lerp_pt(a1, a2, u));
+    let p3_new = lerp_pt(b0, b1, u);
+    let (vx, vy) = (b1.x.0 - b0.x.0, b1.y.0 - b0.y.0);
+    let l_len = vx.hypot(vy);
+    if l_len <= COLLINEAR_MIN_LEN_EPSILON {
+        return true;
+    }
+    let (tau_x, tau_y) = (vx / l_len, vy / l_len);
+    let d_new = d2 + SHIFT_MIDDLE_TANGENT_FACTOR * (l_len + d1) * abs_t;
+    contour[i].point = p3_new;
+    contour[p1_i].point = a0;
+    contour[p2_i].point = b0;
+    contour[q1_i].point = FontPoint::new(p3_new.x.0 + d_new * tau_x, p3_new.y.0 + d_new * tau_y);
+    if d2 > COLLINEAR_MIN_LEN_EPSILON {
+        let ratio = d_new / d2;
+        contour[q2_i].point = FontPoint::new(
+            q3.x.0 + ratio * (q2.x.0 - q3.x.0),
+            q3.y.0 + ratio * (q2.y.0 - q3.y.0),
+        );
+    }
+    true
 }
 
 /// Slides a `Smooth` `OnCurve` node between two cubic segments (`Cmd + Ctrl` + Drag,
@@ -306,70 +366,24 @@ pub fn slide_smooth_node_on_cubic_path_shift_middle(
     let target = FontPoint::new(p3.x.0 + dx, p3.y.0 + dy);
     let (d1, d2) = (p3.distance_to(p2), q1.distance_to(p3));
     if p2.distance_to(target) >= q1.distance_to(target) {
-        if d2 <= COLLINEAR_MIN_LEN_EPSILON {
-            return false;
-        }
-        let proj = project_point_onto_infinite_line(target, p3, q1);
-        let s = p3.distance_to(proj) / (BERNSTEIN_CUBIC_COEFF * d2);
-        if s <= 0.0 || s >= SHIFT_MIDDLE_MAX_T {
-            return true;
-        }
-        let (a0, a1, a2) = (lerp_pt(p3, q1, s), lerp_pt(q1, q2, s), lerp_pt(q2, q3, s));
-        let (b0, b1) = (lerp_pt(a0, a1, s), lerp_pt(a1, a2, s));
-        let p3_new = lerp_pt(b0, b1, s);
-        let (vx, vy) = (b1.x.0 - b0.x.0, b1.y.0 - b0.y.0);
-        let l_len = vx.hypot(vy);
-        if l_len <= COLLINEAR_MIN_LEN_EPSILON {
-            return true;
-        }
-        let (tau_x, tau_y) = (vx / l_len, vy / l_len);
-        let d_new = d1 + SHIFT_MIDDLE_TANGENT_FACTOR * (l_len + d2) * s;
-        contour[i].point = p3_new;
-        contour[q1_i].point = b1;
-        contour[q2_i].point = a2;
-        contour[p2_i].point =
-            FontPoint::new(p3_new.x.0 - d_new * tau_x, p3_new.y.0 - d_new * tau_y);
-        if d1 > COLLINEAR_MIN_LEN_EPSILON {
-            let ratio = d_new / d1;
-            contour[p1_i].point = FontPoint::new(
-                p0.x.0 + ratio * (p1.x.0 - p0.x.0),
-                p0.y.0 + ratio * (p1.y.0 - p0.y.0),
-            );
-        }
+        slide_middle_toward_next(
+            contour,
+            [p1_i, p2_i, i, q1_i, q2_i],
+            [p0, p1, p3, q1, q2, q3],
+            target,
+            d1,
+            d2,
+        )
     } else {
-        if d1 <= COLLINEAR_MIN_LEN_EPSILON {
-            return false;
-        }
-        let proj = project_point_onto_infinite_line(target, p3, p2);
-        let abs_t = p3.distance_to(proj) / (BERNSTEIN_CUBIC_COEFF * d1);
-        if abs_t <= 0.0 || abs_t >= SHIFT_MIDDLE_MAX_T {
-            return true;
-        }
-        let u = 1.0 - abs_t;
-        let (a0, a1, a2) = (lerp_pt(p0, p1, u), lerp_pt(p1, p2, u), lerp_pt(p2, p3, u));
-        let (b0, b1) = (lerp_pt(a0, a1, u), lerp_pt(a1, a2, u));
-        let p3_new = lerp_pt(b0, b1, u);
-        let (vx, vy) = (b1.x.0 - b0.x.0, b1.y.0 - b0.y.0);
-        let l_len = vx.hypot(vy);
-        if l_len <= COLLINEAR_MIN_LEN_EPSILON {
-            return true;
-        }
-        let (tau_x, tau_y) = (vx / l_len, vy / l_len);
-        let d_new = d2 + SHIFT_MIDDLE_TANGENT_FACTOR * (l_len + d1) * abs_t;
-        contour[i].point = p3_new;
-        contour[p1_i].point = a0;
-        contour[p2_i].point = b0;
-        contour[q1_i].point =
-            FontPoint::new(p3_new.x.0 + d_new * tau_x, p3_new.y.0 + d_new * tau_y);
-        if d2 > COLLINEAR_MIN_LEN_EPSILON {
-            let ratio = d_new / d2;
-            contour[q2_i].point = FontPoint::new(
-                q3.x.0 + ratio * (q2.x.0 - q3.x.0),
-                q3.y.0 + ratio * (q2.y.0 - q3.y.0),
-            );
-        }
+        slide_middle_toward_prev(
+            contour,
+            [p1_i, p2_i, i, q1_i, q2_i],
+            [p0, p1, p2, p3, q2, q3],
+            target,
+            d1,
+            d2,
+        )
     }
-    true
 }
 
 /// Projects a single `Smooth` `OnCurve` node without adjacent `OffCurve` handles onto the infinite

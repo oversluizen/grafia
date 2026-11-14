@@ -1,0 +1,8 @@
+# NASA JPL Rule 4 & Google Safe/Readable Rust AST Thresholds (STD-ARCH Regel 19)
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-panic-in-tests = true
+allow-dbg-in-tests = true
+cognitive-complexity-threshold = 20
+too-many-lines-threshold = 75
+max-struct-bools = 5

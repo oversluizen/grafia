@@ -1,3 +1,12 @@
+#![allow(
+    clippy::too_many_lines,
+    clippy::cognitive_complexity,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::too_many_arguments,
+    clippy::iter_over_hash_type
+)]
 #![allow(unexpected_cfgs)]
 //! Normative COTS Verification Suite for `SPEC-007` (`grafia v0.6.0`):
 //! Preview Strip Engine with Separable Gaussian Blur, Headless 5-Mode
@@ -380,8 +389,13 @@ fn tc_v060_015_to_017_mode_transitions_undo_roundtrip_and_headless_parity() {
         SelectionInfo::GlyphBase(_)
     ));
 
+    state.glyph.width = 600.0;
     let snap_0 = state.snapshot();
     state.center_glyph_in_width();
+    let SelectionInfo::GlyphBase(centered) = state.selection_info() else {
+        panic!("Expected GlyphBase selection info");
+    };
+    assert_relative_eq!(centered.lsb, centered.rsb, epsilon = 1e-4);
     let snap_1 = state.snapshot();
     assert_ne!(snap_0, snap_1);
     assert!(state.undo());
@@ -487,7 +501,7 @@ fn tc_v060_019_pure_2d_selection_info_actions_and_hud_grid_click() {
     let dots = grafia::render::compute_hud_transform_grid_dot_positions(hud_rect);
     let (br_anchor, br_pt) = dots[8];
     assert_eq!(br_anchor, TransformGridAnchor::BottomRight);
-    assert!(state.handle_v060_hud_pointer_press(br_pt, canvas_rect));
+    assert!(state.handle_hud_pointer_press(br_pt, canvas_rect));
     assert_eq!(
         state.transform_grid_anchor,
         TransformGridAnchor::BottomRight
@@ -503,7 +517,7 @@ fn tc_v060_019_pure_2d_selection_info_actions_and_hud_grid_click() {
     // Clicking the proportional icon in the HUD toggles `multi_selection_proportional` with Undo/Redo
     let prop_rect = grafia::render::compute_hud_proportional_icon_rect(hud_rect);
     let prop_center = ScreenPoint::new(prop_rect.center().x, prop_rect.center().y);
-    assert!(state.handle_v060_hud_pointer_press(prop_center, canvas_rect));
+    assert!(state.handle_hud_pointer_press(prop_center, canvas_rect));
     assert!(state.multi_selection_proportional);
     assert!(state.undo());
     assert!(!state.multi_selection_proportional);

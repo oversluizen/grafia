@@ -4,6 +4,9 @@
 
 use crate::core::annotations::CanvasAnnotation;
 use crate::core::bezier_ops::Node;
+use crate::core::hinting_and_hoi::{
+    HoiCubicLayerSet, HoiSiblingContours, PostScriptHint, TrueTypeVisualInstruction,
+};
 use crate::core::selection_info::CanvasAnchor;
 use serde::{Deserialize, Serialize};
 
@@ -83,6 +86,16 @@ pub struct Glyph {
     pub background_contours: Vec<GlyphContour>,
     #[serde(default)]
     pub anchors: Vec<CanvasAnchor>,
+    #[serde(default)]
+    pub postscript_hints: Vec<PostScriptHint>,
+    #[serde(default)]
+    pub truetype_instructions: Vec<TrueTypeVisualInstruction>,
+    #[serde(default)]
+    pub hoi_layer_sets: Vec<HoiCubicLayerSet>,
+    #[serde(default)]
+    pub hoi_sibling_contours: Option<HoiSiblingContours>,
+    #[serde(default)]
+    pub backdrop_ghost_contours: Vec<GlyphContour>,
 }
 
 /// Type alias for `Glyph` conforming to SPEC-002 §5.1.
@@ -100,6 +113,11 @@ impl Glyph {
             annotations: Vec::new(),
             background_contours: Vec::new(),
             anchors: Vec::new(),
+            postscript_hints: Vec::new(),
+            truetype_instructions: Vec::new(),
+            hoi_layer_sets: Vec::new(),
+            hoi_sibling_contours: None,
+            backdrop_ghost_contours: Vec::new(),
         }
     }
 

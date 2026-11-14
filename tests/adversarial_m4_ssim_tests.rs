@@ -1,3 +1,12 @@
+#![allow(
+    clippy::too_many_lines,
+    clippy::cognitive_complexity,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::too_many_arguments,
+    clippy::iter_over_hash_type
+)]
 //! Adversarial empirical test suite for SSIM and PMR differential analysis (Milestone 4).
 //!
 //! Normative references:
@@ -17,8 +26,8 @@ use image::{DynamicImage, ImageBuffer, Rgba};
 use std::panic::catch_unwind;
 
 #[path = "visual_pixel_diff_tests.rs"]
-#[allow(dead_code, unused_imports)]
-mod visual_pixel_diff_tests;
+#[allow(unused_imports)]
+pub mod visual_pixel_diff_tests;
 
 use visual_pixel_diff_tests::{
     compute_pmr_and_diff_heatmap, compute_ssim, HEATMAP_MISMATCH_COLOR, PMR_COLOR_TOLERANCE,

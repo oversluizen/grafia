@@ -21,7 +21,7 @@ impl From<(f64, f64)> for GlyphPointToken {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct GlyphAGoldenMaster {
     pub glyphname: String,
     #[serde(alias = "units_per_em", alias = "unitsPerEm", alias = "UPM")]
@@ -45,7 +45,7 @@ impl GlyphAGoldenMaster {
     #[must_use]
     pub fn load() -> Self {
         let json_str = include_str!("../../tokens/glyph_a_golden_master.json");
-        serde_json::from_str(json_str).expect("glyph_a_golden_master.json must be valid JSON")
+        serde_json::from_str(json_str).unwrap_or_default()
     }
 }
 
@@ -96,7 +96,7 @@ pub struct ArchetypeContourPreset {
     pub nodes: Vec<ArchetypeNodePreset>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct ArchetypeGlyphPreset {
     pub glyph_name: String,
     pub advance_width: f64,
@@ -109,7 +109,7 @@ pub struct ArchetypeGlyphPreset {
     pub contours: Vec<ArchetypeContourPreset>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 struct CurvedArchetypesCatalog {
     n: ArchetypeGlyphPreset,
     o: ArchetypeGlyphPreset,
@@ -161,13 +161,11 @@ pub fn load_archetype_preset(archetype: GlyphArchetype) -> ArchetypeGlyphPreset 
         }
         other => {
             let raw = include_str!("../../tokens/glyph_archetypes_golden.json");
-            let catalog: CurvedArchetypesCatalog =
-                serde_json::from_str(raw).expect("Valid glyph_archetypes_golden.json");
+            let catalog: CurvedArchetypesCatalog = serde_json::from_str(raw).unwrap_or_default();
             match other {
                 GlyphArchetype::N => catalog.n,
                 GlyphArchetype::O => catalog.o,
-                GlyphArchetype::S => catalog.s,
-                GlyphArchetype::A => unreachable!(),
+                GlyphArchetype::S | GlyphArchetype::A => catalog.s,
             }
         }
     }

@@ -1,14 +1,14 @@
 //! `CanvasGuide` Data Model, Geometry, Smart 2-Node Rule, Hit-Testing, and Measurement Intersections
 //! (`SPEC-004 §2.2`, `core geometry` `spec_ref..spec_ref`).
 
-use crate::core::{
-    extract_segments, ContourSegment, FontPoint, Node, ScreenPoint, ViewportTransform,
-};
-use crate::tokens::{
+use crate::core::math_consts::{
     CURVE_FLATTEN_TOLERANCE, CURVE_ROOT_DEDUP_EPS, DEG_TO_RAD_F64, FULL_CIRCLE_DEG_F64,
     GUIDE_ANGLE_CHANGE_EPS, GUIDE_HALF_CIRCLE_DEG, GUIDE_INFINITE_HALF_EXTENT_UPM,
     GUIDE_KNOB_HIT_RADIUS_DP, GUIDE_LINE_HIT_TOLERANCE_DP, RAD_TO_DEG_F64, RIGHT_ANGLE_DEG_F64,
     SNAP_LINE_INTERSECT_DET_EPS,
+};
+use crate::core::{
+    extract_segments, ContourSegment, FontPoint, Node, ScreenPoint, ViewportTransform,
 };
 use kurbo::{Line, PathEl};
 use serde::{Deserialize, Serialize};
@@ -28,6 +28,13 @@ pub enum GuideHitKind {
     Line(SelectedGuideRef),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+pub enum GuideThickness {
+    #[default]
+    ScreenDp,
+    FontUnits(f64),
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Guide {
     pub id: GuideId,
@@ -40,6 +47,8 @@ pub struct Guide {
     pub name: Option<String>,
     #[serde(default)]
     pub alignment: crate::core::GuideAlignment,
+    #[serde(default)]
+    pub thickness: GuideThickness,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -101,6 +110,7 @@ impl Guide {
             show_measurement: false,
             name: None,
             alignment: crate::core::GuideAlignment::Lsb,
+            thickness: GuideThickness::ScreenDp,
         }
     }
 
@@ -212,17 +222,14 @@ fn intersect_infinite_ray_with_segment(
     }
 }
 
-/// Computes sorted contour intersections and interior/consecutive distances along `guide`
-/// (`CanvasGuide::calculateIntersectionsForLayer:` @ `spec_ref`).
-#[must_use]
-pub fn calculate_guide_intersections(
+fn collect_raw_guide_intersections(
     guide: &Guide,
+    ux: f64,
+    uy: f64,
     contours: &[Vec<Node>],
     closed_flags: &[bool],
-) -> GuideMeasurementRay {
-    let (ux, uy) = guide.direction_unit();
+) -> Vec<(f64, FontPoint)> {
     let mut raw_hits: Vec<(f64, FontPoint)> = Vec::new();
-
     for (c_idx, contour) in contours.iter().enumerate() {
         let is_closed = closed_flags.get(c_idx).copied().unwrap_or(true);
         if contour.len() < 2 {
@@ -270,7 +277,19 @@ pub fn calculate_guide_intersections(
             }
         }
     }
+    raw_hits
+}
 
+/// Computes sorted contour intersections and interior/consecutive distances along `guide`
+/// (`CanvasGuide::calculateIntersectionsForLayer:` @ `spec_ref`).
+#[must_use]
+pub fn calculate_guide_intersections(
+    guide: &Guide,
+    contours: &[Vec<Node>],
+    closed_flags: &[bool],
+) -> GuideMeasurementRay {
+    let (ux, uy) = guide.direction_unit();
+    let mut raw_hits = collect_raw_guide_intersections(guide, ux, uy, contours, closed_flags);
     raw_hits.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
 
     let mut intersections: Vec<FontPoint> = Vec::new();

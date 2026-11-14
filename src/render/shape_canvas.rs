@@ -68,10 +68,11 @@ pub fn render_shape_thumbnails_tiny_skia(
     if state.paths.is_empty() {
         return;
     }
+    let scale = crate::core::math_consts::SHAPE_THUMBNAIL_CARD_SCALE;
     let pad = theme.shape_canvas.header_height_dp * 2.0;
     let mut row_y = pad + theme.shape_canvas.header_height_dp;
-    let card_w = theme.shape_canvas.thumbnail_width_dp * 2.0 * 2.0;
-    let card_h = theme.shape_canvas.thumbnail_height_dp * 2.0 * 2.0;
+    let card_w = theme.shape_canvas.thumbnail_width_dp * scale;
+    let card_h = theme.shape_canvas.thumbnail_height_dp * scale;
 
     for (idx, path) in state.paths.iter().enumerate() {
         let is_closed = state.is_contour_closed(idx);
@@ -79,7 +80,7 @@ pub fn render_shape_thumbnails_tiny_skia(
         let mut scaled_cfg = theme.shape_canvas.clone();
         scaled_cfg.thumbnail_width_dp = card_w;
         scaled_cfg.thumbnail_height_dp = card_h;
-        scaled_cfg.thumbnail_padding_dp = theme.shape_canvas.thumbnail_padding_dp * 2.0 * 2.0;
+        scaled_cfg.thumbnail_padding_dp = theme.shape_canvas.thumbnail_padding_dp * scale;
         let proj = ShapeThumbnailProjection::compute(path, &scaled_cfg, node_count, true);
         if let Some(card_rect) = TsRect::from_xywh(pad, row_y, card_w, card_h) {
             let mut card_paint = Paint::default();

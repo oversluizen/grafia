@@ -4,7 +4,7 @@ use crate::core::bezier_ops::{Node, NodeId, NodeType};
 use crate::core::coordinates::FontPoint;
 use crate::core::curve_manipulation::{extract_segments, ContourSegment};
 use crate::core::handle_constraints::fit_cubic_to_segment_chain;
-use crate::tokens::{
+use crate::core::math_consts::{
     COLLINEAR_MIN_LEN_EPSILON, CURVE_SOLVE_ACCURACY, SPLIT_RATIO_MAX, SPLIT_RATIO_MIN,
 };
 use kurbo::{ParamCurve, ParamCurveNearest, Point};
@@ -51,6 +51,130 @@ pub fn make_selected_on_curve_node_first(
         }
     }
     false
+}
+
+fn slide_along_incoming_segment(
+    contour: &mut [Node],
+    node_idx: usize,
+    s_in: ContourSegment,
+    seg_out: Option<ContourSegment>,
+    raw_t: f64,
+) {
+    let u = raw_t.clamp(SPLIT_RATIO_MIN, 1.0);
+    match s_in {
+        ContourSegment::Line { line, .. } => {
+            let p = line.eval(u);
+            let old = contour[node_idx].point;
+            contour[node_idx].point = FontPoint::new(p.x, p.y);
+            if let Some(ContourSegment::Cubic { h1_idx, .. }) = seg_out {
+                contour[h1_idx].point.x.0 += p.x - old.x.0;
+                contour[h1_idx].point.y.0 += p.y - old.y.0;
+            }
+        }
+        ContourSegment::Cubic {
+            h1_idx,
+            h2_idx,
+            cubic,
+            ..
+        } => {
+            let left = cubic.subsegment(0.0..u);
+            let rem = cubic.subsegment(u..1.0);
+            contour[h1_idx].point = FontPoint::new(left.p1.x, left.p1.y);
+            contour[h2_idx].point = FontPoint::new(left.p2.x, left.p2.y);
+            contour[node_idx].point = FontPoint::new(left.p3.x, left.p3.y);
+            if (1.0 - u) > COLLINEAR_MIN_LEN_EPSILON {
+                if let Some(ContourSegment::Cubic {
+                    h1_idx: oh1,
+                    h2_idx: oh2,
+                    cubic: oc,
+                    ..
+                }) = seg_out
+                {
+                    let chain = [
+                        ContourSegment::Cubic {
+                            start_idx: 0,
+                            h1_idx: 1,
+                            h2_idx: 2,
+                            end_idx: 3,
+                            cubic: rem,
+                        },
+                        ContourSegment::Cubic {
+                            start_idx: 3,
+                            h1_idx: 4,
+                            h2_idx: 5,
+                            end_idx: 6,
+                            cubic: oc,
+                        },
+                    ];
+                    let (fh1, fh2) = fit_cubic_to_segment_chain(&chain);
+                    contour[oh1].point = fh1;
+                    contour[oh2].point = fh2;
+                }
+            }
+        }
+    }
+}
+
+fn slide_along_outgoing_segment(
+    contour: &mut [Node],
+    node_idx: usize,
+    s_out: ContourSegment,
+    seg_in: Option<ContourSegment>,
+    raw_t: f64,
+) {
+    let v = raw_t.clamp(0.0, SPLIT_RATIO_MAX);
+    match s_out {
+        ContourSegment::Line { line, .. } => {
+            let p = line.eval(v);
+            let old = contour[node_idx].point;
+            contour[node_idx].point = FontPoint::new(p.x, p.y);
+            if let Some(ContourSegment::Cubic { h2_idx, .. }) = seg_in {
+                contour[h2_idx].point.x.0 += p.x - old.x.0;
+                contour[h2_idx].point.y.0 += p.y - old.y.0;
+            }
+        }
+        ContourSegment::Cubic {
+            h1_idx,
+            h2_idx,
+            cubic,
+            ..
+        } => {
+            let rem = cubic.subsegment(0.0..v);
+            let right = cubic.subsegment(v..1.0);
+            contour[node_idx].point = FontPoint::new(right.p0.x, right.p0.y);
+            contour[h1_idx].point = FontPoint::new(right.p1.x, right.p1.y);
+            contour[h2_idx].point = FontPoint::new(right.p2.x, right.p2.y);
+            if v > COLLINEAR_MIN_LEN_EPSILON {
+                if let Some(ContourSegment::Cubic {
+                    h1_idx: ih1,
+                    h2_idx: ih2,
+                    cubic: ic,
+                    ..
+                }) = seg_in
+                {
+                    let chain = [
+                        ContourSegment::Cubic {
+                            start_idx: 0,
+                            h1_idx: 1,
+                            h2_idx: 2,
+                            end_idx: 3,
+                            cubic: ic,
+                        },
+                        ContourSegment::Cubic {
+                            start_idx: 3,
+                            h1_idx: 4,
+                            h2_idx: 5,
+                            end_idx: 6,
+                            cubic: rem,
+                        },
+                    ];
+                    let (fh1, fh2) = fit_cubic_to_segment_chain(&chain);
+                    contour[ih1].point = fh1;
+                    contour[ih2].point = fh2;
+                }
+            }
+        }
+    }
 }
 
 /// Slides a selected `OnCurve` node along its adjacent `Line` or `Cubic` segments while preserving
@@ -100,116 +224,12 @@ pub fn slide_on_curve_node_along_contour(
         let (Some(s_in), Some((_, raw_t))) = (seg_in, in_cand) else {
             return false;
         };
-        let u = raw_t.clamp(SPLIT_RATIO_MIN, 1.0);
-        match s_in {
-            ContourSegment::Line { line, .. } => {
-                let p = line.eval(u);
-                let old = contour[node_idx].point;
-                contour[node_idx].point = FontPoint::new(p.x, p.y);
-                if let Some(ContourSegment::Cubic { h1_idx, .. }) = seg_out {
-                    contour[h1_idx].point.x.0 += p.x - old.x.0;
-                    contour[h1_idx].point.y.0 += p.y - old.y.0;
-                }
-            }
-            ContourSegment::Cubic {
-                h1_idx,
-                h2_idx,
-                cubic,
-                ..
-            } => {
-                let left = cubic.subsegment(0.0..u);
-                let rem = cubic.subsegment(u..1.0);
-                contour[h1_idx].point = FontPoint::new(left.p1.x, left.p1.y);
-                contour[h2_idx].point = FontPoint::new(left.p2.x, left.p2.y);
-                contour[node_idx].point = FontPoint::new(left.p3.x, left.p3.y);
-                if (1.0 - u) > COLLINEAR_MIN_LEN_EPSILON {
-                    if let Some(ContourSegment::Cubic {
-                        h1_idx: oh1,
-                        h2_idx: oh2,
-                        cubic: oc,
-                        ..
-                    }) = seg_out
-                    {
-                        let chain = [
-                            ContourSegment::Cubic {
-                                start_idx: 0,
-                                h1_idx: 1,
-                                h2_idx: 2,
-                                end_idx: 3,
-                                cubic: rem,
-                            },
-                            ContourSegment::Cubic {
-                                start_idx: 3,
-                                h1_idx: 4,
-                                h2_idx: 5,
-                                end_idx: 6,
-                                cubic: oc,
-                            },
-                        ];
-                        let (fh1, fh2) = fit_cubic_to_segment_chain(&chain);
-                        contour[oh1].point = fh1;
-                        contour[oh2].point = fh2;
-                    }
-                }
-            }
-        }
+        slide_along_incoming_segment(contour, node_idx, s_in, seg_out, raw_t);
     } else {
         let (Some(s_out), Some((_, raw_t))) = (seg_out, out_cand) else {
             return false;
         };
-        let v = raw_t.clamp(0.0, SPLIT_RATIO_MAX);
-        match s_out {
-            ContourSegment::Line { line, .. } => {
-                let p = line.eval(v);
-                let old = contour[node_idx].point;
-                contour[node_idx].point = FontPoint::new(p.x, p.y);
-                if let Some(ContourSegment::Cubic { h2_idx, .. }) = seg_in {
-                    contour[h2_idx].point.x.0 += p.x - old.x.0;
-                    contour[h2_idx].point.y.0 += p.y - old.y.0;
-                }
-            }
-            ContourSegment::Cubic {
-                h1_idx,
-                h2_idx,
-                cubic,
-                ..
-            } => {
-                let rem = cubic.subsegment(0.0..v);
-                let right = cubic.subsegment(v..1.0);
-                contour[node_idx].point = FontPoint::new(right.p0.x, right.p0.y);
-                contour[h1_idx].point = FontPoint::new(right.p1.x, right.p1.y);
-                contour[h2_idx].point = FontPoint::new(right.p2.x, right.p2.y);
-                if v > COLLINEAR_MIN_LEN_EPSILON {
-                    if let Some(ContourSegment::Cubic {
-                        h1_idx: ih1,
-                        h2_idx: ih2,
-                        cubic: ic,
-                        ..
-                    }) = seg_in
-                    {
-                        let chain = [
-                            ContourSegment::Cubic {
-                                start_idx: 0,
-                                h1_idx: 1,
-                                h2_idx: 2,
-                                end_idx: 3,
-                                cubic: ic,
-                            },
-                            ContourSegment::Cubic {
-                                start_idx: 3,
-                                h1_idx: 4,
-                                h2_idx: 5,
-                                end_idx: 6,
-                                cubic: rem,
-                            },
-                        ];
-                        let (fh1, fh2) = fit_cubic_to_segment_chain(&chain);
-                        contour[ih1].point = fh1;
-                        contour[ih2].point = fh2;
-                    }
-                }
-            }
-        }
+        slide_along_outgoing_segment(contour, node_idx, s_out, seg_in, raw_t);
     }
     true
 }

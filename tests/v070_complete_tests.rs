@@ -1,3 +1,12 @@
+#![allow(
+    clippy::too_many_lines,
+    clippy::cognitive_complexity,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::too_many_arguments,
+    clippy::iter_over_hash_type
+)]
 #![allow(unexpected_cfgs)]
 //! Normative COTS Verification Suite for `SPEC-008` (`grafia v0.7.0`):
 //! Background Layer (`Cmd+B`, `Cmd+J`, `Cmd+K`), 2D `CanvasAnchor` & Mark Cloud (`ghost_paths`),
@@ -159,15 +168,15 @@ fn tc_v070_003_and_004_swap_and_toggle_background_editing() {
     assert!(state.redo() && state.snapshot() == snap_1);
 
     dispatch_key(&mut state, Key::B, false, true, true, false);
-    assert!(!state.show_background && !state.editing_background);
+    assert!(!state.show_background && !state.editing_background_layer);
     dispatch_key(&mut state, Key::B, false, true, true, false);
     assert!(state.show_background);
 
     dispatch_key(&mut state, Key::B, false, false, true, false);
-    assert!(state.editing_background && state.glyph.contours.len() == 1);
+    assert!(state.editing_background_layer && state.glyph.contours.len() == 1);
     state.translate_node_upm(NodeId(10), FontPoint::new(25.0, 0.0));
     dispatch_key(&mut state, Key::B, false, false, true, false);
-    assert!(!state.editing_background);
+    assert!(!state.editing_background_layer);
     assert_relative_eq!(
         state.background_contours[0].nodes[0].point.x.0,
         25.0,

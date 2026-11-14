@@ -1,0 +1,237 @@
+{
+  "boolean_union_oracle": {
+    "merged_nodes": [
+      {
+        "connection": 0,
+        "type": 1,
+        "x": 0.0,
+        "y": 0.0
+      },
+      {
+        "connection": 0,
+        "type": 1,
+        "x": 100.0,
+        "y": 0.0
+      },
+      {
+        "connection": 0,
+        "type": 1,
+        "x": 100.0,
+        "y": 50.0
+      },
+      {
+        "connection": 0,
+        "type": 1,
+        "x": 150.0,
+        "y": 50.0
+      },
+      {
+        "connection": 0,
+        "type": 1,
+        "x": 150.0,
+        "y": 150.0
+      },
+      {
+        "connection": 0,
+        "type": 1,
+        "x": 50.0,
+        "y": 150.0
+      },
+      {
+        "connection": 0,
+        "type": 1,
+        "x": 50.0,
+        "y": 100.0
+      },
+      {
+        "connection": 0,
+        "type": 1,
+        "x": 0.0,
+        "y": 100.0
+      }
+    ],
+    "merged_path_count": 1
+  },
+  "capabilities_oracle": {
+    "hint_supports_ghost": true,
+    "hoi_loaded": 1,
+    "layer_supports_postscript_hints": true,
+    "layer_supports_truetype_hints": true,
+    "path_supports_hobby": true,
+    "path_supports_hobby_to_bezier": true,
+    "path_supports_quadratic": true,
+    "tool_bundles_count": 14,
+    "tti_loaded": 1
+  },
+  "scurve_oracle": {
+    "after_add_extremes": [
+      {
+        "connection": 0,
+        "type": 1,
+        "x": 0.0,
+        "y": 0.0
+      },
+      {
+        "connection": 0,
+        "type": 65,
+        "x": -4.05,
+        "y": 6.07
+      },
+      {
+        "connection": 0,
+        "type": 65,
+        "x": -5.84,
+        "y": 11.32
+      },
+      {
+        "connection": 100,
+        "type": 35,
+        "x": -5.84,
+        "y": 15.92
+      },
+      {
+        "connection": 0,
+        "type": 65,
+        "x": -5.84,
+        "y": 52.18
+      },
+      {
+        "connection": 0,
+        "type": 65,
+        "x": 105.84,
+        "y": 47.82
+      },
+      {
+        "connection": 100,
+        "type": 35,
+        "x": 105.84,
+        "y": 84.08
+      },
+      {
+        "connection": 0,
+        "type": 65,
+        "x": 105.84,
+        "y": 88.68
+      },
+      {
+        "connection": 0,
+        "type": 65,
+        "x": 104.05,
+        "y": 93.93
+      },
+      {
+        "connection": 100,
+        "type": 35,
+        "x": 100.0,
+        "y": 100.0
+      }
+    ],
+    "after_remove_node_keep_shape": [
+      {
+        "connection": 0,
+        "type": 1,
+        "x": 0.0,
+        "y": 0.0
+      },
+      {
+        "connection": 0,
+        "type": 65,
+        "x": -35.77,
+        "y": 53.66
+      },
+      {
+        "connection": 0,
+        "type": 65,
+        "x": 105.84,
+        "y": 43.42
+      },
+      {
+        "connection": 100,
+        "type": 35,
+        "x": 105.84,
+        "y": 84.08
+      },
+      {
+        "connection": 0,
+        "type": 65,
+        "x": 105.84,
+        "y": 88.68
+      },
+      {
+        "connection": 0,
+        "type": 65,
+        "x": 104.05,
+        "y": 93.93
+      },
+      {
+        "connection": 100,
+        "type": 35,
+        "x": 100.0,
+        "y": 100.0
+      }
+    ],
+    "initial": [
+      {
+        "connection": 0,
+        "type": 1,
+        "x": 0.0,
+        "y": 0.0
+      },
+      {
+        "connection": 0,
+        "type": 65,
+        "x": -40.0,
+        "y": 60.0
+      },
+      {
+        "connection": 0,
+        "type": 65,
+        "x": 140.0,
+        "y": 40.0
+      },
+      {
+        "connection": 100,
+        "type": 35,
+        "x": 100.0,
+        "y": 100.0
+      }
+    ]
+  },
+  "sut": {
+    "bundle_version": "4108",
+    "engine": "ReferenceVectorEngine",
+    "os_version": "Version 14.8.9 (Build 23J631)",
+    "short_version": "4.1.1"
+  },
+  "winding_oracle": {
+    "after_reverse_nodes": [
+      {
+        "connection": 0,
+        "type": 1,
+        "x": 200.0,
+        "y": 700.0
+      },
+      {
+        "connection": 0,
+        "type": 1,
+        "x": 200.0,
+        "y": 0.0
+      },
+      {
+        "connection": 0,
+        "type": 1,
+        "x": 100.0,
+        "y": 0.0
+      },
+      {
+        "connection": 0,
+        "type": 1,
+        "x": 100.0,
+        "y": 700.0
+      }
+    ],
+    "area_unsigned": 70000.0,
+    "direction_after": 1,
+    "direction_before": -1
+  }
+}

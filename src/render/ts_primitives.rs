@@ -13,7 +13,7 @@ use tiny_skia::{
 
 #[must_use]
 pub(crate) fn pill_width_dp(text: &str) -> f32 {
-    ((text.len() as f32) * BBOX_PILL_CHAR_WIDTH_DP + BBOX_PILL_PAD_X_DP * 2.0)
+    ((text.chars().count() as f32) * BBOX_PILL_CHAR_WIDTH_DP + BBOX_PILL_PAD_X_DP * 2.0)
         .max(BBOX_PILL_MIN_HEIGHT_DP * 2.0)
 }
 
@@ -182,7 +182,7 @@ pub(crate) fn draw_bitmap_label_ts(
     text: &str,
     col: tiny_skia::Color,
 ) {
-    let start_x = cx - ((text.len() as f32) * PILL_DIGIT_ADVANCE_PX) * 0.5;
+    let start_x = cx - ((text.chars().count() as f32) * PILL_DIGIT_ADVANCE_PX) * 0.5;
     let start_y = cy - (PILL_DIGIT_FONT_HEIGHT_PX as f32) * 0.5;
     draw_bitmap_string_ts(pixmap, start_x, start_y, text, col);
 }
@@ -208,4 +208,133 @@ pub(crate) fn fill_pill_ts(pixmap: &mut Pixmap, cx: f32, cy: f32, text: &str) {
         text,
         color32_to_tiny_skia(bbox_pill_text_color32()),
     );
+}
+
+pub(crate) fn ts_fill_rect(
+    pixmap: &mut Pixmap,
+    x0: f32,
+    y0: f32,
+    x1: f32,
+    y1: f32,
+    col: egui::Color32,
+) {
+    if let Some(r) = TsRect::from_ltrb(x0.min(x1), y0.min(y1), x0.max(x1), y0.max(y1)) {
+        let mut p = Paint::default();
+        p.set_color(color32_to_tiny_skia(col));
+        p.anti_alias = true;
+        pixmap.fill_rect(r, &p, Transform::identity(), None);
+    }
+}
+
+pub(crate) fn ts_stroke_rect(
+    pixmap: &mut Pixmap,
+    x0: f32,
+    y0: f32,
+    x1: f32,
+    y1: f32,
+    col: egui::Color32,
+    width: f32,
+) {
+    stroke_rect_ts(pixmap, x0, y0, x1, y1, color32_to_tiny_skia(col), width);
+}
+
+pub(crate) fn ts_stroke_line(
+    pixmap: &mut Pixmap,
+    a: ScreenPoint,
+    b: ScreenPoint,
+    col: egui::Color32,
+    width: f32,
+) {
+    stroke_line_ts(
+        pixmap,
+        a.x.0,
+        a.y.0,
+        b.x.0,
+        b.y.0,
+        color32_to_tiny_skia(col),
+        width,
+    );
+}
+
+pub(crate) fn ts_fill_circle(pixmap: &mut Pixmap, center: ScreenPoint, r: f32, col: egui::Color32) {
+    fill_circle_ts(pixmap, center.x.0, center.y.0, r, color32_to_tiny_skia(col));
+}
+
+pub(crate) fn ts_stroke_circle(
+    pixmap: &mut Pixmap,
+    center: ScreenPoint,
+    r: f32,
+    col: egui::Color32,
+    width: f32,
+) {
+    if r <= 0.0 {
+        return;
+    }
+    let mut pb = PathBuilder::new();
+    pb.push_circle(center.x.0, center.y.0, r);
+    stroke_ts(pixmap, pb, color32_to_tiny_skia(col), width);
+}
+
+fn dashed_line_segments(
+    a: ScreenPoint,
+    b: ScreenPoint,
+    dash_dp: f32,
+    gap_dp: f32,
+) -> Vec<(ScreenPoint, ScreenPoint)> {
+    let dx = b.x.0 - a.x.0;
+    let dy = b.y.0 - a.y.0;
+    let total = dx.hypot(dy);
+    if total <= 0.0 {
+        return Vec::new();
+    }
+    let step = (dash_dp + gap_dp).max(1.0);
+    let (ux, uy) = (dx / total, dy / total);
+    let mut out = Vec::new();
+    let mut s = 0.0_f32;
+    while s < total {
+        let e = (s + dash_dp).min(total);
+        out.push((
+            ScreenPoint::new(a.x.0 + ux * s, a.y.0 + uy * s),
+            ScreenPoint::new(a.x.0 + ux * e, a.y.0 + uy * e),
+        ));
+        s += step;
+    }
+    out
+}
+
+pub(crate) fn paint_dashed_line_egui(
+    painter: &Painter,
+    a: ScreenPoint,
+    b: ScreenPoint,
+    stroke: egui::Stroke,
+    dash_dp: f32,
+    gap_dp: f32,
+) {
+    for (p0, p1) in dashed_line_segments(a, b, dash_dp, gap_dp) {
+        painter.line_segment(
+            [Pos2::new(p0.x.0, p0.y.0), Pos2::new(p1.x.0, p1.y.0)],
+            stroke,
+        );
+    }
+}
+
+pub(crate) fn ts_stroke_dashed_line(
+    pixmap: &mut Pixmap,
+    a: ScreenPoint,
+    b: ScreenPoint,
+    col: egui::Color32,
+    width: f32,
+    dash_dp: f32,
+    gap_dp: f32,
+) {
+    let segs = dashed_line_segments(a, b, dash_dp, gap_dp);
+    if segs.is_empty() {
+        return;
+    }
+    let mut pb = PathBuilder::new();
+    for (p0, p1) in segs {
+        pb.move_to(p0.x.0, p0.y.0);
+        pb.line_to(p1.x.0, p1.y.0);
+    }
+    stroke_ts(pixmap, pb, color32_to_tiny_skia(col), width);
 }

@@ -18,11 +18,16 @@ pub enum DemoPreset {
     FitCurveStep,
     LiveStrokeAndExpand,
     MasterCompat,
+    HobbyAndSmartHandles,
+    AutoTraceBgImage,
+    ColorLayersColrV1,
+    VerticalTextAndRefFrame,
+    HintingPixelPreviewAndHoi,
     ToggleTheme,
 }
 
 impl DemoPreset {
-    pub const ALL: [(Self, &'static str); 9] = [
+    pub const ALL: [(Self, &'static str); 14] = [
         (Self::ToggleGlyphAO, "[Glyph: A / O]"),
         (Self::TextStreamAova, "[v0.5 Text Stream \"AOVA\" (T)]"),
         (Self::RulersAndBg, "[v0.6 Rulers (Cmd+R) + Bg Layer]"),
@@ -37,6 +42,20 @@ impl DemoPreset {
         (Self::FitCurveStep, "[v0.7 Fit Curve (57%..92%)]"),
         (Self::LiveStrokeAndExpand, "[v0.7 Live Stroke + Expand]"),
         (Self::MasterCompat, "[v0.7 Master Compat (Ctrl+Opt+Cmd+N)]"),
+        (
+            Self::HobbyAndSmartHandles,
+            "[v0.8 Hobby Splines + SmartHandle]",
+        ),
+        (Self::AutoTraceBgImage, "[v0.8 Bg Image + Auto-Trace]"),
+        (Self::ColorLayersColrV1, "[v0.9 COLRv1 Gradients]"),
+        (
+            Self::VerticalTextAndRefFrame,
+            "[v0.9 Vertical Text + Ref Frame]",
+        ),
+        (
+            Self::HintingPixelPreviewAndHoi,
+            "[v0.9 Hinting + 16 PPEM + HOI (I/H)]",
+        ),
         (Self::ToggleTheme, "[Light / Dark Mode]"),
     ];
 }
@@ -50,21 +69,7 @@ impl MockFontHost {
     ) {
         match preset {
             DemoPreset::ToggleGlyphAO => {
-                let next = if state.active_archetype == GlyphArchetype::A {
-                    GlyphArchetype::O
-                } else {
-                    GlyphArchetype::A
-                };
-                state.load_glyph_archetype(next);
-                state.glyph.name = if next == GlyphArchetype::A {
-                    "A".into()
-                } else {
-                    "O".into()
-                };
-                self.push_log(format!(
-                    "Preset: Switched active glyph to /{}",
-                    state.glyph.name
-                ));
+                self.apply_toggle_glyph_preset(state);
             }
             DemoPreset::TextStreamAova => {
                 self.text_buffer = "AOVA".to_owned();
@@ -74,27 +79,103 @@ impl MockFontHost {
                 self.push_log("Preset: Loaded Text Stream \"AOVA\" with live kerning pairs");
             }
             DemoPreset::RulersAndBg => {
-                state.toggle_rulers();
-                state.select_all_nodes();
-                state.copy_selection_to_background();
-                state.show_background = true;
-                for gc in &mut state.background_contours {
-                    for n in &mut gc.nodes {
-                        n.point.x.0 += 18.0;
-                        n.point.y.0 += 12.0;
-                    }
-                }
-                state.sync_paths_from_contours();
-                self.push_log(format!(
-                    "Preset: Rulers={} + Background Layer ({} contours)",
-                    state.show_rulers,
-                    state.background_contours.len()
-                ));
+                self.apply_rulers_and_bg_preset(state);
             }
             DemoPreset::AnchorsAndMarkCloud => {
                 state.reset_default_anchors();
                 self.poll_host_ports(state);
             }
+            DemoPreset::ComponentAndDecompose
+            | DemoPreset::FitCurveStep
+            | DemoPreset::LiveStrokeAndExpand => {
+                self.apply_component_or_stroke_preset(preset, state);
+            }
+            DemoPreset::MasterCompat => {
+                self.apply_master_compat_preset(state);
+            }
+            DemoPreset::HobbyAndSmartHandles => {
+                self.apply_hobby_and_smart_handles_preset(state);
+            }
+            DemoPreset::AutoTraceBgImage => {
+                self.apply_auto_trace_bg_image_preset(state);
+            }
+            DemoPreset::ColorLayersColrV1 => {
+                self.apply_color_layers_colrv1_preset(state);
+            }
+            DemoPreset::VerticalTextAndRefFrame => {
+                self.apply_vertical_text_and_ref_frame_preset(state);
+            }
+            DemoPreset::HintingPixelPreviewAndHoi => {
+                self.apply_hinting_pixel_preview_and_hoi_preset(state);
+            }
+            DemoPreset::ToggleTheme => {
+                self.apply_toggle_theme_preset(state, theme);
+            }
+        }
+    }
+
+    fn apply_toggle_glyph_preset(&mut self, state: &mut GrafiaCanvasState) {
+        let next = if state.active_archetype == GlyphArchetype::A {
+            GlyphArchetype::O
+        } else {
+            GlyphArchetype::A
+        };
+        state.load_glyph_archetype(next);
+        state.glyph.name = if next == GlyphArchetype::A {
+            "A".into()
+        } else {
+            "O".into()
+        };
+        self.push_log(format!(
+            "Preset: Switched active glyph to /{}",
+            state.glyph.name
+        ));
+    }
+
+    fn apply_rulers_and_bg_preset(&mut self, state: &mut GrafiaCanvasState) {
+        state.toggle_rulers();
+        state.select_all_nodes();
+        state.copy_selection_to_background();
+        state.show_background = true;
+        for gc in &mut state.background_contours {
+            for n in &mut gc.nodes {
+                n.point.x.0 += 18.0;
+                n.point.y.0 += 12.0;
+            }
+        }
+        state.sync_paths_from_contours();
+        self.push_log(format!(
+            "Preset: Rulers={} + Background Layer ({} contours)",
+            state.show_rulers,
+            state.background_contours.len()
+        ));
+    }
+
+    fn apply_toggle_theme_preset(
+        &mut self,
+        state: &mut GrafiaCanvasState,
+        theme: &mut GrafiaTheme,
+    ) {
+        let next = if state.appearance_mode == AppearanceMode::Light {
+            AppearanceMode::Dark
+        } else {
+            AppearanceMode::Light
+        };
+        state.set_appearance_mode(next);
+        *theme = if next == AppearanceMode::Dark {
+            GrafiaTheme::sonoma_dark()
+        } else {
+            GrafiaTheme::sonoma_default()
+        };
+        self.push_log(format!("Preset: Switched appearance mode to {next:?}"));
+    }
+
+    fn apply_component_or_stroke_preset(
+        &mut self,
+        preset: DemoPreset,
+        state: &mut GrafiaCanvasState,
+    ) {
+        match preset {
             DemoPreset::ComponentAndDecompose => {
                 if state.components.is_empty() {
                     let comp_contours = self
@@ -162,23 +243,7 @@ impl MockFontHost {
                     self.push_log("Preset: Expanded Live Stroke into closed foreground contours");
                 }
             }
-            DemoPreset::MasterCompat => {
-                self.apply_master_compat_preset(state);
-            }
-            DemoPreset::ToggleTheme => {
-                let next = if state.appearance_mode == AppearanceMode::Light {
-                    AppearanceMode::Dark
-                } else {
-                    AppearanceMode::Light
-                };
-                state.set_appearance_mode(next);
-                *theme = if next == AppearanceMode::Dark {
-                    GrafiaTheme::sonoma_dark()
-                } else {
-                    GrafiaTheme::sonoma_default()
-                };
-                self.push_log(format!("Preset: Switched appearance mode to {next:?}"));
-            }
+            _ => {}
         }
     }
 

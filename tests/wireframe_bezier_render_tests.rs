@@ -1,3 +1,12 @@
+#![allow(
+    clippy::too_many_lines,
+    clippy::cognitive_complexity,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::too_many_arguments,
+    clippy::iter_over_hash_type
+)]
 //! Normative Behavioural, Reference Golden-Master & Visual Verification Suite (`SPEC-002`, `DEF-GRAFIA-001..006`, `TC-1246..1260`).
 
 use approx::assert_relative_eq;
@@ -3579,7 +3588,10 @@ fn test_tc_1260_visual_e2e_interaction_png_frames_and_strip_with_input_overlays(
         .events
         .push(Event::PointerMoved(pos2(p36_0.x.0, p36_0.y.0)));
     run_frame(&ctx, &mut s36_a, &theme, in36_a);
-    assert_eq!(s36_a.hovered_pen_close_node, Some(s36_a.contours[0][0].id));
+    assert_eq!(
+        s36_a.hovered_pen_close_target.map(|(_, id)| id),
+        Some(s36_a.contours[0][0].id)
+    );
     let mut raw36_a = raster_to_rgba(&s36_a);
     draw_hud_overlay(
         &mut raw36_a,
@@ -3766,7 +3778,7 @@ impl CloneViaSnapshot for GrafiaCanvasState {
         next.restore_snapshot(&snap);
         next.active_open_contour = self.active_open_contour;
         next.pending_pen_bcp_out = self.pending_pen_bcp_out;
-        next.hovered_pen_close_node = self.hovered_pen_close_node;
+        next.hovered_pen_close_target = self.hovered_pen_close_target;
         next
     }
 }

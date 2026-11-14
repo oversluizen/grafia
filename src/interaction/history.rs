@@ -1,14 +1,84 @@
 //! O(1) Copy-on-Write undo/redo transaction stack with mouse-drag coalescing.
 
 use crate::core::{
-    AnnotationId, CanvasAnchor, CanvasAnnotation, CanvasComponent, CompanionMasterLayer, ContourId,
-    ContourStrokeStyle, FontPoint, GlyphContour, GlyphSlot, Node, NodeId, ShapeBooleanRole,
-    TransformGridAnchor,
+    AnnotationId, CanvasAnchor, CanvasAnnotation, CanvasColorSublayer, CanvasComponent,
+    CompanionMasterLayer, ContourId, ContourStrokeStyle, CustomReferenceFrame, FontPoint,
+    GlyphContour, GlyphSlot, HoiCubicLayerSet, HoiSiblingContours, Node, NodeId, PostScriptHint,
+    ShapeBooleanRole, TransformGridAnchor, TrueTypeVisualInstruction, WritingDirection,
 };
 use crate::snapping::{Guide, SelectedGuideRef};
+use crate::tokens::{CanvasBackgroundImage, CanvasSmartHandle, ExtraNodeKey};
 use kurbo::BezPath;
 use std::collections::BTreeMap;
 use std::sync::Arc;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SnapshotLayerAttachments {
+    pub background_contours: Vec<GlyphContour>,
+    pub editing_background_layer: bool,
+    pub show_background: bool,
+    pub anchors: Vec<CanvasAnchor>,
+    pub components: Vec<CanvasComponent>,
+    pub contour_strokes: BTreeMap<ContourId, ContourStrokeStyle>,
+    pub companion_master_layers: Vec<CompanionMasterLayer>,
+    pub selected_companion_nodes: Vec<(u32, NodeId)>,
+    pub show_master_compatibility: bool,
+    pub background_image: Option<CanvasBackgroundImage>,
+    pub smart_handles: Vec<CanvasSmartHandle>,
+    pub selected_extra_node: Option<ExtraNodeKey>,
+    pub backdrop_ghost_contours: Vec<GlyphContour>,
+}
+
+impl Default for SnapshotLayerAttachments {
+    fn default() -> Self {
+        Self {
+            background_contours: Vec::new(),
+            editing_background_layer: false,
+            show_background: true,
+            anchors: Vec::new(),
+            components: Vec::new(),
+            contour_strokes: BTreeMap::new(),
+            companion_master_layers: Vec::new(),
+            selected_companion_nodes: Vec::new(),
+            show_master_compatibility: false,
+            background_image: None,
+            smart_handles: Vec::new(),
+            selected_extra_node: None,
+            backdrop_ghost_contours: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct SnapshotHintingAndHoiState {
+    pub color_sublayers: Vec<CanvasColorSublayer>,
+    pub selected_color_sublayer: Option<usize>,
+    pub selected_gradient_stop: Option<(usize, usize)>,
+    pub custom_reference_frame: Option<CustomReferenceFrame>,
+    pub postscript_hints: Vec<PostScriptHint>,
+    pub selected_postscript_hint: Option<u64>,
+    pub truetype_instructions: Vec<TrueTypeVisualInstruction>,
+    pub selected_truetype_instruction: Option<u64>,
+    pub hoi_layer_sets: Vec<HoiCubicLayerSet>,
+    pub hoi_sibling_contours: Option<HoiSiblingContours>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ImageAndSmartHandleSnapshot {
+    pub background_image: Option<CanvasBackgroundImage>,
+    pub smart_handles: Vec<CanvasSmartHandle>,
+    pub selected_extra_node: Option<ExtraNodeKey>,
+}
+
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct HintingAndHoiSnapshot {
+    pub postscript_hints: Vec<PostScriptHint>,
+    pub selected_postscript_hint: Option<u64>,
+    pub truetype_instructions: Vec<TrueTypeVisualInstruction>,
+    pub selected_truetype_instruction: Option<u64>,
+    pub hoi_layer_sets: Vec<HoiCubicLayerSet>,
+    pub hoi_sibling_contours: Option<HoiSiblingContours>,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct GlyphSnapshot {
@@ -32,19 +102,12 @@ pub struct GlyphSnapshot {
     pub active_slot_index: usize,
     pub caret_index: usize,
     pub selection_range: Option<(usize, usize)>,
-    pub background_contours: Vec<GlyphContour>,
-    pub editing_background_layer: bool,
-    pub show_background: bool,
-    pub anchors: Vec<CanvasAnchor>,
     pub multi_selection_proportional: bool,
     pub transform_grid_anchor: TransformGridAnchor,
     pub show_rulers: bool,
-    pub center_in_width_count: u64,
-    pub components: Vec<CanvasComponent>,
-    pub contour_strokes: BTreeMap<ContourId, ContourStrokeStyle>,
-    pub companion_master_layers: Vec<CompanionMasterLayer>,
-    pub selected_companion_nodes: Vec<(u32, NodeId)>,
-    pub show_master_compatibility: bool,
+    pub writing_direction: WritingDirection,
+    pub layers: SnapshotLayerAttachments,
+    pub hinting: SnapshotHintingAndHoiState,
 }
 
 impl Default for GlyphSnapshot {
@@ -70,19 +133,12 @@ impl Default for GlyphSnapshot {
             active_slot_index: 0,
             caret_index: 0,
             selection_range: None,
-            background_contours: Vec::new(),
-            editing_background_layer: false,
-            show_background: true,
-            anchors: Vec::new(),
             multi_selection_proportional: false,
             transform_grid_anchor: TransformGridAnchor::Center,
             show_rulers: false,
-            center_in_width_count: 0,
-            components: Vec::new(),
-            contour_strokes: BTreeMap::new(),
-            companion_master_layers: Vec::new(),
-            selected_companion_nodes: Vec::new(),
-            show_master_compatibility: false,
+            writing_direction: WritingDirection::default(),
+            layers: SnapshotLayerAttachments::default(),
+            hinting: SnapshotHintingAndHoiState::default(),
         }
     }
 }
@@ -148,17 +204,16 @@ impl GlyphSnapshot {
     }
 
     #[must_use]
-    #[allow(clippy::too_many_arguments)]
     pub fn with_text_stream(
         mut self,
         glyph_name: String,
-        glyph_width: f64,
-        glyph_height: f64,
+        glyph_size: (f64, f64),
         text_stream_slots: Vec<GlyphSlot>,
         active_slot_index: usize,
         caret_index: usize,
         selection_range: Option<(usize, usize)>,
     ) -> Self {
+        let (glyph_width, glyph_height) = glyph_size;
         self.has_glyph_metrics = true;
         self.glyph_name = glyph_name;
         self.glyph_width = glyph_width;
@@ -171,31 +226,28 @@ impl GlyphSnapshot {
     }
 
     #[must_use]
-    #[allow(clippy::too_many_arguments)]
-    pub fn with_v060_state(
+    pub fn with_background_and_ruler_state(
         mut self,
         background_contours: Vec<GlyphContour>,
-        editing_background_layer: bool,
-        show_background: bool,
+        bg_flags: (bool, bool),
         anchors: Vec<CanvasAnchor>,
         multi_selection_proportional: bool,
         transform_grid_anchor: TransformGridAnchor,
         show_rulers: bool,
-        center_in_width_count: u64,
     ) -> Self {
-        self.background_contours = background_contours;
-        self.editing_background_layer = editing_background_layer;
-        self.show_background = show_background;
-        self.anchors = anchors;
+        let (editing_background_layer, show_background) = bg_flags;
+        self.layers.background_contours = background_contours;
+        self.layers.editing_background_layer = editing_background_layer;
+        self.layers.show_background = show_background;
+        self.layers.anchors = anchors;
         self.multi_selection_proportional = multi_selection_proportional;
         self.transform_grid_anchor = transform_grid_anchor;
         self.show_rulers = show_rulers;
-        self.center_in_width_count = center_in_width_count;
         self
     }
 
     #[must_use]
-    pub fn with_v070_state(
+    pub fn with_components_and_strokes_state(
         mut self,
         components: Vec<CanvasComponent>,
         contour_strokes: BTreeMap<ContourId, ContourStrokeStyle>,
@@ -203,11 +255,50 @@ impl GlyphSnapshot {
         selected_companion_nodes: Vec<(u32, NodeId)>,
         show_master_compatibility: bool,
     ) -> Self {
-        self.components = components;
-        self.contour_strokes = contour_strokes;
-        self.companion_master_layers = companion_master_layers;
-        self.selected_companion_nodes = selected_companion_nodes;
-        self.show_master_compatibility = show_master_compatibility;
+        self.layers.components = components;
+        self.layers.contour_strokes = contour_strokes;
+        self.layers.companion_master_layers = companion_master_layers;
+        self.layers.selected_companion_nodes = selected_companion_nodes;
+        self.layers.show_master_compatibility = show_master_compatibility;
+        self
+    }
+
+    #[must_use]
+    pub fn with_image_and_smart_handle_state(
+        mut self,
+        image_and_handles: ImageAndSmartHandleSnapshot,
+    ) -> Self {
+        self.layers.background_image = image_and_handles.background_image;
+        self.layers.smart_handles = image_and_handles.smart_handles;
+        self.layers.selected_extra_node = image_and_handles.selected_extra_node;
+        self
+    }
+
+    #[must_use]
+    pub fn with_color_layers_and_frame_state(
+        mut self,
+        color_sublayers: Vec<CanvasColorSublayer>,
+        selected_color_sublayer: Option<usize>,
+        selected_gradient_stop: Option<(usize, usize)>,
+        custom_reference_frame: Option<CustomReferenceFrame>,
+        writing_direction: WritingDirection,
+    ) -> Self {
+        self.hinting.color_sublayers = color_sublayers;
+        self.hinting.selected_color_sublayer = selected_color_sublayer;
+        self.hinting.selected_gradient_stop = selected_gradient_stop;
+        self.hinting.custom_reference_frame = custom_reference_frame;
+        self.writing_direction = writing_direction;
+        self
+    }
+
+    #[must_use]
+    pub fn with_hinting_and_hoi_state(mut self, hinting_and_hoi: HintingAndHoiSnapshot) -> Self {
+        self.hinting.postscript_hints = hinting_and_hoi.postscript_hints;
+        self.hinting.selected_postscript_hint = hinting_and_hoi.selected_postscript_hint;
+        self.hinting.truetype_instructions = hinting_and_hoi.truetype_instructions;
+        self.hinting.selected_truetype_instruction = hinting_and_hoi.selected_truetype_instruction;
+        self.hinting.hoi_layer_sets = hinting_and_hoi.hoi_layer_sets;
+        self.hinting.hoi_sibling_contours = hinting_and_hoi.hoi_sibling_contours;
         self
     }
 
@@ -215,21 +306,27 @@ impl GlyphSnapshot {
     /// stroke, guide, or annotation field differs between `self` and `other` (ignoring pure selection or HUD flags).
     #[must_use]
     pub fn has_content_change(&self, other: &Self) -> bool {
-        let anchors_changed = self.anchors.len() != other.anchors.len()
+        let anchors_changed = self.layers.anchors.len() != other.layers.anchors.len()
             || self
+                .layers
                 .anchors
                 .iter()
-                .zip(&other.anchors)
+                .zip(&other.layers.anchors)
                 .any(|(a, b)| a.id != b.id || a.name != b.name || a.position != b.position);
-        let components_changed = self.components.len() != other.components.len()
-            || self.components.iter().zip(&other.components).any(|(a, b)| {
-                a.id != b.id
-                    || a.component_name != b.component_name
-                    || a.contours != b.contours
-                    || a.transform != b.transform
-                    || a.locked != b.locked
-                    || a.automatic_alignment != b.automatic_alignment
-            });
+        let components_changed = self.layers.components.len() != other.layers.components.len()
+            || self
+                .layers
+                .components
+                .iter()
+                .zip(&other.layers.components)
+                .any(|(a, b)| {
+                    a.id != b.id
+                        || a.component_name != b.component_name
+                        || a.contours != b.contours
+                        || a.transform != b.transform
+                        || a.locked != b.locked
+                        || a.automatic_alignment != b.automatic_alignment
+                });
         self.contours != other.contours
             || self.closed_flags != other.closed_flags
             || self.contour_meta != other.contour_meta
@@ -242,13 +339,23 @@ impl GlyphSnapshot {
             || self.glyph_width.to_bits() != other.glyph_width.to_bits()
             || self.glyph_height.to_bits() != other.glyph_height.to_bits()
             || self.text_stream_slots != other.text_stream_slots
-            || self.background_contours != other.background_contours
-            || self.editing_background_layer != other.editing_background_layer
-            || self.show_background != other.show_background
+            || self.layers.background_contours != other.layers.background_contours
+            || self.layers.editing_background_layer != other.layers.editing_background_layer
+            || self.layers.show_background != other.layers.show_background
             || anchors_changed
             || components_changed
-            || self.contour_strokes != other.contour_strokes
-            || self.companion_master_layers != other.companion_master_layers
+            || self.layers.contour_strokes != other.layers.contour_strokes
+            || self.layers.companion_master_layers != other.layers.companion_master_layers
+            || self.layers.background_image != other.layers.background_image
+            || self.layers.smart_handles != other.layers.smart_handles
+            || self.layers.backdrop_ghost_contours != other.layers.backdrop_ghost_contours
+            || self.hinting.color_sublayers != other.hinting.color_sublayers
+            || self.hinting.custom_reference_frame != other.hinting.custom_reference_frame
+            || self.writing_direction != other.writing_direction
+            || self.hinting.postscript_hints != other.hinting.postscript_hints
+            || self.hinting.truetype_instructions != other.hinting.truetype_instructions
+            || self.hinting.hoi_layer_sets != other.hinting.hoi_layer_sets
+            || self.hinting.hoi_sibling_contours != other.hinting.hoi_sibling_contours
     }
 }
 
@@ -308,5 +415,10 @@ impl CommandHistory {
     #[must_use]
     pub fn can_redo(&self) -> bool {
         !self.redo_stack.is_empty()
+    }
+
+    #[must_use]
+    pub fn last_undo_label(&self) -> Option<&'static str> {
+        self.undo_stack.last().map(|tx| tx.label)
     }
 }

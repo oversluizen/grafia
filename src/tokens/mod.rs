@@ -1,24 +1,32 @@
 //! Layout and rendering tokens loaded from JSON databases.
 
 pub mod archetypes_tokens;
+pub mod bbox_and_ruler_tokens;
+pub mod component_and_stroke_tokens;
 pub mod cursor_tokens;
-pub mod v020_tokens;
-pub mod v030_tokens;
-pub mod v040_tokens;
-pub mod v050_tokens;
-pub mod v060_tokens;
-pub mod v070_tokens;
+pub mod drawing_tool_tokens;
+pub mod guide_and_snap_tokens;
+pub mod keymap;
+pub mod preferences;
+pub mod preview_and_hud_tokens;
+pub mod spline_and_handle_tokens;
+pub mod text_stream_tokens;
+pub mod trace_and_band_tokens;
+pub use crate::core::math_consts::{QUAD_DISC_FOUR, SHAPE_THUMBNAIL_CARD_SCALE};
 pub use archetypes_tokens::{
     load_archetype_preset, ArchetypeContourPreset, ArchetypeGlyphPreset, ArchetypeNodePreset,
     GlyphAGoldenMaster, GlyphArchetype, GlyphPointToken,
 };
+pub use bbox_and_ruler_tokens::*;
+pub use component_and_stroke_tokens::*;
 pub use cursor_tokens::*;
-pub use v020_tokens::*;
-pub use v030_tokens::*;
-pub use v040_tokens::*;
-pub use v050_tokens::*;
-pub use v060_tokens::*;
-pub use v070_tokens::*;
+pub use drawing_tool_tokens::*;
+pub use guide_and_snap_tokens::*;
+pub use preferences::*;
+pub use preview_and_hud_tokens::*;
+pub use spline_and_handle_tokens::*;
+pub use text_stream_tokens::*;
+pub use trace_and_band_tokens::*;
 
 use serde::{Deserialize, Serialize};
 
@@ -51,7 +59,7 @@ pub fn hex_to_color32(hex: &str) -> egui::Color32 {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct EditCanvasTokens {
     pub node_size_dp: f32,
     pub bcp_handle_size_dp: f32,
@@ -77,6 +85,14 @@ pub struct EditCanvasTokens {
     pub grid_main_color: RgbaColorToken,
     #[serde(default = "default_grid_sub_rgba")]
     pub grid_sub_color: RgbaColorToken,
+    #[serde(default = "default_guide_stroke_width_dp")]
+    pub guide_stroke_width_dp: f32,
+    #[serde(default = "default_metric_line_width_dp")]
+    pub metric_line_width_dp: f32,
+    #[serde(default)]
+    pub handle_shape: OffCurveHandleShape,
+    #[serde(default)]
+    pub full_crosshair_cursor: bool,
 }
 
 const fn default_local_guide_rgba() -> RgbaColorToken {
@@ -135,7 +151,7 @@ impl EditCanvasTokens {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct PreviewCanvasTokens {
     pub fill_color: String,
     pub baseline_color: String,
@@ -154,7 +170,7 @@ impl PreviewCanvasTokens {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct ShapeCanvasTokens {
     pub row_height_dp: f32,
     pub header_height_dp: f32,
@@ -185,7 +201,7 @@ impl ShapeCanvasTokens {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct SnappingTokens {
     pub snap_threshold_dp: f32,
     pub angle_constraint_step_deg: f32,
@@ -320,45 +336,9 @@ pub fn color32_to_tiny_skia(color: egui::Color32) -> tiny_skia::Color {
     tiny_skia::Color::from_rgba8(r, g, b, a)
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct GrafiaTheme {
-    pub theme_name: String,
-    pub edit_canvas: EditCanvasTokens,
-    pub preview_canvas: PreviewCanvasTokens,
-    pub shape_canvas: ShapeCanvasTokens,
-    pub snapping: SnappingTokens,
-    #[serde(default = "default_passive_glyph_fill_rgba")]
-    pub passive_glyph_fill: RgbaColorToken,
-    #[serde(default = "default_kerning_negative_fill_rgba")]
-    pub kerning_negative_fill: RgbaColorToken,
-    #[serde(default = "default_kerning_positive_fill_rgba")]
-    pub kerning_positive_fill: RgbaColorToken,
-    #[serde(default = "default_text_caret_color_rgba")]
-    pub text_caret_color: RgbaColorToken,
-    #[serde(default = "default_text_selection_fill_rgba")]
-    pub text_selection_fill: RgbaColorToken,
-    #[serde(default = "default_text_measurement_line_color_rgba")]
-    pub text_measurement_line_color: RgbaColorToken,
-    #[serde(default = "default_text_measurement_knob_fill_rgba")]
-    pub text_measurement_knob_fill: RgbaColorToken,
-    #[serde(default = "default_text_metrics_number_color_rgba")]
-    pub text_metrics_number_color: RgbaColorToken,
-    #[serde(default = "default_preview_bg_normal_rgba")]
-    pub preview_bg_normal: RgbaColorToken,
-    #[serde(default = "default_preview_fg_normal_rgba")]
-    pub preview_fg_normal: RgbaColorToken,
-    #[serde(default = "default_preview_bg_inverted_rgba")]
-    pub preview_bg_inverted: RgbaColorToken,
-    #[serde(default = "default_preview_fg_inverted_rgba")]
-    pub preview_fg_inverted: RgbaColorToken,
-    #[serde(default = "default_ruler_bg_fill_rgba")]
-    pub ruler_bg_fill: RgbaColorToken,
-    #[serde(default = "default_ruler_border_stroke_rgba")]
-    pub ruler_border_stroke: RgbaColorToken,
-    #[serde(default = "default_ruler_tick_color_rgba")]
-    pub ruler_tick_color: RgbaColorToken,
-    #[serde(default = "default_ruler_hairline_color_rgba")]
-    pub ruler_hairline_color: RgbaColorToken,
+/// Background layer, anchor, component, and master-compatibility overlay tokens grouped under [`GrafiaTheme`].
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct OverlayThemeTokens {
     #[serde(default = "default_background_layer_stroke_rgba")]
     pub background_layer_stroke: RgbaColorToken,
     #[serde(default = "default_anchor_fill_rgba")]
@@ -379,55 +359,45 @@ pub struct GrafiaTheme {
     pub master_incompat_highlight: RgbaColorToken,
 }
 
-impl GrafiaTheme {
-    /// Loads default theme embedded from `tokens/grafia_theme_sonoma.json`.
-    #[must_use]
-    pub fn sonoma_default() -> Self {
-        let json_str = include_str!("../../tokens/grafia_theme_sonoma.json");
-        serde_json::from_str(json_str).expect("grafia_theme_sonoma.json must be valid JSON")
-    }
-
-    fn themed_hex(&self, dark: &str, light: &str) -> egui::Color32 {
-        hex_to_color32(if self.is_dark() { dark } else { light })
-    }
-
-    #[must_use]
-    pub fn canvas_background_color32(&self) -> egui::Color32 {
-        self.themed_hex(DARK_CANVAS_BACKGROUND_HEX, "#FFFFFF")
-    }
-
-    #[must_use]
-    pub fn sidebar_background_color32(&self) -> egui::Color32 {
-        self.themed_hex(DARK_SIDEBAR_BACKGROUND_HEX, "#F6F6F6")
-    }
-
-    #[must_use]
-    pub fn infobox_background_color32(&self) -> egui::Color32 {
-        self.themed_hex(DARK_INFOBOX_BACKGROUND_HEX, "#ECECEC")
-    }
-
-    #[must_use]
-    pub fn splitter_color32(&self) -> egui::Color32 {
-        self.themed_hex(DARK_SPLITTER_HEX, "#E1E1E1")
-    }
-
-    #[must_use]
-    pub fn start_node_arrow_color32(&self) -> egui::Color32 {
-        hex_to_color32("#0066FFDC")
-    }
-
-    #[must_use]
-    pub fn metrics_guide_color32(&self) -> egui::Color32 {
-        self.themed_hex(DARK_METRICS_GUIDE_HEX, "#EAEAEA")
-    }
-
-    #[must_use]
-    pub fn metrics_label_color32(&self) -> egui::Color32 {
-        self.themed_hex(DARK_METRICS_LABEL_HEX, "#8E8E93")
-    }
-
-    #[must_use]
-    pub fn open_endpoint_color32(&self) -> egui::Color32 {
-        self.themed_hex(DARK_OPEN_ENDPOINT_HEX, "#007AFF")
-    }
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct GrafiaTheme {
+    pub theme_name: String,
+    pub edit_canvas: EditCanvasTokens,
+    pub preview_canvas: PreviewCanvasTokens,
+    pub shape_canvas: ShapeCanvasTokens,
+    pub snapping: SnappingTokens,
+    #[serde(flatten, default)]
+    pub ruler_tokens: RulerThemeTokens,
+    #[serde(flatten, default)]
+    pub text_stream_tokens: TextStreamThemeTokens,
+    #[serde(default = "default_preview_bg_normal_rgba")]
+    pub preview_bg_normal: RgbaColorToken,
+    #[serde(default = "default_preview_fg_normal_rgba")]
+    pub preview_fg_normal: RgbaColorToken,
+    #[serde(default = "default_preview_bg_inverted_rgba")]
+    pub preview_bg_inverted: RgbaColorToken,
+    #[serde(default = "default_preview_fg_inverted_rgba")]
+    pub preview_fg_inverted: RgbaColorToken,
+    #[serde(flatten, default)]
+    pub overlay_colors: OverlayThemeTokens,
+    #[serde(flatten, default)]
+    pub guide_and_snap_colors: GuideAndSnapThemeTokens,
+    #[serde(default = "default_smart_handle_color_rgba")]
+    pub smart_handle_color: RgbaColorToken,
+    #[serde(default = "default_ps_hint_stem_fill_rgba")]
+    pub ps_hint_stem_fill: RgbaColorToken,
+    #[serde(default = "default_ps_hint_ghost_fill_rgba")]
+    pub ps_hint_ghost_fill: RgbaColorToken,
+    #[serde(default = "default_hoi_diamond_color_rgba")]
+    pub hoi_diamond_color: RgbaColorToken,
+    #[serde(default = "default_backdrop_ghost_fill_rgba")]
+    pub backdrop_ghost_fill: RgbaColorToken,
+    #[serde(default = "default_ref_frame_outer_rgba")]
+    pub reference_frame_outer: RgbaColorToken,
+    #[serde(default = "default_ref_frame_inner_rgba")]
+    pub reference_frame_inner: RgbaColorToken,
+    #[serde(default = "default_ref_frame_subdiv_rgba")]
+    pub reference_frame_subdiv: RgbaColorToken,
+    #[serde(default = "default_ref_frame_keyline_rgba")]
+    pub reference_frame_keyline: RgbaColorToken,
 }

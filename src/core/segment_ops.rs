@@ -1,15 +1,11 @@
 //! Segment-level operations: cubic belly drag (`dragCurve`), extremum solver,
 //! paired OffCurve handle removal, proportional handle tension, and contour reversal.
 
-pub use crate::core::segment_slide::{
-    make_selected_on_curve_node_first, reverse_contour_nodes, slide_on_curve_node_along_contour,
-};
-
 use crate::core::bezier_ops::{Node, NodeId, NodeType};
 use crate::core::coordinates::FontPoint;
 use crate::core::curve_manipulation::{extract_segments, ContourSegment};
 use crate::core::handle_constraints::enforce_smooth_collinearity_on_handle_drag;
-use crate::tokens::{
+use crate::core::math_consts::{
     BERNSTEIN_CUBIC_COEFF, COLLINEAR_MIN_LEN_EPSILON, DRAG_CURVE_MIN_HANDLE_LEN, DRAG_CURVE_T_MAX,
     DRAG_CURVE_T_MIN, EXTREMUM_SNAP_MAX_DELTA_T, EXTREMUM_T_MAX, EXTREMUM_T_MIN,
     SEGMENT_DRAG_FREE_WEIGHT_FACTOR, SEGMENT_DRAG_MAX_HANDLE_LEN_UPM, SOLVER_DET_EPSILON,
@@ -86,74 +82,25 @@ fn clamp_handle_length(anchor: FontPoint, handle: FontPoint, max_len: f64) -> Fo
     }
 }
 
-/// Deforms an unselected cubic segment (`dragCurve`, `SPEC-002 §3.1.7`):
-/// - Free-angle branch uses linear weight factor $2.65(1-t)$ and $2.65t$ (`spec_ref`).
-/// - Angle-locked branch projects onto tangent lines and clamps max handle length to `6000.0` UPM (`spec_ref`).
-#[allow(clippy::too_many_arguments)]
-pub fn apply_cubic_segment_belly_drag(
-    contour: &mut [Node],
-    closed: bool,
-    segment: ContourSegment,
-    t: f64,
-    initial_h1: FontPoint,
-    initial_h2: FontPoint,
-    dx: f64,
-    dy: f64,
-) {
-    apply_cubic_segment_belly_drag_with_alt(
-        contour, closed, segment, t, initial_h1, initial_h2, dx, dy, false,
-    );
-}
-
-/// Same as [`apply_cubic_segment_belly_drag`] with explicit `alt_held` flag.
-#[allow(clippy::too_many_arguments)]
-pub fn apply_cubic_segment_belly_drag_with_alt(
-    contour: &mut [Node],
-    closed: bool,
-    segment: ContourSegment,
-    t: f64,
-    initial_h1: FontPoint,
-    initial_h2: FontPoint,
-    dx: f64,
-    dy: f64,
-    alt_held: bool,
-) {
-    let ContourSegment::Cubic {
-        start_idx,
-        h1_idx,
-        h2_idx,
-        end_idx,
-        ..
-    } = segment
-    else {
-        return;
-    };
-    if h1_idx >= contour.len() || h2_idx >= contour.len() {
-        return;
-    }
-
-    let u = t.clamp(DRAG_CURVE_T_MIN, DRAG_CURVE_T_MAX);
+fn compute_belly_drag_handles(
+    endpoints: (FontPoint, FontPoint),
+    initial_handles: (FontPoint, FontPoint),
+    smooth_flags: (bool, bool),
+    u: f64,
+    denom: f64,
+    delta: (f64, f64),
+) -> (FontPoint, FontPoint) {
+    let (p0, p3) = endpoints;
+    let (initial_h1, initial_h2) = initial_handles;
+    let (s0, s3) = smooth_flags;
+    let (dx, dy) = delta;
     let om = 1.0 - u;
-    let denom = BERNSTEIN_CUBIC_COEFF * u * om * (om * om + u * u);
-    if denom.abs() <= SOLVER_DET_EPSILON {
-        return;
-    }
-
-    let p0 = contour[start_idx].point;
-    let p3 = contour[end_idx].point;
-    let s0 = contour[start_idx].node_type == NodeType::Smooth
-        && !alt_held
-        && initial_h1.distance_to(p0) >= DRAG_CURVE_MIN_HANDLE_LEN;
-    let s3 = contour[end_idx].node_type == NodeType::Smooth
-        && !alt_held
-        && initial_h2.distance_to(p3) >= DRAG_CURVE_MIN_HANDLE_LEN;
-
     let w1 = om / denom;
     let w2 = u / denom;
     let t1 = FontPoint::new(initial_h1.x.0 + dx * w1, initial_h1.y.0 + dy * w1);
     let t2 = FontPoint::new(initial_h2.x.0 + dx * w2, initial_h2.y.0 + dy * w2);
 
-    let (h1_new, h2_new) = match (s0, s3) {
+    match (s0, s3) {
         (false, false) => {
             let wf1 = SEGMENT_DRAG_FREE_WEIGHT_FACTOR * om;
             let wf2 = SEGMENT_DRAG_FREE_WEIGHT_FACTOR * u;
@@ -206,7 +153,74 @@ pub fn apply_cubic_segment_belly_drag_with_alt(
                 h2_proj,
             )
         }
+    }
+}
+
+/// Deforms an unselected cubic segment (`dragCurve`, `SPEC-002 §3.1.7`):
+/// - Free-angle branch uses linear weight factor $2.65(1-t)$ and $2.65t$ (`spec_ref`).
+/// - Angle-locked branch projects onto tangent lines and clamps max handle length to `6000.0` UPM (`spec_ref`).
+pub fn apply_cubic_segment_belly_drag(
+    contour: &mut [Node],
+    closed: bool,
+    segment: ContourSegment,
+    t: f64,
+    initial_handles: (FontPoint, FontPoint),
+    delta: (f64, f64),
+) {
+    apply_cubic_segment_belly_drag_with_alt(
+        contour,
+        closed,
+        segment,
+        t,
+        initial_handles,
+        delta,
+        false,
+    );
+}
+
+/// Same as [`apply_cubic_segment_belly_drag`] with explicit `alt_held` flag.
+pub fn apply_cubic_segment_belly_drag_with_alt(
+    contour: &mut [Node],
+    closed: bool,
+    segment: ContourSegment,
+    t: f64,
+    initial_handles: (FontPoint, FontPoint),
+    delta: (f64, f64),
+    alt_held: bool,
+) {
+    let ContourSegment::Cubic {
+        start_idx,
+        h1_idx,
+        h2_idx,
+        end_idx,
+        ..
+    } = segment
+    else {
+        return;
     };
+    if h1_idx >= contour.len() || h2_idx >= contour.len() {
+        return;
+    }
+
+    let u = t.clamp(DRAG_CURVE_T_MIN, DRAG_CURVE_T_MAX);
+    let om = 1.0 - u;
+    let denom = BERNSTEIN_CUBIC_COEFF * u * om * (om * om + u * u);
+    if denom.abs() <= SOLVER_DET_EPSILON {
+        return;
+    }
+
+    let (initial_h1, initial_h2) = initial_handles;
+    let p0 = contour[start_idx].point;
+    let p3 = contour[end_idx].point;
+    let s0 = contour[start_idx].node_type == NodeType::Smooth
+        && !alt_held
+        && initial_h1.distance_to(p0) >= DRAG_CURVE_MIN_HANDLE_LEN;
+    let s3 = contour[end_idx].node_type == NodeType::Smooth
+        && !alt_held
+        && initial_h2.distance_to(p3) >= DRAG_CURVE_MIN_HANDLE_LEN;
+
+    let (h1_new, h2_new) =
+        compute_belly_drag_handles((p0, p3), initial_handles, (s0, s3), u, denom, delta);
 
     contour[h1_idx].point = h1_new;
     contour[h2_idx].point = h2_new;

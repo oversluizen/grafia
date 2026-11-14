@@ -2,6 +2,30 @@
 
 All notable changes to `grafia` are documented in this file in accordance with [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and Semantic Versioning (`SemVer 2.0.0`).
 
+## [0.9.0] - 2026-11-14
+
+### Added
+- **Multi-Layer Vector Color/Gradients/Bitmaps, Vertical `TopToBottom` Text Stream, Domain-Agnostic `CustomReferenceFrame`, PostScript/TrueType Hinting & Higher-Order Interpolation Overlays (`SPEC-010` / `v0.9.0`)**:
+  - Multi-layer vector color stack (`CanvasColorSublayer`, `ColorLayerPaint::{ Solid, LinearGradient, RadialGradient, SweepGradient, Bitmap, ClippingMask }`, `GradientExtend` / `GradientSpread`, `GradientStop`) with Porter-Duff `SrcOver` compositing (`porter_duff_src_over`), interactive on-canvas gradient handle and stop-tick dragging (`"Change Color Gradient"` Undo), `SelectionInfo::GradientStop`, `SelectionInfoAction::MutateGradientStop`, `CanvasHostRequest::MutateColorSublayer`, bounded `BTreeMap` multi-window texture caching in `CanvasRenderCache`, and `render_colored_thumbnail` multi-layer RGBA projection with monochrome fallback.
+  - Vertical `WritingDirection::TopToBottom` text stream layout (`recompute_vertical_slot_origins`, vertical center axis $x_c = \frac{1}{2}W$, `vert_origin_y` and `advance_height` progression), `ArrowUp`/`ArrowDown` vertical caret stepping, double-click slot activation, and `TSB`/`BSB` & vertical kerning shortcuts emitting `SpacingDelta` and `KerningDelta` on `MetricsAxis::Vertical` with `"Change Vertical Metrics"` Undo.
+  - Domain-agnostic `CustomReferenceFrame` (`outer_box`, `inner_box`, $N_x \times N_y$ `inner_grid_subdivisions`, `center_crosshair`, `keyline_circles_radii_upm`, and parallel `ReferenceBandLine`s supporting `GuideThickness::ScreenDp` and zoom-proportional `GuideThickness::FontUnits(w)`) with magnetic `SnapEngine` integration (`SnapTargetKind::ReferenceFrame` and `SnapTargetMask::reference_frame`).
+  - PostScript stem and 1-edge ghost hint bands (`PostScriptHint`, `PostScriptHintAxis`, `20`/`21` UPM ghost widths, `↑`/`↓` polarity badges, `"y, dy"` telemetry pills, click selection, `SelectionInfo::PostScriptHint`, `SelectionInfoAction::MutatePostScriptHint`, and `Delete`/`Backspace` removal with `CanvasHostRequest::MutatePostScriptHint`).
+  - TrueType Visual Instructor canvas mode (`CanvasTool::TrueTypeInstructor`, `TrueTypeVisualInstruction`, `TrueTypeInstructionKind::{ Touch/Snap, Anchor, Stem, Shift, Interpolate, Align, Delta }`, `TrueTypeRoundingGrid`, `truetype_upm_per_px`, `grid_fit_contour_nodes`, `X` key projection axis toggle, interactive badge/arrow overlays, `SelectionInfo::TrueTypeInstruction`, `SelectionInfoAction::MutateTrueTypeInstruction`, and `CanvasHostRequest::MutateTrueTypeInstruction`).
+  - Higher-Order Interpolation (`HOI`) control-polygon diamond overlay (`show_hoi_diamonds`, `CanvasTool::Hoi`, `HoiSiblingContours`, `HoiCubicLayerSet`, `compute_hoi_overlay_geometry`, `SelectionInfo::HoiTiming`, `SelectionInfoAction::MutateHoiNode`, `CanvasHostRequest::MutateHoiLayerNode`), plus Pass-1 `show_pixel_preview_ppem: Option<u16>` low-resolution proofing grid (`compute_pixel_preview_cells_upm`) and `backdrop_ghost_contours: Vec<GlyphContour>` reference silhouettes.
+
+## [0.8.0] - 2026-11-14
+
+### Added
+- **Hobby & Euler/Spiro Interpolating Splines, 8+4 BBox Rotation/Shear, Parametric `CanvasSmartHandle`s, Virtual `ExtraNode`s, Bitmap Auto-Trace & `GrafiaPreferences` (`SPEC-009` / `v0.8.0`)**:
+  - `NodeType::HobbyStar` (cyclic Sherman-Morrison tridiagonal mock-curvature solver with incoming/outgoing tensions $\tau \in [0.75, 4.0]$) and `NodeType::EulerSpiro` ($G^2$ damped Newton-Raphson clothoid solver), `HobbyDirConstraint` (`Free`, `Horizontal`, `Vertical`, `SlantedItalic`, `FollowMetricLine`), and curve conversion helpers (`convert_selected_hobby_nodes_to_cubic`, `convert_selected_euler_spiro_nodes_to_cubic`, `convert_selected_cubic_nodes_to_hobby`, `convert_selected_contours_to_quadratic`, `convert_selected_contours_to_cubic`, `add_offcurve_to_selected_segments`, `remove_offcurve_from_selected_segments`).
+  - 8+4 Selection Bounding Box outer-corner rotation zone (`[6.0 dp, 18.0 dp]`) with `Shift` $15^\circ$ quantization, live `"∠ ..."` telemetry pill, and `Ctrl+Alt` mid-edge horizontal/vertical shear preserving `Smooth`-node tangent collinearity.
+  - Parametric `CanvasSmartHandle` ray sliders on selected `CanvasComponent` instances with `[min_val, max_val]` clamping, `4.0 dp` magnetic snap to `default_val`, and `CanvasHostRequest::UpdateSmartComponentAxis`.
+  - Self-intersection virtual `ExtraNode` detection (`compute_layer_extra_nodes`), topological `ExtraNodeKey` stability under rigid translation, hollow diamond overlay markers, and `CanvasHostRequest::SelectOrMutateExtraNode`.
+  - Deterministic 7-stage bitmap and shadowed-camera auto-trace (`trace_background_image`, `trace_active_background_image`, `AutoTraceConfig`, `AutoTraceThresholdMode::GlobalLuminance` and `AdaptiveLocal` Sauvola integral-image thresholding, 4-corner $3\times 3$ homography perspective deskew, sub-pixel marching squares, Ramer-Douglas-Peucker simplification, corner/extremum detection, and Schneider least-squares cubic Bézier fitting).
+  - `GuideThickness::ScreenDp` vs. zoom-scaling `GuideThickness::FontUnits(f64)` translucent guide bands with centerline and $\pm w_{\text{upm}}/2$ band-edge snapping in `SnapEngine`.
+  - `GrafiaPreferences` (custom small/medium/large UPM nudge steps, kerning steps, `round_to_grid`, `snap_radius_dp`, `SnapTargetMask`, `touch_finger_offset_dp`, `show_touch_precision_loupe`, and multi-touch gesture toggles) and `GrafiaKeymap` runtime shortcut rebinding.
+  - `SelectionInfo::HobbyNode`, `SelectionInfo::BackgroundImage` (`BackgroundImageMutation`, `ResetBackgroundImageTransform`), `interpolate_with_background(factor)`, `apply_path_op_across_all_layers`, viewport bookmark swap (`save_viewport_bookmark`, `toggle_saved_viewport_bookmark`), granular node/overlay visibility toggles, and `CanvasRenderCache` idle-frame texture and extra-node caching.
+
 ## [0.7.0] - 2026-11-11
 
 ### Added

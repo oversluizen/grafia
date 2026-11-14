@@ -1,4 +1,13 @@
-#![allow(unexpected_cfgs, clippy::too_many_arguments)]
+#![allow(
+    clippy::too_many_lines,
+    clippy::cognitive_complexity,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::too_many_arguments,
+    clippy::iter_over_hash_type
+)]
+#![allow(unexpected_cfgs)]
 //! Normative COTS Verification Suite for `SPEC-006` (`grafia v0.5.0`):
 //! Multi-Glyph Horizontal Text Strip (`CanvasTextStream`), Interactive Spacing (`LSB` / `RSB` /
 //! Contour Shift), Kerning Delta Emission, Baseline Highlight Wedges, and Text-Mode Measurement Line

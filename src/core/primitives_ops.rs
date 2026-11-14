@@ -4,11 +4,11 @@
 //! Extracted 1-to-1 from `CanvasTool`, `PenTool`, and `PixelTool`
 //! in Reference Vector (``).
 
-use crate::core::{FontPoint, Node, NodeId, NodeType};
-use crate::tokens::{
+use crate::core::math_consts::{
     PENCIL_RDP_EPSILON_UPM, PENCIL_TANGENT_HANDLE_FACTOR, PIXEL_CELL_MATCH_TOL_UPM,
     PRIMITIVE_CIRCLE_KAPPA,
 };
+use crate::core::{FontPoint, Node, NodeId, NodeType};
 use serde::{Deserialize, Serialize};
 
 /// Sub-modes of `PrimitivesTool` (`F` / `Shift+F`).
@@ -213,13 +213,14 @@ pub fn fit_freehand_contour_nodes(
     let mut knots = simplify_polyline_rdp(raw_points, PENCIL_RDP_EPSILON_UPM);
     if closed && knots.len() >= 3 {
         let first = knots[0];
-        let last = *knots.last().unwrap();
+        let last = knots.last().copied().unwrap_or(first);
         if (first.x.0 - last.x.0).hypot(first.y.0 - last.y.0) <= PENCIL_RDP_EPSILON_UPM * 2.0 {
             knots.pop();
         }
     }
     if knots.len() < 2 {
-        knots = vec![raw_points[0], *raw_points.last().unwrap()];
+        let last_raw = raw_points.last().copied().unwrap_or(raw_points[0]);
+        knots = vec![raw_points[0], last_raw];
     }
 
     let n = knots.len();

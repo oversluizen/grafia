@@ -1,3 +1,12 @@
+#![allow(
+    clippy::too_many_lines,
+    clippy::cognitive_complexity,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::too_many_arguments,
+    clippy::iter_over_hash_type
+)]
 //! Comprehensive COTS Integration & Behavioral Verification Suite for Vector Canvas Handbook Chapter 3
 //! and Reference Vector Specification Verification (`SPEC-002` Rev. 3).
 
@@ -1373,10 +1382,8 @@ fn test_spec002_f5_drag_curve_all_four_endpoint_combinations_and_alt_override() 
             false,
             seg,
             0.5,
-            h1_init,
-            h2_init,
-            40.0,
-            60.0,
+            (h1_init, h2_init),
+            (40.0, 60.0),
             alt,
         );
         if s0 == NodeType::Smooth && !alt {
@@ -3231,7 +3238,7 @@ fn test_spec002_f14_reference_build4108_golden_master_vectors_and_pen_close_scen
         1.0,
     );
     assert_eq!(
-        pen_c1.hovered_pen_close_node,
+        pen_c1.hovered_pen_close_target.map(|(_, id)| id),
         Some(pen_c1.contours[0][0].id)
     );
     let pen_c1_open_snap = pen_c1.snapshot();
@@ -3465,19 +3472,19 @@ fn test_spec002_f14_reference_build4108_golden_master_vectors_and_pen_close_scen
     assert!(pen_c3.redo());
     assert_eq!(pen_c3.contours, pen_c3_closed_snap.contours);
 
-    // 5. Invariant validation on hovered_pen_close_node & Delete cleanup
+    // 5. Invariant validation on hovered_pen_close_target & Delete cleanup
     let mut inv_state = GrafiaCanvasState::init_glyph_a();
-    inv_state.hovered_pen_close_node = Some(NodeId(99999));
+    inv_state.hovered_pen_close_target = Some((0, NodeId(99999)));
     assert!(
         inv_state.validate_invariants().is_err(),
-        "validate_invariants must reject dangling hovered_pen_close_node"
+        "validate_invariants must reject dangling hovered_pen_close_target"
     );
-    inv_state.hovered_pen_close_node = Some(inv_state.contours[0][0].id);
+    inv_state.hovered_pen_close_target = Some((0, inv_state.contours[0][0].id));
     inv_state.selected_nodes = vec![inv_state.contours[0][0].id];
     assert!(press_key(&mut inv_state, Key::Delete, false, false, false));
     assert_eq!(
-        inv_state.hovered_pen_close_node, None,
-        "Delete must clear hovered_pen_close_node"
+        inv_state.hovered_pen_close_target, None,
+        "Delete must clear hovered_pen_close_target"
     );
 }
 
@@ -3683,7 +3690,13 @@ fn test_spec002_f15_dual_oracle_reference_build4108_json_differential_golden_mas
         ];
         let seg = extract_segments(&nodes, true)[1];
         grafia::core::apply_cubic_segment_belly_drag_with_alt(
-            &mut nodes, true, seg, t_drag, init_h1, init_h2, dx_drag, dy_drag, false,
+            &mut nodes,
+            true,
+            seg,
+            t_drag,
+            (init_h1, init_h2),
+            (dx_drag, dy_drag),
+            false,
         );
         let exp_h1 = &dc4[case_key]["expected_h1"];
         let exp_h2 = &dc4[case_key]["expected_h2"];
@@ -5316,10 +5329,8 @@ fn test_spec002_f21_live_clang_runtime_parity_alt_line_convert_nudge_zero_span_a
             false,
             seg,
             t,
-            FontPoint::new(30.0, 60.0),
-            FontPoint::new(70.0, 60.0),
-            10.0,
-            20.0,
+            (FontPoint::new(30.0, 60.0), FontPoint::new(70.0, 60.0)),
+            (10.0, 20.0),
             false,
         );
         assert!(
@@ -5349,10 +5360,8 @@ fn test_spec002_f21_live_clang_runtime_parity_alt_line_convert_nudge_zero_span_a
         false,
         locked_seg,
         0.5,
-        FontPoint::new(0.0, 100.0),
-        FontPoint::new(100.0, 100.0),
-        0.0,
-        20_000.0,
+        (FontPoint::new(0.0, 100.0), FontPoint::new(100.0, 100.0)),
+        (0.0, 20_000.0),
         false,
     );
     assert!(

@@ -2,7 +2,7 @@
 //!
 //! Provides Non-Zero Winding (`FillRule::NonZero`) fill tessellation for multi-contour compound glyphs with counter-holes.
 
-use crate::core::{extract_segments, ContourSegment, FontPoint, Node, ViewportTransform};
+use crate::core::{FontPoint, Node, ViewportTransform};
 use egui::epaint::{Vertex, WHITE_UV};
 use egui::{pos2, Mesh};
 use lyon_tessellation::math::point as lyon_point;
@@ -39,40 +39,52 @@ where
     let mut has_geometry = false;
 
     for (contour, is_closed) in contours {
-        if !is_closed {
+        if !is_closed || contour.len() < 2 {
             continue;
         }
-        let segments = extract_segments(contour, true);
-        if segments.is_empty() {
-            continue;
-        }
-
-        let start_pt = match segments[0] {
-            ContourSegment::Line { line, .. } => FontPoint::new(line.p0.x, line.p0.y),
-            ContourSegment::Cubic { cubic, .. } => FontPoint::new(cubic.p0.x, cubic.p0.y),
-        };
-        let p0 = viewport.to_screen(start_pt);
-        builder.begin(lyon_point(p0.x.0, p0.y.0));
-        for seg in &segments {
-            match seg {
-                ContourSegment::Line { line, .. } => {
-                    let p = viewport.to_screen(FontPoint::new(line.p1.x, line.p1.y));
+        let bez = crate::render::canvas_render_cache::cached_contour_bezpath(contour, true);
+        let mut opened = false;
+        for el in bez.elements() {
+            match *el {
+                kurbo::PathEl::MoveTo(pt) => {
+                    if opened {
+                        builder.end(true);
+                    }
+                    let p0 = viewport.to_screen(FontPoint::new(pt.x, pt.y));
+                    builder.begin(lyon_point(p0.x.0, p0.y.0));
+                    opened = true;
+                    has_geometry = true;
+                }
+                kurbo::PathEl::LineTo(pt) if opened => {
+                    let p = viewport.to_screen(FontPoint::new(pt.x, pt.y));
                     builder.line_to(lyon_point(p.x.0, p.y.0));
                 }
-                ContourSegment::Cubic { cubic, .. } => {
-                    let h1 = viewport.to_screen(FontPoint::new(cubic.p1.x, cubic.p1.y));
-                    let h2 = viewport.to_screen(FontPoint::new(cubic.p2.x, cubic.p2.y));
-                    let p3 = viewport.to_screen(FontPoint::new(cubic.p3.x, cubic.p3.y));
+                kurbo::PathEl::QuadTo(q1, p2) if opened => {
+                    let c1 = viewport.to_screen(FontPoint::new(q1.x, q1.y));
+                    let p = viewport.to_screen(FontPoint::new(p2.x, p2.y));
+                    builder
+                        .quadratic_bezier_to(lyon_point(c1.x.0, c1.y.0), lyon_point(p.x.0, p.y.0));
+                }
+                kurbo::PathEl::CurveTo(q1, q2, p3) if opened => {
+                    let h1 = viewport.to_screen(FontPoint::new(q1.x, q1.y));
+                    let h2 = viewport.to_screen(FontPoint::new(q2.x, q2.y));
+                    let p = viewport.to_screen(FontPoint::new(p3.x, p3.y));
                     builder.cubic_bezier_to(
                         lyon_point(h1.x.0, h1.y.0),
                         lyon_point(h2.x.0, h2.y.0),
-                        lyon_point(p3.x.0, p3.y.0),
+                        lyon_point(p.x.0, p.y.0),
                     );
                 }
+                kurbo::PathEl::ClosePath if opened => {
+                    builder.end(true);
+                    opened = false;
+                }
+                _ => {}
             }
         }
-        builder.end(true);
-        has_geometry = true;
+        if opened {
+            builder.end(true);
+        }
     }
 
     if !has_geometry {
@@ -239,7 +251,11 @@ pub fn is_polygon_convex(points: &[egui::Pos2]) -> bool {
             clean.push(p);
         }
     }
-    if clean.len() >= 2 && (clean[0] - *clean.last().unwrap()).length_sq() <= 0.5 {
+    if clean.len() >= 2
+        && clean
+            .last()
+            .is_some_and(|last| (clean[0] - *last).length_sq() <= 0.5)
+    {
         clean.pop();
     }
     let n = clean.len();

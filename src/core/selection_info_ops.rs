@@ -1,10 +1,10 @@
 //! Cubic handle constraint and background-contour projection helpers for `SelectionInfo` (`SPEC-007`).
 
+use crate::core::math_consts::{CURVE_SOLVE_ACCURACY, HANDLE_RADIAL_LEN_EPS_UPM};
 use crate::core::{
     align_collinear_opposite, enforce_smooth_collinearity_on_handle_drag, extract_segments,
     ContourSegment, FontPoint, GlyphContour, Node, NodeId, NodeType,
 };
-use crate::tokens::{CURVE_SOLVE_ACCURACY, HANDLE_RADIAL_LEN_EPS_UPM};
 use kurbo::{ParamCurve, ParamCurveNearest, Point as KPoint};
 
 fn adjacent_indices(len: usize, idx: usize, closed: bool) -> (Option<usize>, Option<usize>) {

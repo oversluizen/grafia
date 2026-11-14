@@ -8,11 +8,11 @@ use crate::core::fit_and_stroke::{
     ContourStrokeStyle, LineCapStyle, LineJoinStyle, StrokePosition,
 };
 use crate::core::glyph_model::{ContourId, GlyphContour};
-use crate::core::segment_ops::reverse_contour_nodes;
-use crate::tokens::{
+use crate::core::math_consts::{
     FIT_CURVE_MIN_CHORD_LEN_EPS, STROKE_JOIN_COINCIDENT_EPS_UPM, STROKE_MITER_LIMIT,
     STROKE_ROUND_KAPPA,
 };
+use crate::core::reverse_contour_nodes;
 use std::collections::BTreeMap;
 
 /// Expands all stroked contours in `contours` according to `strokes` (`SPEC-008 §2.5.2`).
@@ -82,9 +82,11 @@ pub fn expand_single_contour_stroke(
         *next_cid += 1;
         vec![c_outer, c_inner]
     } else {
+        let Some(last_seg) = segments.last() else {
+            return Vec::new();
+        };
         let t_start = segment_start_tangent(&contour.nodes, &segments[0]);
-        let t_end =
-            segment_end_tangent(&contour.nodes, segments.last().expect("non-empty segments"));
+        let t_end = segment_end_tangent(&contour.nodes, last_seg);
         let nodes =
             assemble_open_stroke_contour(left_nodes, right_nodes, t_start, t_end, style, next_nid);
         let c = GlyphContour::new(ContourId(*next_cid), nodes);
@@ -154,17 +156,16 @@ fn push_node(out: &mut Vec<Node>, next_nid: &mut u64, pt: FontPoint, node_type: 
     out.push(Node::new(id, pt.x.0, pt.y.0, node_type));
 }
 
-#[allow(clippy::too_many_arguments)]
 fn emit_corner_join(
     out: &mut Vec<Node>,
     next_nid: &mut u64,
     vertex: FontPoint,
     t1: (f64, f64),
     t2: (f64, f64),
-    offset_x: f64,
-    offset_y: f64,
+    offset: (f64, f64),
     join: LineJoinStyle,
 ) {
+    let (offset_x, offset_y) = offset;
     let n1 = (-t1.1, t1.0);
     let n2 = (-t2.1, t2.0);
     let q1 = FontPoint::new(vertex.x.0 + n1.0 * offset_x, vertex.y.0 + n1.1 * offset_y);
@@ -253,8 +254,7 @@ fn build_offset_rail_nodes(
                 nodes[start_idx].point,
                 t_in,
                 t_out,
-                offset_x,
-                offset_y,
+                (offset_x, offset_y),
                 join,
             );
         }

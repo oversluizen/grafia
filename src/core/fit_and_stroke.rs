@@ -5,10 +5,7 @@ use crate::core::bezier_ops::NodeId;
 use crate::core::coordinates::FontPoint;
 use crate::core::curve_manipulation::{extract_segments, ContourSegment};
 use crate::core::glyph_model::GlyphContour;
-pub use crate::core::stroke_expand::{
-    expand_single_contour_stroke, expand_stroked_contours_preview,
-};
-use crate::tokens::{
+use crate::core::math_consts::{
     DEFAULT_CONTOUR_STROKE_WIDTH_UPM, FIT_CURVE_CONFIG_MAX_MIN_BOUND, FIT_CURVE_CONFIG_MIN_BOUND,
     FIT_CURVE_DEFAULT_MAX_RATIO, FIT_CURVE_DEFAULT_MIN_RATIO, FIT_CURVE_MAX_ALLOWED_RATIO,
     FIT_CURVE_MAX_COLUMN_INDEX, FIT_CURVE_MAX_INTERSECTION_CHORD_MULTIPLE,

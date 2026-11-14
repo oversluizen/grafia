@@ -24,7 +24,6 @@ fn tip_toggle(ui: &mut Ui, active: bool, icon: &str, tip: &str) -> bool {
         .clicked()
 }
 
-#[allow(clippy::too_many_arguments)]
 pub fn render_top_toolbar(
     ui: &mut Ui,
     state: &mut GrafiaCanvasState,
@@ -79,54 +78,66 @@ pub fn render_top_toolbar(
         ) {
             *show_preview_panel = !*show_preview_panel;
         }
-        ui.add(Separator::default().vertical());
-        if tip_btn(ui, MacSymbol::Minus.as_str(), "Zoom Out [Cmd+-]") {
-            state.viewport.zoom = (state.viewport.zoom * ZOOM_OUT_FACTOR).max(MIN_VIEWPORT_ZOOM);
-        }
-        ui.label(format!("{:.0}%", state.viewport.zoom * ZOOM_PERCENT_BASE));
-        if tip_btn(ui, MacSymbol::Plus.as_str(), "Zoom In [Cmd+=]") {
-            state.viewport.zoom = (state.viewport.zoom * ZOOM_IN_FACTOR).min(MAX_VIEWPORT_ZOOM);
-        }
-        if tip_btn(ui, "\u{f37d}", "Fit Glyph in Viewport [Cmd+0]") {
-            state.fit_viewport_to_glyph(WINDOW_WIDTH_DP, WINDOW_HEIGHT_DP);
-        }
-        ui.add(Separator::default().vertical());
-        for arch in GlyphArchetype::all() {
-            let lbl = arch.button_label();
-            let tip = format!("Load Golden Master Glyph {lbl}");
-            if tip_toggle(ui, state.active_archetype == arch, lbl, &tip) {
-                state.load_glyph_archetype(arch);
-            }
-        }
-        ui.add(Separator::default().vertical());
-        if ui
-            .add_enabled(state.history.can_undo(), egui::Button::new("\u{f544}"))
-            .on_hover_text("Undo [Cmd+Z]")
-            .on_disabled_hover_text("Undo [Cmd+Z]")
-            .clicked()
-        {
-            state.undo();
-        }
-        if ui
-            .add_enabled(state.history.can_redo(), egui::Button::new("\u{f549}"))
-            .on_hover_text("Redo [Cmd+Shift+Z]")
-            .on_disabled_hover_text("Redo [Cmd+Shift+Z]")
-            .clicked()
-        {
-            state.redo();
-        }
-        if tip_btn(
-            ui,
-            MacSymbol::ArrowCounterClockwise.as_str(),
-            "Reset Canvas to Golden Master /A",
-        ) {
-            *state = GrafiaCanvasState::init_glyph_a();
-        }
+        render_top_toolbar_zoom_and_history(ui, state);
     });
+}
+
+fn render_top_toolbar_zoom_and_history(ui: &mut Ui, state: &mut GrafiaCanvasState) {
+    ui.add(Separator::default().vertical());
+    if tip_btn(ui, MacSymbol::Minus.as_str(), "Zoom Out [Cmd+-]") {
+        state.viewport.zoom = (state.viewport.zoom * ZOOM_OUT_FACTOR).max(MIN_VIEWPORT_ZOOM);
+    }
+    ui.label(format!("{:.0}%", state.viewport.zoom * ZOOM_PERCENT_BASE));
+    if tip_btn(ui, MacSymbol::Plus.as_str(), "Zoom In [Cmd+=]") {
+        state.viewport.zoom = (state.viewport.zoom * ZOOM_IN_FACTOR).min(MAX_VIEWPORT_ZOOM);
+    }
+    if tip_btn(ui, "\u{f37d}", "Fit Glyph in Viewport [Cmd+0]") {
+        state.fit_viewport_to_glyph(WINDOW_WIDTH_DP, WINDOW_HEIGHT_DP);
+    }
+    ui.add(Separator::default().vertical());
+    for arch in GlyphArchetype::all() {
+        let lbl = arch.button_label();
+        let tip = format!("Load Golden Master Glyph {lbl}");
+        if tip_toggle(ui, state.active_archetype == arch, lbl, &tip) {
+            state.load_glyph_archetype(arch);
+        }
+    }
+    ui.add(Separator::default().vertical());
+    if ui
+        .add_enabled(state.history.can_undo(), egui::Button::new("\u{f544}"))
+        .on_hover_text("Undo [Cmd+Z]")
+        .on_disabled_hover_text("Undo [Cmd+Z]")
+        .clicked()
+    {
+        state.undo();
+    }
+    if ui
+        .add_enabled(state.history.can_redo(), egui::Button::new("\u{f549}"))
+        .on_hover_text("Redo [Cmd+Shift+Z]")
+        .on_disabled_hover_text("Redo [Cmd+Shift+Z]")
+        .clicked()
+    {
+        state.redo();
+    }
+    if tip_btn(
+        ui,
+        MacSymbol::ArrowCounterClockwise.as_str(),
+        "Reset Canvas to Golden Master /A",
+    ) {
+        *state = GrafiaCanvasState::init_glyph_a();
+    }
 }
 
 pub fn render_left_sidebar(ui: &mut Ui, state: &mut GrafiaCanvasState) {
     ui.add_space(SIDEBAR_TOP_SPACE_DP);
+    render_left_sidebar_shapes(ui, state);
+    ui.add(Separator::default().horizontal());
+    render_left_sidebar_transform(ui, state);
+    ui.add(Separator::default().horizontal());
+    render_left_sidebar_path_ops(ui, state);
+}
+
+fn render_left_sidebar_shapes(ui: &mut Ui, state: &mut GrafiaCanvasState) {
     ui.strong(format!("Shapes ({})", state.glyph.contours.len()));
     ui.add(Separator::default().horizontal());
     for contour in &state.glyph.contours {
@@ -173,7 +184,9 @@ pub fn render_left_sidebar(ui: &mut Ui, state: &mut GrafiaCanvasState) {
             });
         });
     }
-    ui.add(Separator::default().horizontal());
+}
+
+fn render_left_sidebar_transform(ui: &mut Ui, state: &mut GrafiaCanvasState) {
     ui.strong("Transform Panel");
     ui.horizontal(|ui| {
         Grid::new("origin_anchor_grid")
@@ -242,7 +255,9 @@ pub fn render_left_sidebar(ui: &mut Ui, state: &mut GrafiaCanvasState) {
             state.slant_by_degrees(DEMO_SLANT_STEP_DEG, true);
         }
     });
-    ui.add(Separator::default().horizontal());
+}
+
+fn render_left_sidebar_path_ops(ui: &mut Ui, state: &mut GrafiaCanvasState) {
     ui.strong("Path Operations & Guides");
     ui.horizontal_wrapped(|ui| {
         if tip_btn(ui, "\u{f4e3}", "Reverse Contours") {

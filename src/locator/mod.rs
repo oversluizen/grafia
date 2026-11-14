@@ -91,13 +91,7 @@ impl<'a> ShapeLocatorRenderer<'a> {
         Self { glyph, style }
     }
 
-    /// Computes the affine micro-viewport projection and generates `(context_mesh, focus_mesh)`.
-    #[must_use]
-    pub fn render_locator(
-        &self,
-        target_contour_id: impl Into<ContourId>,
-        size: Vec2,
-    ) -> (Mesh, Mesh) {
+    fn visible_glyph_bounds(&self) -> (f64, f64, f64, f64) {
         let mut min_x = f64::INFINITY;
         let mut max_x = f64::NEG_INFINITY;
         let mut min_y = f64::INFINITY;
@@ -108,40 +102,64 @@ impl<'a> ShapeLocatorRenderer<'a> {
                 continue;
             }
             for node in &contour.nodes {
-                let x = node.point.x.0;
-                let y = node.point.y.0;
-                if x < min_x {
-                    min_x = x;
+                min_x = min_x.min(node.point.x.0);
+                max_x = max_x.max(node.point.x.0);
+                min_y = min_y.min(node.point.y.0);
+                max_y = max_y.max(node.point.y.0);
+            }
+        }
+        if !min_x.is_finite() || !max_x.is_finite() || !min_y.is_finite() || !max_y.is_finite() {
+            let upm = self.glyph.upm as f64;
+            (0.0, upm, 0.0, upm)
+        } else {
+            (min_x, max_x, min_y, max_y)
+        }
+    }
+
+    fn append_segments_to_lyon_builder(
+        builder: &mut lyon_tessellation::path::path::Builder,
+        segments: &[ContourSegment],
+        closed: bool,
+        to_locator_pt: &impl Fn(FontPoint) -> lyon_tessellation::math::Point,
+    ) {
+        let start_pt = match segments[0] {
+            ContourSegment::Line { line, .. } => FontPoint::new(line.p0.x, line.p0.y),
+            ContourSegment::Cubic { cubic, .. } => FontPoint::new(cubic.p0.x, cubic.p0.y),
+        };
+        builder.begin(to_locator_pt(start_pt));
+        for seg in segments {
+            match seg {
+                ContourSegment::Line { line, .. } => {
+                    builder.line_to(to_locator_pt(FontPoint::new(line.p1.x, line.p1.y)));
                 }
-                if x > max_x {
-                    max_x = x;
-                }
-                if y < min_y {
-                    min_y = y;
-                }
-                if y > max_y {
-                    max_y = y;
+                ContourSegment::Cubic { cubic, .. } => {
+                    builder.cubic_bezier_to(
+                        to_locator_pt(FontPoint::new(cubic.p1.x, cubic.p1.y)),
+                        to_locator_pt(FontPoint::new(cubic.p2.x, cubic.p2.y)),
+                        to_locator_pt(FontPoint::new(cubic.p3.x, cubic.p3.y)),
+                    );
                 }
             }
         }
+        builder.end(closed);
+    }
 
-        if !min_x.is_finite() || !max_x.is_finite() || !min_y.is_finite() || !max_y.is_finite() {
-            min_x = 0.0;
-            max_x = self.glyph.upm as f64;
-            min_y = 0.0;
-            max_y = self.glyph.upm as f64;
-        }
-
+    /// Computes the affine micro-viewport projection and generates `(context_mesh, focus_mesh)`.
+    #[must_use]
+    pub fn render_locator(
+        &self,
+        target_contour_id: impl Into<ContourId>,
+        size: Vec2,
+    ) -> (Mesh, Mesh) {
+        let (min_x, max_x, min_y, max_y) = self.visible_glyph_bounds();
         let w = (max_x - min_x).max(1.0);
         let h = (max_y - min_y).max(1.0);
         let pad = self.style.padding as f64;
         let avail_w = (size.x as f64 - (pad * 2.0)).max(1.0);
         let avail_h = (size.y as f64 - (pad * 2.0)).max(1.0);
         let scale = (avail_w / w).min(avail_h / h);
-        let scaled_w = w * scale;
-        let scaled_h = h * scale;
-        let offset_x = pad + (avail_w - scaled_w) * 0.5;
-        let offset_y = pad + (avail_h - scaled_h) * 0.5;
+        let offset_x = pad + (avail_w - w * scale) * 0.5;
+        let offset_y = pad + (avail_h - h * scale) * 0.5;
 
         let to_locator_pt = |pt: crate::core::FontPoint| -> lyon_tessellation::math::Point {
             let sx = offset_x + (pt.x.0 - min_x) * scale;
@@ -149,7 +167,6 @@ impl<'a> ShapeLocatorRenderer<'a> {
             lyon_point(sx as f32, sy as f32)
         };
 
-        // 1. Context mesh: Full glyph in subtle context tint (evaluating true cubic Bézier curves)
         let mut context_builder = LyonPath::builder();
         let mut has_context = false;
         for contour in &self.glyph.contours {
@@ -157,31 +174,15 @@ impl<'a> ShapeLocatorRenderer<'a> {
                 continue;
             }
             let segments = extract_segments(&contour.nodes, contour.closed);
-            if segments.is_empty() {
-                continue;
+            if !segments.is_empty() {
+                Self::append_segments_to_lyon_builder(
+                    &mut context_builder,
+                    &segments,
+                    contour.closed,
+                    &to_locator_pt,
+                );
+                has_context = true;
             }
-            let start_pt = match segments[0] {
-                ContourSegment::Line { line, .. } => FontPoint::new(line.p0.x, line.p0.y),
-                ContourSegment::Cubic { cubic, .. } => FontPoint::new(cubic.p0.x, cubic.p0.y),
-            };
-            context_builder.begin(to_locator_pt(start_pt));
-            for seg in &segments {
-                match seg {
-                    ContourSegment::Line { line, .. } => {
-                        context_builder
-                            .line_to(to_locator_pt(FontPoint::new(line.p1.x, line.p1.y)));
-                    }
-                    ContourSegment::Cubic { cubic, .. } => {
-                        context_builder.cubic_bezier_to(
-                            to_locator_pt(FontPoint::new(cubic.p1.x, cubic.p1.y)),
-                            to_locator_pt(FontPoint::new(cubic.p2.x, cubic.p2.y)),
-                            to_locator_pt(FontPoint::new(cubic.p3.x, cubic.p3.y)),
-                        );
-                    }
-                }
-            }
-            context_builder.end(contour.closed);
-            has_context = true;
         }
 
         let mut context_mesh = Mesh::default();
@@ -206,72 +207,64 @@ impl<'a> ShapeLocatorRenderer<'a> {
             }
         }
 
-        // 2. Focus mesh: Target contour in accent focus color (evaluating true cubic Bézier curves)
         let target_id = target_contour_id.into();
-        let mut focus_mesh = Mesh::default();
-        if let Some(target_contour) = self.glyph.contours.iter().find(|c| c.id == target_id) {
-            let segments = extract_segments(&target_contour.nodes, target_contour.closed);
-            if target_contour.visible && !segments.is_empty() {
-                let mut focus_builder = LyonPath::builder();
-                let start_pt = match segments[0] {
-                    ContourSegment::Line { line, .. } => FontPoint::new(line.p0.x, line.p0.y),
-                    ContourSegment::Cubic { cubic, .. } => FontPoint::new(cubic.p0.x, cubic.p0.y),
-                };
-                focus_builder.begin(to_locator_pt(start_pt));
-                for seg in &segments {
-                    match seg {
-                        ContourSegment::Line { line, .. } => {
-                            focus_builder
-                                .line_to(to_locator_pt(FontPoint::new(line.p1.x, line.p1.y)));
-                        }
-                        ContourSegment::Cubic { cubic, .. } => {
-                            focus_builder.cubic_bezier_to(
-                                to_locator_pt(FontPoint::new(cubic.p1.x, cubic.p1.y)),
-                                to_locator_pt(FontPoint::new(cubic.p2.x, cubic.p2.y)),
-                                to_locator_pt(FontPoint::new(cubic.p3.x, cubic.p3.y)),
-                            );
-                        }
-                    }
-                }
-                focus_builder.end(target_contour.closed);
-                let path = focus_builder.build();
-
-                let color = match target_contour.role {
-                    ShapeBooleanRole::Mask => self.style.mask_color,
-                    _ => self.style.focus_color,
-                };
-
-                let mut buffers: VertexBuffers<Vertex, u32> = VertexBuffers::new();
-                let tessellated_ok = if target_contour.closed {
-                    let mut tessellator = FillTessellator::new();
-                    let options = FillOptions::default().with_fill_rule(FillRule::NonZero);
-                    tessellator
-                        .tessellate_path(
-                            &path,
-                            &options,
-                            &mut BuffersBuilder::new(&mut buffers, EguiLocatorVertexCtor(color)),
-                        )
-                        .is_ok()
-                } else {
-                    let mut tessellator = StrokeTessellator::new();
-                    let options = StrokeOptions::default()
-                        .with_line_width(LOCATOR_OPEN_CONTOUR_STROKE_WIDTH_DP);
-                    tessellator
-                        .tessellate_path(
-                            &path,
-                            &options,
-                            &mut BuffersBuilder::new(&mut buffers, EguiLocatorVertexCtor(color)),
-                        )
-                        .is_ok()
-                };
-                if tessellated_ok {
-                    focus_mesh.vertices = buffers.vertices;
-                    focus_mesh.indices = buffers.indices;
-                }
-            }
-        }
-
+        let focus_mesh = self.tessellate_focus_contour_mesh(target_id, &to_locator_pt);
         (context_mesh, focus_mesh)
+    }
+
+    fn tessellate_focus_contour_mesh(
+        &self,
+        target_id: ContourId,
+        to_locator_pt: &impl Fn(FontPoint) -> lyon_tessellation::math::Point,
+    ) -> Mesh {
+        let mut focus_mesh = Mesh::default();
+        let Some(target_contour) = self.glyph.contours.iter().find(|c| c.id == target_id) else {
+            return focus_mesh;
+        };
+        let segments = extract_segments(&target_contour.nodes, target_contour.closed);
+        if !target_contour.visible || segments.is_empty() {
+            return focus_mesh;
+        }
+        let mut focus_builder = LyonPath::builder();
+        Self::append_segments_to_lyon_builder(
+            &mut focus_builder,
+            &segments,
+            target_contour.closed,
+            to_locator_pt,
+        );
+        let path = focus_builder.build();
+        let color = match target_contour.role {
+            ShapeBooleanRole::Mask => self.style.mask_color,
+            _ => self.style.focus_color,
+        };
+        let mut buffers: VertexBuffers<Vertex, u32> = VertexBuffers::new();
+        let tessellated_ok = if target_contour.closed {
+            let mut tessellator = FillTessellator::new();
+            let options = FillOptions::default().with_fill_rule(FillRule::NonZero);
+            tessellator
+                .tessellate_path(
+                    &path,
+                    &options,
+                    &mut BuffersBuilder::new(&mut buffers, EguiLocatorVertexCtor(color)),
+                )
+                .is_ok()
+        } else {
+            let mut tessellator = StrokeTessellator::new();
+            let options =
+                StrokeOptions::default().with_line_width(LOCATOR_OPEN_CONTOUR_STROKE_WIDTH_DP);
+            tessellator
+                .tessellate_path(
+                    &path,
+                    &options,
+                    &mut BuffersBuilder::new(&mut buffers, EguiLocatorVertexCtor(color)),
+                )
+                .is_ok()
+        };
+        if tessellated_ok {
+            focus_mesh.vertices = buffers.vertices;
+            focus_mesh.indices = buffers.indices;
+        }
+        focus_mesh
     }
 }
 

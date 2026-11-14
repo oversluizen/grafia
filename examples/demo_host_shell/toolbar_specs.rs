@@ -72,8 +72,8 @@ pub const METRICS_ORIGIN_SPECS: [(MetricsOrigin, &str, &str); 3] = [
     ),
 ];
 
-/// Tool icon and tooltip table covering all 13 `CanvasTool` variants.
-pub const TOOL_ICON_SPECS: [(CanvasTool, &str, &str); 13] = [
+/// Tool icon and tooltip table covering all 15 `CanvasTool` variants.
+pub const TOOL_ICON_SPECS: [(CanvasTool, &str, &str); 15] = [
     (
         CanvasTool::Select,
         "\u{f61e}",
@@ -137,7 +137,17 @@ pub const TOOL_ICON_SPECS: [(CanvasTool, &str, &str); 13] = [
     (
         CanvasTool::Text,
         "\u{f892}",
-        "Text Tool [T] — Multi-glyph horizontal strip, interactive spacing & kerning",
+        "Text Tool [T] — Multi-glyph horizontal/vertical strip, interactive spacing & kerning",
+    ),
+    (
+        CanvasTool::TrueTypeInstructor,
+        "\u{f48a}",
+        "TrueType Instructor Tool [I] — TrueType Anchor/Stem/Align/Interpolate/Delta hints & PPEM grid",
+    ),
+    (
+        CanvasTool::Hoi,
+        "\u{f899}",
+        "Higher-Order Interpolation Tool [H] — Non-linear cubic master interpolation control polygon",
     ),
 ];
 

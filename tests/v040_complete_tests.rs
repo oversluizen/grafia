@@ -1,3 +1,12 @@
+#![allow(
+    clippy::too_many_lines,
+    clippy::cognitive_complexity,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::too_many_arguments,
+    clippy::iter_over_hash_type
+)]
 //! Normative COTS Verification Suite for `SPEC-005` (`grafia v0.4.0`):
 //! Specialized Edit Tools (`KnifeTool`, `PrimitivesTool`, `MeasurementTool`, `AnnotationTool`,
 //! `PencilTool`, `PixelTool`), Coordinate & Segment Delta Overlays, and Canvas Annotations
@@ -191,15 +200,15 @@ fn tc_v040_001_knife_tool_cuts_closed_contour_into_two_halves_and_constrains_wit
     pointer_move(&mut state, drag_scr, true, false, false, false);
 
     // While dragging, KnifeState must be active, constrained to y=300, and have 2 contour intersections at x=100 and x=500
-    assert!(state.v040.knife.active);
-    assert!((state.v040.knife.current_upm.y.0 - 300.0).abs() < 1e-3);
-    assert_eq!(state.v040.knife.intersections.len(), 2);
-    assert!((state.v040.knife.intersections[0].x.0 - 100.0).abs() < 1.0);
-    assert!((state.v040.knife.intersections[1].x.0 - 500.0).abs() < 1.0);
+    assert!(state.drawing_tool_state.knife.active);
+    assert!((state.drawing_tool_state.knife.current_upm.y.0 - 300.0).abs() < 1e-3);
+    assert_eq!(state.drawing_tool_state.knife.intersections.len(), 2);
+    assert!((state.drawing_tool_state.knife.intersections[0].x.0 - 100.0).abs() < 1.0);
+    assert!((state.drawing_tool_state.knife.intersections[1].x.0 - 500.0).abs() < 1.0);
 
     // Release pointer to commit cut (`CanvasTool::cutPathsInLayer:forPoint:endPoint:`)
     pointer_release(&mut state, drag_scr, true, false, false, false);
-    assert!(!state.v040.knife.active);
+    assert!(!state.drawing_tool_state.knife.active);
 
     // Closed rectangle is sliced into 2 closed contours (bottom half y in [100, 300], top half y in [300, 500])
     assert_eq!(state.contours.len(), 2);
@@ -248,7 +257,7 @@ fn tc_v040_002_knife_tool_alt_adds_nodes_without_slicing_and_single_hit_opens_co
     let out_scr = state.viewport.to_screen(FontPoint::new(550.0, 300.0));
     pointer_press(&mut state, in_scr, false, false, false, false);
     pointer_move(&mut state, out_scr, false, false, false, false);
-    assert_eq!(state.v040.knife.intersections.len(), 1);
+    assert_eq!(state.drawing_tool_state.knife.intersections.len(), 1);
     pointer_release(&mut state, out_scr, false, false, false, false);
 
     assert_eq!(state.contours.len(), 1);
@@ -275,15 +284,18 @@ fn tc_v040_003_primitives_tool_rect_and_circle_modifiers_and_single_click_dialog
     // Press 'F' -> activates PrimitivesTool (Rectangle sub-tool by default)
     press_key(&mut state, Key::F, false, false, false, false);
     assert_eq!(state.active_tool, CanvasTool::Primitives);
-    assert_eq!(state.v040.primitive_sub_tool, PrimitiveSubTool::Rectangle);
+    assert_eq!(
+        state.drawing_tool_state.primitive_sub_tool,
+        PrimitiveSubTool::Rectangle
+    );
 
     // 1. Drag with Shift (square constraint: width == height == max(|dx|, |dy|))
     let p0 = state.viewport.to_screen(FontPoint::new(100.0, 100.0));
     let p1 = state.viewport.to_screen(FontPoint::new(300.0, 220.0));
     pointer_press(&mut state, p0, true, false, false, true);
     pointer_move(&mut state, p1, true, false, false, true);
-    assert!(state.v040.primitive_drag.active);
-    let rect = state.v040.primitive_drag.preview_rect_upm();
+    assert!(state.drawing_tool_state.primitive_drag.active);
+    let rect = state.drawing_tool_state.primitive_drag.preview_rect_upm();
     assert!(((rect.2 - rect.0) - 200.0).abs() < 1.0);
     assert!(((rect.3 - rect.1) - 200.0).abs() < 1.0);
     pointer_release(&mut state, p1, true, false, false, true);
@@ -296,14 +308,17 @@ fn tc_v040_003_primitives_tool_rect_and_circle_modifiers_and_single_click_dialog
 
     // 2. Press Shift+F -> cycles to Circle sub-tool (`CanvasTool`)
     press_key(&mut state, Key::F, true, false, false, false);
-    assert_eq!(state.v040.primitive_sub_tool, PrimitiveSubTool::Circle);
+    assert_eq!(
+        state.drawing_tool_state.primitive_sub_tool,
+        PrimitiveSubTool::Circle
+    );
 
     // Drag with Alt (center origin: expands symmetrically around start (400, 400) by +-100 -> [300..500, 300..500])
     let c0 = state.viewport.to_screen(FontPoint::new(400.0, 400.0));
     let c1 = state.viewport.to_screen(FontPoint::new(500.0, 500.0));
     pointer_press(&mut state, c0, false, true, false, true);
     pointer_move(&mut state, c1, false, true, false, true);
-    let crect = state.v040.primitive_drag.preview_rect_upm();
+    let crect = state.drawing_tool_state.primitive_drag.preview_rect_upm();
     assert!((crect.0 - 300.0).abs() < 1.0 && (crect.2 - 500.0).abs() < 1.0);
     assert!((crect.1 - 300.0).abs() < 1.0 && (crect.3 - 500.0).abs() < 1.0);
     pointer_release(&mut state, c1, false, true, false, true);
@@ -327,7 +342,7 @@ fn tc_v040_003_primitives_tool_rect_and_circle_modifiers_and_single_click_dialog
     pointer_press(&mut state, click_pt, false, false, false, true);
     pointer_release(&mut state, click_pt, false, false, false, true);
     assert!(matches!(
-        state.v040.last_dialog_request,
+        state.drawing_tool_state.last_dialog_request,
         Some(ToolDialogRequest::Primitive {
             sub_tool: PrimitiveSubTool::Circle,
             default_width: 100.0,
@@ -419,8 +434,8 @@ fn tc_v040_005_measurement_ray_intersections_sidebearings_angle_and_promote_to_g
     pointer_press(&mut state, p_start, false, false, false, false);
     pointer_move(&mut state, p_end, false, false, false, false);
 
-    assert!(state.v040.measurement.active);
-    let hits = &state.v040.measurement.intersections;
+    assert!(state.drawing_tool_state.measurement.active);
+    let hits = &state.drawing_tool_state.measurement.intersections;
     // Ray hits: start (-50), LSB (0), contour left (100), contour right (500), RSB (600), end (650)
     let xs: Vec<f64> = hits.iter().map(|p| p.x.0).collect();
     assert!(
@@ -455,7 +470,7 @@ fn tc_v040_005_measurement_ray_intersections_sidebearings_angle_and_promote_to_g
     assert!(state.show_guides);
 
     pointer_release(&mut state, p_end, false, false, false, false);
-    assert!(!state.v040.measurement.active);
+    assert!(!state.drawing_tool_state.measurement.active);
 }
 
 // ============================================================================
@@ -470,7 +485,10 @@ fn tc_v040_006_annotation_tool_five_types_handle_manipulation_delete_and_undo() 
     // Activate AnnotationTool ('A')
     press_key(&mut state, Key::A, false, false, false, false);
     assert_eq!(state.active_tool, CanvasTool::Annotation);
-    assert_eq!(state.v040.annotation_sub_tool, AnnotationSubTool::Text);
+    assert_eq!(
+        state.drawing_tool_state.annotation_sub_tool,
+        AnnotationSubTool::Text
+    );
 
     // 1. Click to place Text annotation (type 1)
     let p_text = state.viewport.to_screen(FontPoint::new(100.0, 400.0));
@@ -484,13 +502,19 @@ fn tc_v040_006_annotation_tool_five_types_handle_manipulation_delete_and_undo() 
 
     // 2. Cycle sub-tool via Shift+A -> Arrow (2), Circle (3), Plus (4), Minus (5)
     press_key(&mut state, Key::A, true, false, false, false);
-    assert_eq!(state.v040.annotation_sub_tool, AnnotationSubTool::Arrow);
+    assert_eq!(
+        state.drawing_tool_state.annotation_sub_tool,
+        AnnotationSubTool::Arrow
+    );
     let p_arrow = state.viewport.to_screen(FontPoint::new(250.0, 400.0));
     pointer_press(&mut state, p_arrow, false, false, false, false);
     pointer_release(&mut state, p_arrow, false, false, false, false);
 
     press_key(&mut state, Key::A, true, false, false, false);
-    assert_eq!(state.v040.annotation_sub_tool, AnnotationSubTool::Circle);
+    assert_eq!(
+        state.drawing_tool_state.annotation_sub_tool,
+        AnnotationSubTool::Circle
+    );
     let p_circle = state.viewport.to_screen(FontPoint::new(400.0, 300.0));
     pointer_press(&mut state, p_circle, false, false, false, false);
     pointer_release(&mut state, p_circle, false, false, false, false);
@@ -513,13 +537,19 @@ fn tc_v040_006_annotation_tool_five_types_handle_manipulation_delete_and_undo() 
 
     // Place Plus (4) and Minus (5)
     press_key(&mut state, Key::A, true, false, false, false);
-    assert_eq!(state.v040.annotation_sub_tool, AnnotationSubTool::Plus);
+    assert_eq!(
+        state.drawing_tool_state.annotation_sub_tool,
+        AnnotationSubTool::Plus
+    );
     let p_plus = state.viewport.to_screen(FontPoint::new(550.0, 400.0));
     pointer_press(&mut state, p_plus, false, false, false, false);
     pointer_release(&mut state, p_plus, false, false, false, false);
 
     press_key(&mut state, Key::A, true, false, false, false);
-    assert_eq!(state.v040.annotation_sub_tool, AnnotationSubTool::Minus);
+    assert_eq!(
+        state.drawing_tool_state.annotation_sub_tool,
+        AnnotationSubTool::Minus
+    );
     let p_minus = state.viewport.to_screen(FontPoint::new(650.0, 400.0));
     pointer_press(&mut state, p_minus, false, false, false, false);
     pointer_release(&mut state, p_minus, false, false, false, false);
@@ -528,7 +558,7 @@ fn tc_v040_006_annotation_tool_five_types_handle_manipulation_delete_and_undo() 
 
     // Cmd+A in AnnotationTool selects all 5 annotations (`AnnotationTool::selectAll:`)
     press_key(&mut state, Key::A, false, false, true, false);
-    assert_eq!(state.v040.selected_annotations.len(), 5);
+    assert_eq!(state.drawing_tool_state.selected_annotations.len(), 5);
 
     // Backspace deletes all selected annotations (`AnnotationTool::deleteBackward:`) with Undo/Redo
     press_key(&mut state, Key::Backspace, false, false, false, false);
@@ -566,8 +596,8 @@ fn tc_v040_007_pencil_tool_freehand_sampling_and_cubic_curve_fitting() {
         let scr = state.viewport.to_screen(*pt);
         pointer_move(&mut state, scr, false, false, false, false);
     }
-    assert!(state.v040.pencil.active);
-    assert!(state.v040.pencil.points_upm.len() >= 4);
+    assert!(state.drawing_tool_state.pencil.active);
+    assert!(state.drawing_tool_state.pencil.points_upm.len() >= 4);
     let scr_last = state.viewport.to_screen(*pts.last().unwrap());
     pointer_release(&mut state, scr_last, false, false, false, false);
 
@@ -666,11 +696,11 @@ fn tc_v040_009_headless_and_light_dark_rendering_parity_for_v040_tools() {
             length_upm: 90.0,
         },
     });
-    state.v040.show_annotations = true;
+    state.drawing_tool_state.show_annotations = true;
     state.active_tool = CanvasTool::Measurement;
-    state.v040.measurement.active = true;
-    state.v040.measurement.start_upm = FontPoint::new(50.0, 300.0);
-    state.v040.measurement.current_upm = FontPoint::new(550.0, 300.0);
+    state.drawing_tool_state.measurement.active = true;
+    state.drawing_tool_state.measurement.start_upm = FontPoint::new(50.0, 300.0);
+    state.drawing_tool_state.measurement.current_upm = FontPoint::new(550.0, 300.0);
     state.recompute_measurement_intersections();
 
     // Render in Light Mode
@@ -711,11 +741,11 @@ fn tc_v040_010_primitives_space_pan_and_grid_rounding() {
     press_key(&mut state, Key::Space, false, false, false, false);
     let p2 = state.viewport.to_screen(FontPoint::new(262.0, 262.0));
     pointer_move(&mut state, p2, false, false, false, true);
-    assert!((state.v040.primitive_drag.start_upm.x.0 - 150.0).abs() < 1.0);
-    assert!((state.v040.primitive_drag.start_upm.y.0 - 150.0).abs() < 1.0);
+    assert!((state.drawing_tool_state.primitive_drag.start_upm.x.0 - 150.0).abs() < 1.0);
+    assert!((state.drawing_tool_state.primitive_drag.start_upm.y.0 - 150.0).abs() < 1.0);
 
     // Grid rounding to 25.0 UPM snaps 262.0 -> 250.0
-    let rect = state.v040.primitive_drag.preview_rect_upm();
+    let rect = state.drawing_tool_state.primitive_drag.preview_rect_upm();
     assert!((rect.0 - 150.0).abs() < 1e-3 && (rect.2 - 250.0).abs() < 1e-3);
     pointer_release(&mut state, p2, false, false, false, true);
     assert_eq!(state.contours.len(), 1);
@@ -733,18 +763,18 @@ fn tc_v040_011_measurement_node_snapping_and_ccw_vertical_angle() {
     let near_n1 = state.viewport.to_screen(FontPoint::new(104.0, 104.0));
     let near_n4 = state.viewport.to_screen(FontPoint::new(104.0, 496.0));
     pointer_press(&mut state, near_n1, false, false, false, false);
-    assert!((state.v040.measurement.start_upm.x.0 - 100.0).abs() < 1e-3);
-    assert!((state.v040.measurement.start_upm.y.0 - 100.0).abs() < 1e-3);
+    assert!((state.drawing_tool_state.measurement.start_upm.x.0 - 100.0).abs() < 1e-3);
+    assert!((state.drawing_tool_state.measurement.start_upm.y.0 - 100.0).abs() < 1e-3);
 
     // Drag near node (100, 500) -> snaps current_upm to (100, 500)
     pointer_move(&mut state, near_n4, false, false, false, false);
-    assert!((state.v040.measurement.current_upm.x.0 - 100.0).abs() < 1e-3);
-    assert!((state.v040.measurement.current_upm.y.0 - 500.0).abs() < 1e-3);
+    assert!((state.drawing_tool_state.measurement.current_upm.x.0 - 100.0).abs() < 1e-3);
+    assert!((state.drawing_tool_state.measurement.current_upm.y.0 - 500.0).abs() < 1e-3);
 
     // Vertical upward (100, 100) -> (100, 500) has typographic angle 0.0° (`spec_ref..spec_ref`)
     let angle_up = grafia::compute_measurement_typographic_angle_deg(
-        state.v040.measurement.start_upm,
-        state.v040.measurement.current_upm,
+        state.drawing_tool_state.measurement.start_upm,
+        state.drawing_tool_state.measurement.current_upm,
     );
     assert!(
         angle_up.abs() < 1e-3,
@@ -785,7 +815,7 @@ fn tc_v040_012_annotation_arrow_rotate_text_resize_and_shift_body_drag() {
     assert!((state.glyph.annotations[0].position.y.0 - 300.0).abs() < 1e-3);
 
     // 3. Place Arrow annotation at (400, 200), drag its handle to (400, 300) -> angle = 90.0°
-    state.v040.annotation_sub_tool = AnnotationSubTool::Arrow;
+    state.drawing_tool_state.annotation_sub_tool = AnnotationSubTool::Arrow;
     let p_arr = state.viewport.to_screen(FontPoint::new(400.0, 200.0));
     pointer_press(&mut state, p_arr, false, false, false, false);
     pointer_release(&mut state, p_arr, false, false, false, false);
@@ -816,7 +846,7 @@ fn tc_v040_013_knife_tool_cuts_cubic_bezier_contour_glyph_o() {
     let s1 = state.viewport.to_screen(FontPoint::new(800.0, 350.0));
     pointer_press(&mut state, s0, true, false, false, false);
     pointer_move(&mut state, s1, true, false, false, false);
-    assert_eq!(state.v040.knife.intersections.len(), 4);
+    assert_eq!(state.drawing_tool_state.knife.intersections.len(), 4);
     pointer_release(&mut state, s1, true, false, false, false);
 
     // Outer + inner counter ring sliced across both stems produces 2 disjoint arch contours (top & bottom)
@@ -943,7 +973,7 @@ fn tc_v040_015_generate_visual_proof_pngs() {
     pointer_press(&mut s48, p0, false, false, false, false);
     pointer_move(&mut s48, p1, false, false, false, false);
     let pm48 = save_frame("frame_48_v040_knife_tool.png", &s48);
-    assert!(!s48.v040.knife.intersections.is_empty());
+    assert!(!s48.drawing_tool_state.knife.intersections.is_empty());
 
     // Frame 49: PrimitivesTool (inserted Rectangle + active Circle preview with dimension badge)
     let mut s49 = GrafiaCanvasState::init_glyph_a();
@@ -1011,7 +1041,7 @@ fn tc_v040_015_generate_visual_proof_pngs() {
             FontPoint::new(580.0, 560.0),
             AnnotationSubTool::Minus,
         ));
-    s51.v040.selected_annotations = vec![AnnotationId(2), AnnotationId(3)];
+    s51.drawing_tool_state.selected_annotations = vec![AnnotationId(2), AnnotationId(3)];
     let pm51 = save_frame("frame_51_v040_annotations_five_types.png", &s51);
     assert_ne!(pm50.data(), pm51.data());
 
@@ -1046,12 +1076,13 @@ fn tc_v040_015_generate_visual_proof_pngs() {
     // Frame 53: Dark Mode (`AppearanceMode::Dark`) with Annotations & Measurement Ruler
     let mut s53 = GrafiaCanvasState::init_glyph_a();
     s53.glyph.annotations = s51.glyph.annotations.clone();
-    s53.v040.selected_annotations = s51.v040.selected_annotations.clone();
+    s53.drawing_tool_state.selected_annotations =
+        s51.drawing_tool_state.selected_annotations.clone();
     s53.set_appearance_mode(AppearanceMode::Dark);
     s53.active_tool = CanvasTool::Measurement;
-    s53.v040.measurement.active = true;
-    s53.v040.measurement.start_upm = FontPoint::new(0.0, 260.0);
-    s53.v040.measurement.current_upm = FontPoint::new(700.0, 260.0);
+    s53.drawing_tool_state.measurement.active = true;
+    s53.drawing_tool_state.measurement.start_upm = FontPoint::new(0.0, 260.0);
+    s53.drawing_tool_state.measurement.current_upm = FontPoint::new(700.0, 260.0);
     s53.recompute_measurement_intersections();
     let pm53 = save_frame("frame_53_v040_dark_mode_tools.png", &s53);
     assert_ne!(pm51.data(), pm53.data());
@@ -1082,7 +1113,7 @@ fn tc_v040_016_knife_tool_slices_through_oncurve_seam_nodes_and_multi_stem_conto
     pointer_press(&mut state, s_bot, true, false, false, false);
     pointer_move(&mut state, s_top, true, false, false, false);
     assert_eq!(
-        state.v040.knife.intersections.len(),
+        state.drawing_tool_state.knife.intersections.len(),
         2,
         "Knife passing directly through OnCurve extreme nodes (300,100) and (300,500) must detect both hits"
     );
@@ -1106,7 +1137,7 @@ fn tc_v040_016_knife_tool_slices_through_oncurve_seam_nodes_and_multi_stem_conto
     pointer_press(&mut state_a, a_left, true, false, false, false);
     pointer_move(&mut state_a, a_right, true, false, false, false);
     assert_eq!(
-        state_a.v040.knife.intersections.len(),
+        state_a.drawing_tool_state.knife.intersections.len(),
         4,
         "Horizontal slice at y=100 across '/A' outer contour must hit 4 leg edges"
     );
@@ -1131,17 +1162,23 @@ fn tc_v040_017_annotation_clipboard_empty_text_body_hit_and_f_key_subtool_cyclin
     // 1. Pressing 'F' activates Primitives (Rectangle); pressing 'F' again while in Primitives cycles to Circle
     press_key(&mut state, Key::F, false, false, false, false);
     assert_eq!(state.active_tool, CanvasTool::Primitives);
-    assert_eq!(state.v040.primitive_sub_tool, PrimitiveSubTool::Rectangle);
+    assert_eq!(
+        state.drawing_tool_state.primitive_sub_tool,
+        PrimitiveSubTool::Rectangle
+    );
     press_key(&mut state, Key::F, false, false, false, false);
     assert_eq!(
-        state.v040.primitive_sub_tool,
+        state.drawing_tool_state.primitive_sub_tool,
         PrimitiveSubTool::Circle,
         "Pressing 'F' while already in PrimitivesTool must cycle Rectangle <-> Circle (SPEC-005 §2.2.1)"
     );
 
     // 2. Place an empty Text annotation at (100, 300); clicking inside its body at (150, 285) must select/move it, NOT spawn a 2nd annotation
     press_key(&mut state, Key::A, false, false, false, false);
-    assert_eq!(state.v040.annotation_sub_tool, AnnotationSubTool::Text);
+    assert_eq!(
+        state.drawing_tool_state.annotation_sub_tool,
+        AnnotationSubTool::Text
+    );
     let p_origin = state.viewport.to_screen(FontPoint::new(100.0, 300.0));
     pointer_press(&mut state, p_origin, false, false, false, false);
     pointer_release(&mut state, p_origin, false, false, false, false);
@@ -1696,8 +1733,8 @@ fn tc_v040_020_arbtest_stateful_multi_tool_action_chains() {
                     };
                     let scr = state.viewport.to_screen(target_pt);
                     let m = grafia::interaction::Modifiers::default();
-                    let _ = state.on_v040_pointer_press(scr, target_pt, m);
-                    let _ = state.on_v040_pointer_release(target_pt, m);
+                    let _ = state.on_drawing_tool_pointer_press(scr, target_pt, m);
+                    let _ = state.on_drawing_tool_pointer_release(target_pt, m);
                 }
                 15 => {
                     // Primitives insert (Rectangle or Circle/Oval)
@@ -1880,7 +1917,7 @@ fn tc_v040_021_boolean_remove_overlap_rectilinear_pixels_cubic_circles_and_count
         80.0,
     ));
     // Orient the enclosed hole CW (via `correct_path_direction` or `reverse_contour_nodes`)
-    grafia::core::segment_ops::reverse_contour_nodes(&mut state_circles.contours[2], true);
+    grafia::core::reverse_contour_nodes(&mut state_circles.contours[2], true);
     state_circles.sync_paths_from_contours();
     state_circles.selected_nodes.clear();
 
@@ -2020,7 +2057,7 @@ fn tc_v040_022_knife_tool_multi_hit_four_intersections_on_glyph_n_and_glyph_o_co
     pointer_press(&mut state_n, n_left, true, false, false, false);
     pointer_move(&mut state_n, n_right, true, false, false, false);
     assert_eq!(
-        state_n.v040.knife.intersections.len(),
+        state_n.drawing_tool_state.knife.intersections.len(),
         4,
         "Horizontal knife cut at y=200 across /n must detect 4 stem intersections"
     );
@@ -2063,7 +2100,7 @@ fn tc_v040_022_knife_tool_multi_hit_four_intersections_on_glyph_n_and_glyph_o_co
     pointer_press(&mut state_o, o_left, true, false, false, false);
     pointer_move(&mut state_o, o_right, true, false, false, false);
     assert_eq!(
-        state_o.v040.knife.intersections.len(),
+        state_o.drawing_tool_state.knife.intersections.len(),
         4,
         "Horizontal knife cut at y=250 across /o must detect 4 intersections (outer left, inner left, inner right, outer right)"
     );
@@ -2102,7 +2139,7 @@ fn tc_v040_022_knife_tool_multi_hit_four_intersections_on_glyph_n_and_glyph_o_co
     let o_left_350 = state_o.viewport.to_screen(FontPoint::new(-50.0, 350.0));
     pointer_press(&mut state_o, o_left_350, true, false, false, false);
     pointer_move(&mut state_o, o_mid, true, false, false, false);
-    assert_eq!(state_o.v040.knife.intersections.len(), 2);
+    assert_eq!(state_o.drawing_tool_state.knife.intersections.len(), 2);
     pointer_release(&mut state_o, o_mid, true, false, false, false);
     state_o.assert_invariants();
     assert_eq!(

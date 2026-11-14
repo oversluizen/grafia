@@ -2,14 +2,14 @@
 //!
 //! Extracted 1-to-1 from `AnnotationTool` (`SPEC-005`) in Reference Vector (``).
 
-use crate::core::{FontPoint, ScreenPoint, ViewportTransform};
-use crate::tokens::{
+use crate::core::math_consts::{
     ANNOTATION_BODY_HIT_RADIUS_DP, ANNOTATION_DEFAULT_ARROW_ANGLE_DEG,
     ANNOTATION_DEFAULT_ARROW_LEN_UPM, ANNOTATION_DEFAULT_CIRCLE_RADIUS_UPM,
     ANNOTATION_DEFAULT_TEXT_HEIGHT_UPM, ANNOTATION_DEFAULT_TEXT_WIDTH_UPM,
     ANNOTATION_HANDLE_HIT_RADIUS_DP, ANNOTATION_MIN_CIRCLE_RADIUS_UPM,
     ANNOTATION_MIN_TEXT_WIDTH_UPM, MIN_VIEWPORT_ZOOM,
 };
+use crate::core::{FontPoint, ScreenPoint, ViewportTransform};
 use serde::{Deserialize, Serialize};
 
 /// Type-safe identifier for a `CanvasAnnotation` (`CanvasAnnotation`).

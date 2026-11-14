@@ -1,93 +1,71 @@
-#![allow(unexpected_cfgs)]
-#![cfg(feature = "v080_red")]
+#![allow(
+    clippy::too_many_lines,
+    clippy::cognitive_complexity,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::too_many_arguments,
+    clippy::iter_over_hash_type
+)]
 //! Normative COTS Verification Suite for `SPEC-009` (`grafia v0.8.0`):
-//! $G^2$ Smoothness Continuity, Romer/Henestrosa Harmonize (`Ctrl+Shift+H`),
-//! Interactive Tangent Balance (Tunni) Lines (`[0.20, 0.95]`), Proportional Handle Servo,
-//! Interpolated Neighbour Nudge (`C`), Master Trajectory Kink & Crossing Detector,
-//! Proactive Vector Outline Audit, Off-Axis Handle Warning / Ratio HUD, and Diagonal Apex Snapping (`TC-V080-001` .. `TC-V080-016`).
+//! - `TC-V080-001`: Hobby (`NodeType::HobbyStar`) & Euler/Spiro (`NodeType::EulerSpiro`) Closed Cycle Symmetry
+//! - `TC-V080-002`: Hobby Directional Constraints & `convert_selected_hobby_nodes_to_cubic` (`SSIM >= 0.999` + Undo)
+//! - `TC-V080-003`: 8+4 BBox Outer-Corner Rotation (`[6.0 dp, 18.0 dp]`), `Shift` `15°` Snap & Live `"∠ ..."` Pill
+//! - `TC-V080-004`: 8+4 BBox Mid-Edge `Ctrl+Alt` Shear & Smooth-Node Collinearity
+//! - `TC-V080-005`: `CanvasSmartHandle` Angled Ray Projection, Clamping, `4.0 dp` Default Snap & Host Event
+//! - `TC-V080-006`: Self-Intersection Virtual `ExtraNode` Translation Stability & Click Host Event
+//! - `TC-V080-015`: `SelectionInfo::HobbyNode`, `SelectionInfo::BackgroundImage` & `interpolate_with_background(0.5)`
+//! - `TC-V080-016`: Curve Conversions, `apply_path_op_across_all_layers`, Viewport Bookmark & Node Visibility Parity
+
+#[path = "visual_pixel_diff_tests.rs"]
+#[allow(unused_imports)]
+pub mod visual_pixel_diff_tests;
 
 use approx::assert_relative_eq;
-use arbtest::arbtest;
-use egui::{Event, Key, Modifiers as EguiModifiers, Pos2, RawInput, Rect, Vec2};
-use grafia::adapters::headless::rasterize_canvas_subregion;
+use egui::{Event, Modifiers as EguiModifiers, PointerButton, Pos2, RawInput, Rect, Vec2};
+use grafia::adapters::headless::{pixmap_to_rgba_image, rasterize_canvas_subregion};
 use grafia::adapters::input_dispatcher::InputDispatcher;
+use grafia::adapters::CanvasPainter;
 use grafia::{
-    cubic_signed_curvature, AppearanceMode, CompanionMasterLayer, ContourId, FontPoint,
-    GlyphContour, GrafiaCanvasState, GrafiaTheme, MasterCompatibilityMode, Node, NodeId, NodeType,
-    OutlineAuditKind, TangentExtensionSnapKind, TUNNI_HIT_RADIUS_DP, TUNNI_MAX_RATIO,
-    TUNNI_MIN_RATIO,
+    compute_layer_extra_nodes, contour_signed_area, contour_to_bezpath_with_splines,
+    evaluate_euler_spiro_chain_to_cubics, evaluate_hobby_chain_to_cubics, Affine2D, BBoxAction,
+    BackgroundImageMutation, CanvasBackgroundImage, CanvasComponent, CanvasHostRequest,
+    CanvasSmartHandle, CompanionMasterLayer, ComponentId, ContourId, FontPoint, GlyphContour,
+    GrafiaCanvasState, GrafiaTheme, HobbyDirConstraint, LayerPathOp, Node, NodeId, NodeType,
+    ScreenPoint, SelectionInfo, SelectionInfoAction, TransformGridAnchor,
 };
-use proptest::prelude::*;
-use rstest::rstest;
+use image::{DynamicImage, ImageBuffer, Rgba};
+use kurbo::{CubicBez, ParamCurve, ParamCurveDeriv, ParamCurveNearest, PathEl, Point};
+use std::collections::HashMap;
+use visual_pixel_diff_tests::{compute_ssim, SSIM_DEFAULT_WINDOW_SIZE};
 
-fn default_canvas_rect() -> Rect {
-    Rect::from_min_size(Pos2::ZERO, Vec2::new(960.0, 600.0))
+fn canvas_rect(w: f32, h: f32) -> Rect {
+    Rect::from_min_size(Pos2::ZERO, Vec2::new(w, h))
 }
 
-fn make_two_joined_cubics_contour(d_in: f64, d_out: f64) -> GlyphContour {
-    let mut gc = GlyphContour::new(
-        ContourId(0),
-        vec![
-            Node::new(NodeId(1), -100.0, d_in, NodeType::Corner),
-            Node::new(NodeId(2), -60.0, d_in, NodeType::OffCurve),
-            Node::new(NodeId(3), -40.0, 0.0, NodeType::OffCurve),
-            Node::new(NodeId(4), 0.0, 0.0, NodeType::Smooth),
-            Node::new(NodeId(5), 40.0, 0.0, NodeType::OffCurve),
-            Node::new(NodeId(6), 60.0, d_out, NodeType::OffCurve),
-            Node::new(NodeId(7), 100.0, d_out, NodeType::Smooth),
-        ],
-    );
-    gc.closed = false;
-    gc
+fn mods(shift: bool, alt: bool, cmd: bool, ctrl: bool) -> EguiModifiers {
+    EguiModifiers {
+        alt,
+        ctrl: ctrl || cmd,
+        shift,
+        mac_cmd: cmd,
+        command: cmd,
+    }
 }
 
-fn make_tunni_arc_contour(h1_y: f64, h2_x: f64) -> GlyphContour {
-    let mut gc = GlyphContour::new(
-        ContourId(0),
-        vec![
-            Node::new(NodeId(10), 0.0, 0.0, NodeType::Corner),
-            Node::new(NodeId(11), 0.0, h1_y, NodeType::OffCurve),
-            Node::new(NodeId(12), h2_x, 100.0, NodeType::OffCurve),
-            Node::new(NodeId(13), 100.0, 100.0, NodeType::Smooth),
-        ],
-    );
-    gc.closed = false;
-    gc
-}
-
-fn set_layer_contours(state: &mut GrafiaCanvasState, contours: Vec<GlyphContour>) {
-    state.contours = contours.iter().map(|c| c.nodes.clone()).collect();
-    state.active_contour_closed = contours.last().map_or(true, |c| c.closed);
-    state.glyph.contours = contours;
-    state.sync_paths_from_contours();
-}
-
-#[allow(clippy::too_many_arguments)]
-fn dispatch_key(
+fn dispatch_events(
     state: &mut GrafiaCanvasState,
-    key: Key,
+    rect: Rect,
+    events: Vec<Event>,
     shift: bool,
     alt: bool,
     cmd: bool,
     ctrl: bool,
 ) {
     let ctx = egui::Context::default();
-    let m = EguiModifiers {
-        alt,
-        ctrl,
-        shift,
-        mac_cmd: cmd,
-        command: cmd,
-    };
-    let events = vec![Event::Key {
-        key,
-        physical_key: Some(key),
-        pressed: true,
-        repeat: false,
-        modifiers: m,
-    }];
+    let m = mods(shift, alt, cmd, ctrl);
     let raw = RawInput {
-        screen_rect: Some(default_canvas_rect()),
+        screen_rect: Some(rect),
         time: Some(1.0),
         events,
         ..Default::default()
@@ -96,600 +74,1505 @@ fn dispatch_key(
     let theme = state.theme.clone();
     let mut out = ctx.run_ui(raw, |ui| {
         let ev = ui.input(|i| i.events.clone());
-        let _ = InputDispatcher::new(state, &theme, default_canvas_rect()).dispatch_events(&ev, ui);
+        let mut disp = InputDispatcher::new(state, &theme, rect);
+        let _ = disp.dispatch_events(&ev, ui);
     });
     out.textures_delta.clear();
 }
 
-// TC-V080-001: Parametric cubic signed curvature kappa(t) evaluation.
-#[test]
-fn tc_v080_001_cubic_signed_curvature_quarter_circle_and_collinear() {
-    let k = 0.552_284_75_f64;
-    let (p0, p1) = (FontPoint::new(100.0, 0.0), FontPoint::new(100.0, 100.0 * k));
-    let (p2, p3) = (FontPoint::new(100.0 * k, 100.0), FontPoint::new(0.0, 100.0));
-    let km = cubic_signed_curvature(p0, p1, p2, p3, 0.5);
-    assert_relative_eq!(
-        cubic_signed_curvature(p0, p1, p2, p3, 0.0),
-        0.01,
-        epsilon = 2e-3
-    );
-    assert_relative_eq!(km, 0.01, epsilon = 2e-3);
-    assert_relative_eq!(
-        cubic_signed_curvature(p0, p1, p2, p3, 1.0),
-        0.01,
-        epsilon = 2e-3
-    );
-    assert_relative_eq!(
-        cubic_signed_curvature(p3, p2, p1, p0, 0.5),
-        -km,
-        epsilon = 1e-6
-    );
-    let k_line = cubic_signed_curvature(
-        FontPoint::new(0.0, 0.0),
-        FontPoint::new(30.0, 0.0),
-        FontPoint::new(70.0, 0.0),
-        FontPoint::new(100.0, 0.0),
-        0.5,
-    );
-    assert_relative_eq!(k_line, 0.0, epsilon = 1e-7);
-}
-
-// TC-V080-002, TC-V080-003 & TC-V080-004: Ctrl+Shift+H Romer/Henestrosa G2 Harmonize, handle-only harmonize & live G2 node.
-#[test]
-fn tc_v080_002_to_004_g2_harmonize_anchor_handles_and_live_genius_node() {
-    let mut state = GrafiaCanvasState::init_glyph_a();
-    set_layer_contours(
-        &mut state,
-        vec![make_two_joined_cubics_contour(100.0, 25.0)],
-    );
-    state.selected_nodes = vec![NodeId(4)];
-    dispatch_key(&mut state, Key::H, true, false, false, true);
-    let n = &state.glyph.contours[0].nodes;
-    let a = (n[3].point.x.0 - n[2].point.x.0).hypot(n[3].point.y.0 - n[2].point.y.0);
-    let b = (n[4].point.x.0 - n[3].point.x.0).hypot(n[4].point.y.0 - n[3].point.y.0);
-    assert_relative_eq!(a / b, 2.0, epsilon = 1e-3);
-    assert_relative_eq!(
-        cubic_signed_curvature(n[0].point, n[1].point, n[2].point, n[3].point, 1.0),
-        cubic_signed_curvature(n[3].point, n[4].point, n[5].point, n[6].point, 0.0),
-        epsilon = 1e-4
-    );
-
-    set_layer_contours(
-        &mut state,
-        vec![make_two_joined_cubics_contour(100.0, 25.0)],
-    );
-    state.harmonize_handles_keep_node(NodeId(4));
-    let n2 = &state.glyph.contours[0].nodes;
-    assert_relative_eq!(n2[3].point.x.0, 0.0, epsilon = 1e-4);
-    assert_relative_eq!(
-        cubic_signed_curvature(n2[0].point, n2[1].point, n2[2].point, n2[3].point, 1.0),
-        cubic_signed_curvature(n2[3].point, n2[4].point, n2[5].point, n2[6].point, 0.0),
-        epsilon = 1e-4
-    );
-
-    state.set_node_genius(NodeId(4), true);
-    state.translate_node_upm(NodeId(3), FontPoint::new(-15.0, 0.0));
-    let n3 = &state.glyph.contours[0].nodes;
-    assert_relative_eq!(
-        cubic_signed_curvature(n3[0].point, n3[1].point, n3[2].point, n3[3].point, 1.0),
-        cubic_signed_curvature(n3[3].point, n3[4].point, n3[5].point, n3[6].point, 0.0),
-        epsilon = 1e-4
-    );
-}
-
-// TC-V080-005, TC-V080-006 & TC-V080-007: Tangent Balance (Tunni) overlay, hit-test, ratio clamping [0.20, 0.95] & balance.
-#[rstest]
-#[case::clamp_low(0.10, 0.20)]
-#[case::mid_55(0.55, 0.55)]
-#[case::mid_75(0.75, 0.75)]
-#[case::clamp_high(0.99, 0.95)]
-fn tc_v080_005_to_007_tunni_lines_hit_test_clamp_and_balance(
-    #[case] requested_ratio: f64,
-    #[case] expected_ratio: f64,
+fn pointer_press(
+    state: &mut GrafiaCanvasState,
+    rect: Rect,
+    scr: ScreenPoint,
+    shift: bool,
+    alt: bool,
+    cmd: bool,
+    ctrl: bool,
 ) {
-    assert_relative_eq!(TUNNI_MIN_RATIO, 0.20, epsilon = 1e-4);
-    assert_relative_eq!(TUNNI_MAX_RATIO, 0.95, epsilon = 1e-4);
-    assert_relative_eq!(TUNNI_HIT_RADIUS_DP, 6.0, epsilon = 1e-4);
-
-    let mut state = GrafiaCanvasState::init_glyph_a();
-    set_layer_contours(&mut state, vec![make_tunni_arc_contour(60.0, 40.0)]);
-    state.toggle_show_tunni_lines();
-    let overlays = state.compute_tunni_overlays();
-    assert_eq!(overlays.len(), 1);
-    assert_relative_eq!(overlays[0].tunni_point.x.0, 20.0, epsilon = 1e-3);
-    assert_relative_eq!(overlays[0].tunni_point.y.0, 80.0, epsilon = 1e-3);
-    assert_eq!(
-        state.hit_test_tunni_line_at_upm(FontPoint::new(20.0, 80.0)),
-        Some((ContourId(0), 0))
-    );
-    assert_eq!(
-        state.hit_test_tunni_line_at_upm(FontPoint::new(200.0, 200.0)),
-        None
-    );
-
-    state.scale_segment_tunni_ratio(ContourId(0), 0, requested_ratio);
-    assert_relative_eq!(
-        state.glyph.contours[0].nodes[1].point.y.0,
-        100.0 * expected_ratio,
-        epsilon = 1e-3
-    );
-    assert_relative_eq!(
-        state.glyph.contours[0].nodes[2].point.x.0,
-        100.0 * (1.0 - expected_ratio),
-        epsilon = 1e-3
-    );
-
-    if (requested_ratio - 0.55).abs() < 1e-4 {
-        set_layer_contours(&mut state, vec![make_tunni_arc_contour(40.0, 20.0)]);
-        state.balance_segment_tunni(ContourId(0), 0);
-        assert_relative_eq!(
-            state.glyph.contours[0].nodes[1].point.y.0,
-            60.0,
-            epsilon = 1e-3
-        );
-        assert_relative_eq!(
-            state.glyph.contours[0].nodes[2].point.x.0,
-            40.0,
-            epsilon = 1e-3
-        );
-    }
-}
-
-// TC-V080-008, TC-V080-009, TC-V080-010 & TC-V080-011: Servo scaling, Neighbour Nudge (C), Undo/Redo & rendering.
-#[test]
-fn tc_v080_008_to_011_servo_scaling_power_nudge_undo_and_rendering() {
-    let mut state = GrafiaCanvasState::init_glyph_a();
-    set_layer_contours(&mut state, vec![make_tunni_arc_contour(60.0, 40.0)]);
-    let snap_0 = state.snapshot();
-    state.servo_translate_on_curve_node(NodeId(10), FontPoint::new(-50.0, 0.0));
-    assert_relative_eq!(
-        state.glyph.contours[0].nodes[0].point.x.0,
-        -50.0,
-        epsilon = 1e-3
-    );
-    assert_relative_eq!(
-        state.glyph.contours[0].nodes[2].point.x.0,
-        10.0,
-        epsilon = 1e-3
-    );
-    let snap_1 = state.snapshot();
-    assert!(
-        state.undo() && state.snapshot() == snap_0 && state.redo() && state.snapshot() == snap_1
-    );
-
-    dispatch_key(&mut state, Key::C, false, false, false, false);
-    assert!(state.power_nudge_enabled);
-    let mut stem = GlyphContour::new(
-        ContourId(0),
-        vec![
-            Node::new(NodeId(20), 0.0, 0.0, NodeType::Corner),
-            Node::new(NodeId(21), 100.0, 0.0, NodeType::Corner),
-            Node::new(NodeId(22), 200.0, 0.0, NodeType::Corner),
-            Node::new(NodeId(23), 400.0, 0.0, NodeType::Corner),
-        ],
-    );
-    stem.closed = false;
-    set_layer_contours(&mut state, vec![stem]);
-    state.selected_nodes = vec![NodeId(22)];
-    let snap_pn_0 = state.snapshot();
-    state.power_nudge_translate_selected(FontPoint::new(40.0, 0.0));
-    assert_relative_eq!(
-        state.glyph.contours[0].nodes[0].point.x.0,
-        0.0,
-        epsilon = 1e-3
-    );
-    assert_relative_eq!(
-        state.glyph.contours[0].nodes[1].point.x.0,
-        120.0,
-        epsilon = 1e-3
-    );
-    assert_relative_eq!(
-        state.glyph.contours[0].nodes[2].point.x.0,
-        240.0,
-        epsilon = 1e-3
-    );
-    assert!(state.undo() && state.snapshot() == snap_pn_0);
-
-    set_layer_contours(&mut state, vec![make_two_joined_cubics_contour(80.0, 40.0)]);
-    state.set_node_genius(NodeId(4), true);
-    state.show_tunni_lines = true;
-    state.set_appearance_mode(AppearanceMode::Light);
-    let light_px = rasterize_canvas_subregion(&state, &GrafiaTheme::sonoma_default(), 320, 180);
-    state.set_appearance_mode(AppearanceMode::Dark);
-    let dark_px = rasterize_canvas_subregion(&state, &GrafiaTheme::sonoma_dark(), 320, 180);
-    assert_ne!(light_px.data(), dark_px.data());
-}
-
-// TC-V080-013: MasterCompatibilityMode::FullNodeTrajectories, trajectory crossing & smooth-node kink detector.
-#[test]
-fn tc_v080_013_master_full_trajectories_crossings_and_smooth_kink_detector() {
-    let mut state = GrafiaCanvasState::init_glyph_a();
-    state.set_master_compatibility_mode(MasterCompatibilityMode::FullNodeTrajectories);
-    set_layer_contours(
-        &mut state,
-        vec![make_two_joined_cubics_contour(100.0, 50.0)],
-    );
-    // Companion layer with rotated tangent angle (>1 deg) and unequal handle ratio (|r_A - r_B| > 0.05) at Smooth NodeId(4),
-    // plus crossed node trajectories between nodes 0 and 1.
-    let comp_nodes = vec![
-        Node::new(NodeId(1), -40.0, 120.0, NodeType::Corner),
-        Node::new(NodeId(2), -110.0, 120.0, NodeType::OffCurve),
-        Node::new(NodeId(3), -20.0, -5.0, NodeType::OffCurve),
-        Node::new(NodeId(4), 0.0, 0.0, NodeType::Smooth),
-        Node::new(NodeId(5), 80.0, 20.0, NodeType::OffCurve),
-        Node::new(NodeId(6), 90.0, 60.0, NodeType::OffCurve),
-        Node::new(NodeId(7), 120.0, 60.0, NodeType::Smooth),
+    let pos = Pos2::new(scr.x.0, scr.y.0);
+    let m = mods(shift, alt, cmd, ctrl);
+    let evs = vec![
+        Event::PointerMoved(pos),
+        Event::PointerButton {
+            pos,
+            button: PointerButton::Primary,
+            pressed: true,
+            modifiers: m,
+        },
     ];
-    state.set_companion_master_layers(vec![CompanionMasterLayer {
-        id: 1,
-        name: "Bold".into(),
-        color_rgba: [220, 60, 80, 180],
-        contours: vec![comp_nodes],
-        closed_flags: vec![false],
-        anchors: vec![],
-        editable: false,
-    }]);
-    let report = state.compute_master_kinks_and_crossings();
-    assert_eq!(report.node_trajectories.len(), 7);
-    assert!(!report.crossings.is_empty());
-    assert!(report
-        .kink_warnings
-        .iter()
-        .any(|k| k.node_id == NodeId(4) && k.companion_layer_id == 1 && k.severity > 0.0));
+    dispatch_events(state, rect, evs, shift, alt, cmd, ctrl);
 }
 
-// TC-V080-014: Proactive Vector Outline Audit (MissingExtremum, QuasiOrthogonalStem, CrossedHandles, CollinearCubic).
-#[test]
-fn tc_v080_014_proactive_vector_outline_audit_four_defects() {
-    let mut state = GrafiaCanvasState::init_glyph_a();
-    let missing_ext = GlyphContour::new(
-        ContourId(0),
-        vec![
-            Node::new(NodeId(1), 0.0, 0.0, NodeType::Corner),
-            Node::new(NodeId(2), 0.0, 160.0, NodeType::OffCurve),
-            Node::new(NodeId(3), 100.0, 160.0, NodeType::OffCurve),
-            Node::new(NodeId(4), 100.0, 20.0, NodeType::Corner),
-        ],
-    );
-    let quasi_stem = GlyphContour::new(
-        ContourId(1),
-        vec![
-            Node::new(NodeId(10), 200.0, 0.0, NodeType::Corner),
-            Node::new(NodeId(11), 203.0, 300.0, NodeType::Corner),
-            Node::new(NodeId(12), 280.0, 300.0, NodeType::Corner),
-        ],
-    );
-    let crossed = GlyphContour::new(
-        ContourId(2),
-        vec![
-            Node::new(NodeId(20), 0.0, 0.0, NodeType::Corner),
-            Node::new(NodeId(21), 100.0, 100.0, NodeType::OffCurve),
-            Node::new(NodeId(22), 0.0, 100.0, NodeType::OffCurve),
-            Node::new(NodeId(23), 100.0, 0.0, NodeType::Corner),
-        ],
-    );
-    let collinear = GlyphContour::new(
-        ContourId(3),
-        vec![
-            Node::new(NodeId(30), 0.0, 0.0, NodeType::Corner),
-            Node::new(NodeId(31), 30.0, 0.01, NodeType::OffCurve),
-            Node::new(NodeId(32), 70.0, -0.01, NodeType::OffCurve),
-            Node::new(NodeId(33), 100.0, 0.0, NodeType::Corner),
-        ],
-    );
-    set_layer_contours(
-        &mut state,
-        vec![missing_ext, quasi_stem, crossed, collinear],
-    );
-    let findings = state.audit_layer_outlines();
-    assert!(findings.iter().any(|f| matches!(
-        f.kind,
-        OutlineAuditKind::MissingExtremum { contour_idx: 0, .. }
-    )));
-    assert!(findings.iter().any(|f| matches!(
-        f.kind,
-        OutlineAuditKind::QuasiOrthogonalStem { contour_idx: 1, .. }
-    )));
-    assert!(findings.iter().any(|f| matches!(
-        f.kind,
-        OutlineAuditKind::CrossedHandles { contour_idx: 2, .. }
-    )));
-    assert!(findings.iter().any(|f| matches!(
-        f.kind,
-        OutlineAuditKind::CollinearCubic { contour_idx: 3, .. }
-    )));
-
-    // Slanted extremum check: monotonic in upright (x'(t) > 0, y'(t) > 0), but has interior x_slant'(t) = 0 at italic_angle_deg = 12.0.
-    let mut slanted_arch = GlyphContour::new(
-        ContourId(4),
-        vec![
-            Node::new(NodeId(40), 0.0, 0.0, NodeType::Corner),
-            Node::new(NodeId(41), 5.0, 100.0, NodeType::OffCurve),
-            Node::new(NodeId(42), 5.0, 200.0, NodeType::OffCurve),
-            Node::new(NodeId(43), 60.0, 300.0, NodeType::Corner),
-        ],
-    );
-    slanted_arch.closed = false;
-    set_layer_contours(&mut state, vec![slanted_arch]);
-    state.italic_angle_deg = 0.0;
-    assert!(!state
-        .audit_layer_outlines()
-        .iter()
-        .any(|f| matches!(f.kind, OutlineAuditKind::MissingExtremum { .. })));
-    state.italic_angle_deg = 12.0;
-    assert!(state.audit_layer_outlines().iter().any(|f| matches!(
-        f.kind,
-        OutlineAuditKind::MissingExtremum { contour_idx: 0, .. }
-    )));
-}
-
-// TC-V080-015 & TC-V080-016: Off-axis handle warning, handle-ratio HUD, and diagonal tangent extension / virtual apex snap.
-#[test]
-fn tc_v080_015_and_016_angled_handle_hud_and_diagonal_virtual_apex_snap() {
-    let mut state = GrafiaCanvasState::init_glyph_a();
-    // Quarter arc with P0=(0,0) Smooth, P1=(0,60), P2=(25,103) (tilted ~3 deg off horizontal at Smooth P3=(100,100)).
-    let mut arc = make_tunni_arc_contour(60.0, 25.0);
-    arc.nodes[0].node_type = NodeType::Smooth;
-    arc.nodes[2].point = FontPoint::new(25.0, 104.0);
-    set_layer_contours(&mut state, vec![arc]);
-
-    let warnings = state.compute_angled_handle_warnings();
-    assert!(warnings.iter().any(|w| w.smooth_node_id == NodeId(13)
-        && w.handle_node_id == NodeId(12)
-        && w.deviation_deg > 1.0));
-
-    set_layer_contours(&mut state, vec![make_tunni_arc_contour(60.0, 25.0)]);
-    let hud = state.compute_segment_handle_ratios();
-    assert_eq!(hud.len(), 1);
-    assert_relative_eq!(hud[0].ratio_out, 60.0, epsilon = 1e-2);
-    assert_relative_eq!(hud[0].ratio_in, 75.0, epsilon = 1e-2);
-
-    // TC-V080-016: Truncated /A diagonal legs converging toward virtual apex (200, 700).
-    let mut leg_l = GlyphContour::new(
-        ContourId(0),
-        vec![
-            Node::new(NodeId(1), 0.0, 0.0, NodeType::Corner),
-            Node::new(NodeId(2), 100.0, 350.0, NodeType::Corner),
-        ],
-    );
-    let mut leg_r = GlyphContour::new(
-        ContourId(1),
-        vec![
-            Node::new(NodeId(3), 400.0, 0.0, NodeType::Corner),
-            Node::new(NodeId(4), 300.0, 350.0, NodeType::Corner),
-        ],
-    );
-    leg_l.closed = false;
-    leg_r.closed = false;
-    set_layer_contours(&mut state, vec![leg_l, leg_r]);
-
-    let apex_snap = state
-        .compute_tangent_extension_snaps(FontPoint::new(198.0, 697.0), 10.0)
-        .expect("virtual apex");
-    assert!(matches!(
-        apex_snap.kind,
-        TangentExtensionSnapKind::VirtualApex { .. }
-    ));
-    assert_relative_eq!(apex_snap.snap_point.x.0, 200.0, epsilon = 1e-2);
-    assert_relative_eq!(apex_snap.snap_point.y.0, 700.0, epsilon = 1e-2);
-
-    let ray_snap = state
-        .compute_tangent_extension_snaps(FontPoint::new(152.0, 525.0), 10.0)
-        .expect("ray extension");
-    assert!(matches!(
-        ray_snap.kind,
-        TangentExtensionSnapKind::RayExtension { contour_idx: 0, .. }
-    ));
-    assert_relative_eq!(ray_snap.snap_point.x.0, 150.0, epsilon = 1.0);
-}
-
-// TC-V080-017: Automatic cross-master contour order, winding & cyclic Node 0 matching (`auto_match_master_compatibility`).
-#[test]
-fn tc_v080_017_auto_match_master_compatibility_order_winding_and_cyclic_shift() {
-    let mut state = GrafiaCanvasState::init_glyph_a();
-    state.set_master_compatibility_mode(MasterCompatibilityMode::FullNodeTrajectories);
-
-    let ref_c0 = vec![
-        Node::new(NodeId(100), 0.0, 0.0, NodeType::Corner),
-        Node::new(NodeId(101), 0.0, 400.0, NodeType::Corner),
-        Node::new(NodeId(102), 200.0, 400.0, NodeType::Corner),
-        Node::new(NodeId(103), 200.0, 0.0, NodeType::Corner),
-    ];
-    let ref_c1 = vec![
-        Node::new(NodeId(200), 500.0, 100.0, NodeType::Corner),
-        Node::new(NodeId(201), 500.0, 300.0, NodeType::Corner),
-        Node::new(NodeId(202), 700.0, 300.0, NodeType::Corner),
-        Node::new(NodeId(203), 700.0, 100.0, NodeType::Corner),
-    ];
-    state.set_companion_master_layers(vec![CompanionMasterLayer {
-        id: 1,
-        name: "Bold".into(),
-        color_rgba: [220, 60, 80, 180],
-        contours: vec![ref_c0, ref_c1],
-        closed_flags: vec![true, true],
-        anchors: vec![],
-        editable: false,
-    }]);
-
-    // Foreground has contour 1 first (with Node 0 shifted by 2) and contour 0 second (with reversed winding).
-    let fg_first_shifted = GlyphContour::new(
-        ContourId(0),
-        vec![
-            Node::new(NodeId(1), 690.0, 310.0, NodeType::Corner),
-            Node::new(NodeId(2), 690.0, 90.0, NodeType::Corner),
-            Node::new(NodeId(3), 510.0, 90.0, NodeType::Corner),
-            Node::new(NodeId(4), 510.0, 310.0, NodeType::Corner),
-        ],
-    );
-    let fg_second_reversed = GlyphContour::new(
-        ContourId(1),
-        vec![
-            Node::new(NodeId(10), 0.0, 0.0, NodeType::Corner),
-            Node::new(NodeId(11), 210.0, 0.0, NodeType::Corner),
-            Node::new(NodeId(12), 210.0, 410.0, NodeType::Corner),
-            Node::new(NodeId(13), 0.0, 410.0, NodeType::Corner),
-        ],
-    );
-    set_layer_contours(&mut state, vec![fg_first_shifted, fg_second_reversed]);
-    let snap_before = state.snapshot();
-
-    assert!(state.auto_match_master_compatibility(1));
-    assert!(state
-        .compute_master_kinks_and_crossings()
-        .crossings
-        .is_empty());
-    assert_relative_eq!(
-        state.glyph.contours[0].nodes[0].point.x.0,
-        0.0,
-        epsilon = 1e-3
-    );
-    assert_relative_eq!(
-        state.glyph.contours[0].nodes[1].point.y.0,
-        410.0,
-        epsilon = 1e-3
-    );
-    assert_relative_eq!(
-        state.glyph.contours[1].nodes[0].point.x.0,
-        510.0,
-        epsilon = 1e-3
-    );
-    assert_relative_eq!(
-        state.glyph.contours[1].nodes[0].point.y.0,
-        90.0,
-        epsilon = 1e-3
-    );
-
-    let snap_after = state.snapshot();
-    assert!(state.undo() && state.snapshot() == snap_before);
-    assert!(state.redo() && state.snapshot() == snap_after);
-
-    // Concentric rings sharing identical center (200, 200) + open contour with reversed endpoints.
-    let ref_outer_ring = vec![
-        Node::new(NodeId(300), 0.0, 0.0, NodeType::Corner),
-        Node::new(NodeId(301), 0.0, 400.0, NodeType::Corner),
-        Node::new(NodeId(302), 400.0, 400.0, NodeType::Corner),
-        Node::new(NodeId(303), 400.0, 0.0, NodeType::Corner),
-    ];
-    let ref_inner_ring = vec![
-        Node::new(NodeId(310), 100.0, 100.0, NodeType::Corner),
-        Node::new(NodeId(311), 300.0, 100.0, NodeType::Corner),
-        Node::new(NodeId(312), 300.0, 300.0, NodeType::Corner),
-        Node::new(NodeId(313), 100.0, 300.0, NodeType::Corner),
-    ];
-    let ref_open_stroke = vec![
-        Node::new(NodeId(320), 0.0, 500.0, NodeType::Corner),
-        Node::new(NodeId(321), 200.0, 500.0, NodeType::Corner),
-        Node::new(NodeId(322), 400.0, 500.0, NodeType::Corner),
-    ];
-    state.set_companion_master_layers(vec![CompanionMasterLayer {
-        id: 2,
-        name: "ConcentricAndOpen".into(),
-        color_rgba: [80, 160, 240, 180],
-        contours: vec![ref_outer_ring, ref_inner_ring, ref_open_stroke],
-        closed_flags: vec![true, true, false],
-        anchors: vec![],
-        editable: false,
-    }]);
-
-    let mut fg_open_reversed = GlyphContour::new(
-        ContourId(0),
-        vec![
-            Node::new(NodeId(30), 400.0, 510.0, NodeType::Corner),
-            Node::new(NodeId(31), 200.0, 510.0, NodeType::Corner),
-            Node::new(NodeId(32), 0.0, 510.0, NodeType::Corner),
-        ],
-    );
-    fg_open_reversed.closed = false;
-    let fg_inner_first = GlyphContour::new(
-        ContourId(1),
-        vec![
-            Node::new(NodeId(20), 105.0, 105.0, NodeType::Corner),
-            Node::new(NodeId(21), 295.0, 105.0, NodeType::Corner),
-            Node::new(NodeId(22), 295.0, 295.0, NodeType::Corner),
-            Node::new(NodeId(23), 105.0, 295.0, NodeType::Corner),
-        ],
-    );
-    let fg_outer_second = GlyphContour::new(
-        ContourId(2),
-        vec![
-            Node::new(NodeId(10), 0.0, 0.0, NodeType::Corner),
-            Node::new(NodeId(11), 0.0, 400.0, NodeType::Corner),
-            Node::new(NodeId(12), 400.0, 400.0, NodeType::Corner),
-            Node::new(NodeId(13), 400.0, 0.0, NodeType::Corner),
-        ],
-    );
-    set_layer_contours(
-        &mut state,
-        vec![fg_open_reversed, fg_inner_first, fg_outer_second],
-    );
-    assert!(state.auto_match_master_compatibility(2));
-    assert_relative_eq!(
-        state.glyph.contours[0].nodes[2].point.x.0,
-        400.0,
-        epsilon = 1e-3
-    );
-    assert_relative_eq!(
-        state.glyph.contours[1].nodes[0].point.x.0,
-        105.0,
-        epsilon = 1e-3
-    );
-    assert!(!state.glyph.contours[2].closed);
-    assert_relative_eq!(
-        state.glyph.contours[2].nodes[0].point.x.0,
-        0.0,
-        epsilon = 1e-3
+fn pointer_move(
+    state: &mut GrafiaCanvasState,
+    rect: Rect,
+    scr: ScreenPoint,
+    shift: bool,
+    alt: bool,
+    cmd: bool,
+    ctrl: bool,
+) {
+    let pos = Pos2::new(scr.x.0, scr.y.0);
+    dispatch_events(
+        state,
+        rect,
+        vec![Event::PointerMoved(pos)],
+        shift,
+        alt,
+        cmd,
+        ctrl,
     );
 }
 
-proptest! {
-    #[test]
-    fn prop_v080_harmonize_equalizes_curvature(d_in in 20.0f64..160.0f64, d_out in 20.0f64..160.0f64) {
-        let mut state = GrafiaCanvasState::init_glyph_a();
-        set_layer_contours(&mut state, vec![make_two_joined_cubics_contour(d_in, d_out)]);
-        state.selected_nodes = vec![NodeId(4)];
-        state.harmonize_selected_nodes();
-        let n = &state.glyph.contours[0].nodes;
-        let k_in = cubic_signed_curvature(n[0].point, n[1].point, n[2].point, n[3].point, 1.0);
-        let k_out = cubic_signed_curvature(n[3].point, n[4].point, n[5].point, n[6].point, 0.0);
-        prop_assert!((k_in - k_out).abs() < 1e-4);
-    }
+fn pointer_release(
+    state: &mut GrafiaCanvasState,
+    rect: Rect,
+    scr: ScreenPoint,
+    shift: bool,
+    alt: bool,
+    cmd: bool,
+    ctrl: bool,
+) {
+    let pos = Pos2::new(scr.x.0, scr.y.0);
+    let m = mods(shift, alt, cmd, ctrl);
+    let ev = Event::PointerButton {
+        pos,
+        button: PointerButton::Primary,
+        pressed: false,
+        modifiers: m,
+    };
+    dispatch_events(state, rect, vec![ev], shift, alt, cmd, ctrl);
 }
 
-// TC-V080-012: Stateful pull-based `arbtest` fuzzing across G2, Harmonize, Balance, Servo & Neighbour Nudge.
-#[test]
-fn tc_v080_012_arbtest_stateful_genius_harmonize_tunni_servo_power_nudge() {
-    arbtest(|u| {
-        let mut state = GrafiaCanvasState::init_glyph_a();
-        set_layer_contours(&mut state, vec![make_two_joined_cubics_contour(90.0, 45.0)]);
-        state.show_tunni_lines = true;
-        for _ in 0..u.int_in_range(10..=20)? {
-            match u.int_in_range(0..=6)? {
-                0 => {
-                    state.selected_nodes = vec![NodeId(4)];
-                    state.harmonize_selected_nodes();
-                }
-                1 => state.harmonize_handles_keep_node(NodeId(4)),
-                2 => state.set_node_genius(NodeId(4), u.arbitrary()?),
-                3 => state.scale_segment_tunni_ratio(
-                    ContourId(0),
-                    0,
-                    f64::from(u.int_in_range(10..=105)?) / 100.0,
-                ),
-                4 => state.balance_segment_tunni(ContourId(0), 0),
-                5 => state.servo_translate_on_curve_node(
-                    NodeId(1),
-                    FontPoint::new(f64::from(u.int_in_range(-20..=20)?), 0.0),
-                ),
-                _ => {
-                    if state.undo() {
-                        state.validate_invariants().unwrap();
-                        let _ = state.redo();
+fn set_contours(state: &mut GrafiaCanvasState, contours: Vec<GlyphContour>) {
+    state.contours = contours.iter().map(|c| c.nodes.clone()).collect();
+    state.active_contour_closed = contours.last().is_none_or(|c| c.closed);
+    state.active_open_contour = contours.iter().rposition(|c| !c.closed);
+    state.glyph.contours = contours;
+    state.selected_nodes.clear();
+    state.sync_paths_from_contours();
+    state.assert_invariants();
+}
+
+fn cubic_curvature_at(c: CubicBez, t: f64) -> f64 {
+    let d1 = c.deriv().eval(t);
+    let d2 = c.deriv().deriv().eval(t);
+    let cross = (d1.x * d2.y - d1.y * d2.x).abs();
+    let speed = d1.x.hypot(d1.y);
+    cross / (speed * speed * speed).max(1e-12)
+}
+
+fn rasterize_egui_canvas(state: &GrafiaCanvasState, width: u32, height: u32) -> DynamicImage {
+    let rect = canvas_rect(width as f32, height as f32);
+    let ctx = egui::Context::default();
+    let raw = RawInput {
+        screen_rect: Some(rect),
+        time: Some(1.0),
+        ..Default::default()
+    };
+    let mut full_output = ctx.run_ui(raw, |ui| {
+        let painter = ui.painter_at(rect);
+        CanvasPainter::new(&painter, rect, state, &state.theme).paint();
+    });
+    let mut textures: HashMap<egui::TextureId, (usize, usize, Vec<[u8; 4]>)> = HashMap::new();
+    for (tid, deltas) in &full_output.textures_delta.set {
+        for delta in deltas {
+            if delta.pos.is_none() {
+                let [tw, th] = delta.image.size();
+                let pixels: Vec<[u8; 4]> = match &delta.image {
+                    egui::ImageData::Color(img) => {
+                        img.pixels.iter().map(|c| c.to_array()).collect()
                     }
+                };
+                textures.insert(*tid, (tw, th, pixels));
+            }
+        }
+    }
+    full_output.textures_delta.clear();
+    let bg = state
+        .theme
+        .canvas_background_color32()
+        .to_srgba_unmultiplied();
+    let mut fb: Vec<[f32; 4]> = vec![
+        [
+            f32::from(bg[0]) / 255.0,
+            f32::from(bg[1]) / 255.0,
+            f32::from(bg[2]) / 255.0,
+            1.0,
+        ];
+        (width * height) as usize
+    ];
+    let clipped = ctx.tessellate(full_output.shapes, 1.0);
+    for prim in clipped {
+        let egui::epaint::Primitive::Mesh(mesh) = prim.primitive else {
+            continue;
+        };
+        let tex = textures.get(&mesh.texture_id);
+        for tri in mesh.indices.as_chunks::<3>().0 {
+            let v0 = mesh.vertices[tri[0] as usize];
+            let v1 = mesh.vertices[tri[1] as usize];
+            let v2 = mesh.vertices[tri[2] as usize];
+            let min_x = v0.pos.x.min(v1.pos.x).min(v2.pos.x).floor().max(0.0) as i32;
+            let max_x = v0
+                .pos
+                .x
+                .max(v1.pos.x)
+                .max(v2.pos.x)
+                .ceil()
+                .min(width as f32 - 1.0) as i32;
+            let min_y = v0.pos.y.min(v1.pos.y).min(v2.pos.y).floor().max(0.0) as i32;
+            let max_y = v0
+                .pos
+                .y
+                .max(v1.pos.y)
+                .max(v2.pos.y)
+                .ceil()
+                .min(height as f32 - 1.0) as i32;
+            let area = (v1.pos.x - v0.pos.x) * (v2.pos.y - v0.pos.y)
+                - (v1.pos.y - v0.pos.y) * (v2.pos.x - v0.pos.x);
+            if area.abs() < 1e-6 {
+                continue;
+            }
+            let inv_area = 1.0 / area;
+            for py in min_y..=max_y {
+                for px in min_x..=max_x {
+                    let p = Pos2::new(px as f32 + 0.5, py as f32 + 0.5);
+                    let w0 = ((v1.pos.x - p.x) * (v2.pos.y - p.y)
+                        - (v1.pos.y - p.y) * (v2.pos.x - p.x))
+                        * inv_area;
+                    let w1 = ((v2.pos.x - p.x) * (v0.pos.y - p.y)
+                        - (v2.pos.y - p.y) * (v0.pos.x - p.x))
+                        * inv_area;
+                    let w2 = 1.0 - w0 - w1;
+                    if w0 < -1e-4 || w1 < -1e-4 || w2 < -1e-4 {
+                        continue;
+                    }
+                    let c0 = v0.color.to_array();
+                    let c1 = v1.color.to_array();
+                    let c2 = v2.color.to_array();
+                    let mut sr =
+                        (w0 * f32::from(c0[0]) + w1 * f32::from(c1[0]) + w2 * f32::from(c2[0]))
+                            / 255.0;
+                    let mut sg =
+                        (w0 * f32::from(c0[1]) + w1 * f32::from(c1[1]) + w2 * f32::from(c2[1]))
+                            / 255.0;
+                    let mut sb =
+                        (w0 * f32::from(c0[2]) + w1 * f32::from(c1[2]) + w2 * f32::from(c2[2]))
+                            / 255.0;
+                    let mut sa =
+                        (w0 * f32::from(c0[3]) + w1 * f32::from(c1[3]) + w2 * f32::from(c2[3]))
+                            / 255.0;
+                    if let Some((tw, th, tpx)) = tex {
+                        let u = (w0 * v0.uv.x + w1 * v1.uv.x + w2 * v2.uv.x).clamp(0.0, 1.0);
+                        let v = (w0 * v0.uv.y + w1 * v1.uv.y + w2 * v2.uv.y).clamp(0.0, 1.0);
+                        let tx =
+                            ((u * (*tw as f32 - 1.0)).round() as usize).min(tw.saturating_sub(1));
+                        let ty =
+                            ((v * (*th as f32 - 1.0)).round() as usize).min(th.saturating_sub(1));
+                        let tc = tpx[ty * *tw + tx];
+                        sr *= f32::from(tc[0]) / 255.0;
+                        sg *= f32::from(tc[1]) / 255.0;
+                        sb *= f32::from(tc[2]) / 255.0;
+                        sa *= f32::from(tc[3]) / 255.0;
+                    }
+                    let dst = &mut fb[(py as u32 * width + px as u32) as usize];
+                    let inv_a = (1.0 - sa).clamp(0.0, 1.0);
+                    dst[0] = (sr + dst[0] * inv_a).clamp(0.0, 1.0);
+                    dst[1] = (sg + dst[1] * inv_a).clamp(0.0, 1.0);
+                    dst[2] = (sb + dst[2] * inv_a).clamp(0.0, 1.0);
+                    dst[3] = 1.0;
                 }
             }
-            state.validate_invariants().unwrap();
         }
-        Ok(())
-    })
-    .budget_ms(250);
+    }
+    let mut img = ImageBuffer::new(width, height);
+    for (idx, px) in fb.iter().enumerate() {
+        let x = (idx as u32) % width;
+        let y = (idx as u32) / width;
+        img.put_pixel(
+            x,
+            y,
+            Rgba([
+                (px[0] * 255.0).round() as u8,
+                (px[1] * 255.0).round() as u8,
+                (px[2] * 255.0).round() as u8,
+                255,
+            ]),
+        );
+    }
+    DynamicImage::ImageRgba8(img)
 }
+
+// ============================================================================
+// TC-V080-001: Hobby & Euler/Spiro Closed Cycle Symmetry
+// ============================================================================
+#[test]
+fn tc_v080_001_hobby_and_euler_spiro_closed_cycle_symmetry() {
+    let hobby_type = NodeType::HobbyStar {
+        tension_in: 1.0,
+        tension_out: 1.0,
+        dir_constraint: HobbyDirConstraint::Free,
+    };
+    let diamond_hobby = vec![
+        Node::new(NodeId(1), 100.0, 0.0, hobby_type),
+        Node::new(NodeId(2), 200.0, 100.0, hobby_type),
+        Node::new(NodeId(3), 100.0, 200.0, hobby_type),
+        Node::new(NodeId(4), 0.0, 100.0, hobby_type),
+    ];
+
+    let solved_hobby = evaluate_hobby_chain_to_cubics(&diamond_hobby, true, 0.0, &[]);
+    assert_eq!(
+        solved_hobby.len(),
+        4,
+        "4-node closed HobbyStar diamond must solve to 4 cubic segments"
+    );
+
+    let ref_mock_k = solved_hobby[0].mock_curvature_out;
+    let target_circle_k = 0.01; // R = 100 UPM -> curvature = 1 / 100 = 0.01
+    for (q, seg) in solved_hobby.iter().enumerate() {
+        assert_relative_eq!(seg.mock_curvature_out, ref_mock_k, epsilon = 1e-9);
+        assert_relative_eq!(
+            seg.mock_curvature_in,
+            seg.mock_curvature_out,
+            epsilon = 1e-9
+        );
+        let k0 = cubic_curvature_at(seg.cubic, 0.0);
+        let k_mid = cubic_curvature_at(seg.cubic, 0.5);
+        let k1 = cubic_curvature_at(seg.cubic, 1.0);
+        assert!(
+            (k0 - target_circle_k).abs() < 1e-3
+                && (k_mid - target_circle_k).abs() < 1e-3
+                && (k1 - target_circle_k).abs() < 1e-3,
+            "quadrant {q}: Hobby cubic curvature ({k0:.6}, {k_mid:.6}, {k1:.6}) must match 0.01 within 1e-3"
+        );
+    }
+
+    let euler_type = NodeType::EulerSpiro {
+        dir_constraint: HobbyDirConstraint::Free,
+    };
+    let diamond_euler = vec![
+        Node::new(NodeId(11), 100.0, 0.0, euler_type),
+        Node::new(NodeId(12), 200.0, 100.0, euler_type),
+        Node::new(NodeId(13), 100.0, 200.0, euler_type),
+        Node::new(NodeId(14), 0.0, 100.0, euler_type),
+    ];
+    let solved_euler = evaluate_euler_spiro_chain_to_cubics(&diamond_euler, true, 0.0, &[]);
+    assert_eq!(
+        solved_euler.len(),
+        4,
+        "4-node closed EulerSpiro diamond must solve to 4 cubic segments"
+    );
+    let euler_k0 = cubic_curvature_at(solved_euler[0].cubic, 0.5);
+    for (q, seg) in solved_euler.iter().enumerate() {
+        let km = cubic_curvature_at(seg.cubic, 0.5);
+        assert_relative_eq!(km, euler_k0, epsilon = 1e-6);
+        assert!(
+            (km - target_circle_k).abs() < 1e-3,
+            "quadrant {q}: EulerSpiro midpoint curvature {km:.6} must match circular curvature within 1e-3"
+        );
+        let mid = seg.cubic.eval(0.5);
+        let radius = (mid.x - 100.0).hypot(mid.y - 100.0);
+        assert_relative_eq!(radius, 100.0, epsilon = 0.5);
+        let next = &solved_euler[(q + 1) % 4];
+        let t_in = seg.cubic.deriv().eval(1.0);
+        let t_out = next.cubic.deriv().eval(0.0);
+        let a_in = t_in.y.atan2(t_in.x);
+        let a_out = t_out.y.atan2(t_out.x);
+        assert_relative_eq!(a_in, a_out, epsilon = 1e-6);
+    }
+
+    // Adversarial edge case (b): 2-node open and 2-node closed HobbyStar & EulerSpiro chains
+    let two_hobby = vec![
+        Node::new(NodeId(21), 50.0, 100.0, hobby_type),
+        Node::new(NodeId(22), 250.0, 180.0, hobby_type),
+    ];
+    let hobby_open_2 = evaluate_hobby_chain_to_cubics(&two_hobby, false, 0.0, &[]);
+    let hobby_closed_2 = evaluate_hobby_chain_to_cubics(&two_hobby, true, 0.0, &[]);
+    assert_eq!(hobby_open_2.len(), 1);
+    assert_eq!(hobby_closed_2.len(), 2);
+    for seg in hobby_open_2.iter().chain(hobby_closed_2.iter()) {
+        assert!(
+            seg.cubic.p0.x.is_finite()
+                && seg.cubic.p0.y.is_finite()
+                && seg.cubic.p1.x.is_finite()
+                && seg.cubic.p1.y.is_finite()
+                && seg.cubic.p2.x.is_finite()
+                && seg.cubic.p2.y.is_finite()
+                && seg.cubic.p3.x.is_finite()
+                && seg.cubic.p3.y.is_finite()
+        );
+    }
+    let bez_hobby_open_2 = contour_to_bezpath_with_splines(&two_hobby, false, 0.0, &[]);
+    let bez_hobby_closed_2 = contour_to_bezpath_with_splines(&two_hobby, true, 0.0, &[]);
+    assert!(!bez_hobby_open_2.elements().is_empty());
+    assert!(!bez_hobby_closed_2.elements().is_empty());
+
+    let two_euler = vec![
+        Node::new(NodeId(31), 50.0, 100.0, euler_type),
+        Node::new(NodeId(32), 250.0, 180.0, euler_type),
+    ];
+    let euler_open_2 = evaluate_euler_spiro_chain_to_cubics(&two_euler, false, 0.0, &[]);
+    let euler_closed_2 = evaluate_euler_spiro_chain_to_cubics(&two_euler, true, 0.0, &[]);
+    assert_eq!(euler_open_2.len(), 1);
+    assert_eq!(euler_closed_2.len(), 2);
+    for seg in euler_open_2.iter().chain(euler_closed_2.iter()) {
+        assert!(
+            seg.cubic.p0.x.is_finite()
+                && seg.cubic.p0.y.is_finite()
+                && seg.cubic.p1.x.is_finite()
+                && seg.cubic.p1.y.is_finite()
+                && seg.cubic.p2.x.is_finite()
+                && seg.cubic.p2.y.is_finite()
+                && seg.cubic.p3.x.is_finite()
+                && seg.cubic.p3.y.is_finite()
+        );
+    }
+    let bez_euler_open_2 = contour_to_bezpath_with_splines(&two_euler, false, 0.0, &[]);
+    let bez_euler_closed_2 = contour_to_bezpath_with_splines(&two_euler, true, 0.0, &[]);
+    assert!(!bez_euler_open_2.elements().is_empty());
+    assert!(!bez_euler_closed_2.elements().is_empty());
+}
+
+// ============================================================================
+// TC-V080-002: Hobby Directional Constraints & convert_selected_hobby_nodes_to_cubic
+// ============================================================================
+#[test]
+fn tc_v080_002_hobby_dir_constraints_and_convert_to_cubic() {
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
+    state.viewport.zoom = 0.7;
+    state.viewport.pan_offset = ScreenPoint::new(140.0, 440.0);
+    state.italic_angle_deg = 12.0;
+    state.show_metrics = false;
+    state.show_grid = false;
+    state.show_selection_info_hud = false;
+
+    let nodes = vec![
+        Node::new(
+            NodeId(1),
+            200.0,
+            0.0,
+            NodeType::HobbyStar {
+                tension_in: 1.0,
+                tension_out: 1.0,
+                dir_constraint: HobbyDirConstraint::Horizontal,
+            },
+        ),
+        Node::new(
+            NodeId(2),
+            380.0,
+            220.0,
+            NodeType::HobbyStar {
+                tension_in: 1.1,
+                tension_out: 1.1,
+                dir_constraint: HobbyDirConstraint::Vertical,
+            },
+        ),
+        Node::new(
+            NodeId(3),
+            310.0,
+            498.0,
+            NodeType::HobbyStar {
+                tension_in: 1.0,
+                tension_out: 1.0,
+                dir_constraint: HobbyDirConstraint::FollowMetricLine,
+            },
+        ),
+        Node::new(
+            NodeId(4),
+            120.0,
+            390.0,
+            NodeType::HobbyStar {
+                tension_in: 1.2,
+                tension_out: 1.0,
+                dir_constraint: HobbyDirConstraint::SlantedItalic,
+            },
+        ),
+        Node::new(
+            NodeId(5),
+            50.0,
+            150.0,
+            NodeType::HobbyStar {
+                tension_in: 1.0,
+                tension_out: 1.0,
+                dir_constraint: HobbyDirConstraint::Free,
+            },
+        ),
+    ];
+    let metrics_y = [0.0, 500.0, 700.0, 800.0, -200.0];
+    let solved = evaluate_hobby_chain_to_cubics(&nodes, true, state.italic_angle_deg, &metrics_y);
+    assert_eq!(solved.len(), 5);
+
+    // Node 0: Horizontal -> tangent aligned with 0° or 180° within 1e-6 rad
+    let d_horiz = solved[0].cubic.deriv().eval(0.0);
+    let ang_horiz = d_horiz.y.atan2(d_horiz.x).sin().abs();
+    assert!(
+        ang_horiz < 1e-6,
+        "Horizontal tangent sin(angle) must be < 1e-6, got {ang_horiz}"
+    );
+
+    // Node 1: Vertical -> tangent aligned with +/-90° within 1e-6 rad
+    let d_vert = solved[1].cubic.deriv().eval(0.0);
+    let cos_vert = d_vert.y.atan2(d_vert.x).cos().abs();
+    assert!(
+        cos_vert < 1e-6,
+        "Vertical tangent cos(angle) must be < 1e-6, got {cos_vert}"
+    );
+
+    // Node 2: FollowMetricLine -> horizontal tangent (parallel to metric line y = 500) within 1e-6 rad
+    let d_metric = solved[2].cubic.deriv().eval(0.0);
+    assert!(d_metric.y.atan2(d_metric.x).sin().abs() < 1e-6);
+
+    // Node 3: SlantedItalic -> aligned to italic axis (sin(12°), cos(12°)) or opposite within 1e-6 rad
+    let d_italic = solved[3].cubic.deriv().eval(0.0);
+    let italic_rad = 12.0_f64.to_radians();
+    let expected_dir = (italic_rad.sin(), italic_rad.cos());
+    let len_it = d_italic.x.hypot(d_italic.y);
+    let cross_it =
+        ((d_italic.x / len_it) * expected_dir.1 - (d_italic.y / len_it) * expected_dir.0).abs();
+    assert!(
+        cross_it < 1e-6,
+        "SlantedItalic tangent cross error must be < 1e-6, got {cross_it}"
+    );
+
+    set_contours(
+        &mut state,
+        vec![GlyphContour::new(ContourId(0), nodes.clone())],
+    );
+    state.show_nodes_oncurve = false;
+    state.show_nodes_offcurve = false;
+    let before_img = DynamicImage::ImageRgba8(pixmap_to_rgba_image(rasterize_canvas_subregion(
+        &state,
+        &state.theme,
+        480,
+        420,
+    )));
+
+    state.selected_nodes = vec![NodeId(1), NodeId(2), NodeId(3), NodeId(4), NodeId(5)];
+    assert!(state.convert_selected_hobby_nodes_to_cubic());
+    state.assert_invariants();
+    assert_eq!(
+        state.history.last_undo_label(),
+        Some("Convert Hobby/Euler Splines")
+    );
+    assert!(
+        state.contours[0]
+            .iter()
+            .all(|n| !matches!(n.node_type, NodeType::HobbyStar { .. })),
+        "All selected HobbyStar nodes must be converted to standard cubic nodes"
+    );
+    assert!(
+        state.contours[0]
+            .iter()
+            .any(|n| n.node_type == NodeType::OffCurve),
+        "Converted Hobby contour must contain materialized OffCurve handles"
+    );
+
+    state.selected_nodes.clear();
+    let after_img = DynamicImage::ImageRgba8(pixmap_to_rgba_image(rasterize_canvas_subregion(
+        &state,
+        &state.theme,
+        480,
+        420,
+    )));
+    let ssim = compute_ssim(&before_img, &after_img, SSIM_DEFAULT_WINDOW_SIZE);
+    assert!(
+        ssim >= 0.999,
+        "Hobby -> Cubic conversion must preserve rendered contour pixels (SSIM >= 0.999, got {ssim:.6})"
+    );
+
+    assert!(state.undo());
+    assert_eq!(state.contours[0], nodes);
+
+    // Also verify EulerSpiro -> Cubic conversion + SSIM >= 0.999 + Undo
+    let euler_nodes: Vec<Node> = (0..4)
+        .map(|i| {
+            let (x, y) = match i {
+                0 => (200.0, 40.0),
+                1 => (360.0, 200.0),
+                2 => (200.0, 360.0),
+                _ => (40.0, 200.0),
+            };
+            Node::new(
+                NodeId(20 + i),
+                x,
+                y,
+                NodeType::EulerSpiro {
+                    dir_constraint: HobbyDirConstraint::Free,
+                },
+            )
+        })
+        .collect();
+    set_contours(
+        &mut state,
+        vec![GlyphContour::new(ContourId(0), euler_nodes.clone())],
+    );
+    let euler_before = DynamicImage::ImageRgba8(pixmap_to_rgba_image(rasterize_canvas_subregion(
+        &state,
+        &state.theme,
+        480,
+        420,
+    )));
+    state.selected_nodes = vec![NodeId(20), NodeId(21), NodeId(22), NodeId(23)];
+    assert!(state.convert_selected_euler_spiro_nodes_to_cubic());
+    assert_eq!(
+        state.history.last_undo_label(),
+        Some("Convert Hobby/Euler Splines")
+    );
+    state.selected_nodes.clear();
+    let euler_after = DynamicImage::ImageRgba8(pixmap_to_rgba_image(rasterize_canvas_subregion(
+        &state,
+        &state.theme,
+        480,
+        420,
+    )));
+    let euler_ssim = compute_ssim(&euler_before, &euler_after, SSIM_DEFAULT_WINDOW_SIZE);
+    assert!(
+        euler_ssim >= 0.999,
+        "EulerSpiro -> Cubic conversion must achieve SSIM >= 0.999, got {euler_ssim:.6}"
+    );
+    assert!(state.undo());
+    assert_eq!(state.contours[0], euler_nodes);
+}
+
+// ============================================================================
+// TC-V080-003: 8+4 BBox Outer-Corner Rotation, Shift 15° Snap & Live "∠ ..." Pill
+// ============================================================================
+#[test]
+fn tc_v080_003_bbox_outer_corner_rotation_and_shift_snap() {
+    let rect = canvas_rect(800.0, 600.0);
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
+    state.viewport.zoom = 1.0;
+    state.viewport.pan_offset = ScreenPoint::new(300.0, 350.0);
+    state.show_bounding_box = true;
+
+    let orig_nodes = vec![
+        Node::new(NodeId(1), 0.0, 0.0, NodeType::Corner),
+        Node::new(NodeId(2), 200.0, 0.0, NodeType::Corner),
+        Node::new(NodeId(3), 200.0, 100.0, NodeType::Smooth),
+        Node::new(NodeId(4), 140.0, 100.0, NodeType::OffCurve),
+        Node::new(NodeId(5), 60.0, 100.0, NodeType::OffCurve),
+        Node::new(NodeId(6), 0.0, 100.0, NodeType::Smooth),
+    ];
+    set_contours(
+        &mut state,
+        vec![GlyphContour::new(ContourId(0), orig_nodes.clone())],
+    );
+    // Select OnCurve nodes only; unselected OffCurve handles (4, 5) must rotate rigidly too!
+    state.selected_nodes = vec![NodeId(1), NodeId(2), NodeId(3), NodeId(6)];
+    state.set_transform_grid_anchor(TransformGridAnchor::Center); // Pivot = (100, 50)
+
+    let bounds = state.selection_bounds().expect("selection bounds");
+    for corner in [0u8, 2, 6, 8] {
+        let box_s = bounds.box_screen_point(corner, &state.viewport);
+        let knob_s = bounds.knob_screen_center(corner, &state.viewport);
+        let dx = knob_s.x.0 - box_s.x.0;
+        let dy = knob_s.y.0 - box_s.y.0;
+        let len = dx.hypot(dy);
+        let (ux, uy) = (dx / len, dy / len);
+        // 12.0 dp radially outside corner knob center -> inside [6.0 dp, 18.0 dp]
+        let ring_pt = ScreenPoint::new(knob_s.x.0 + ux * 12.0, knob_s.y.0 + uy * 12.0);
+        assert_eq!(
+            state.hit_test_bbox_knob(ring_pt, false, false),
+            Some(BBoxAction::Rotate(corner)),
+            "12.0 dp radially outside corner {corner} must hit Rotate({corner})"
+        );
+        // 24.0 dp radially outside -> outside [6.0 dp, 18.0 dp]
+        let far_pt = ScreenPoint::new(knob_s.x.0 + ux * 24.0, knob_s.y.0 + uy * 24.0);
+        assert_eq!(state.hit_test_bbox_knob(far_pt, false, false), None);
+    }
+
+    // 1. Free rotation without Shift by +24.5° around Center pivot (100, 50)
+    let box_8 = bounds.box_screen_point(8, &state.viewport);
+    let knob_8 = bounds.knob_screen_center(8, &state.viewport);
+    let dir_x = knob_8.x.0 - box_8.x.0;
+    let dir_y = knob_8.y.0 - box_8.y.0;
+    let dir_len = dir_x.hypot(dir_y);
+    let start_scr = ScreenPoint::new(
+        knob_8.x.0 + (dir_x / dir_len) * 12.0,
+        knob_8.y.0 + (dir_y / dir_len) * 12.0,
+    );
+    let start_font = state.viewport.to_font(start_scr);
+    let pivot = FontPoint::new(100.0, 50.0);
+    let a0 = (start_font.y.0 - pivot.y.0).atan2(start_font.x.0 - pivot.x.0);
+    let r0 = start_font.distance_to(pivot);
+    let free_deg = 24.5_f64;
+    let a_free = a0 + free_deg.to_radians();
+    let free_end_scr = state.viewport.to_screen(FontPoint::new(
+        pivot.x.0 + r0 * a_free.cos(),
+        pivot.y.0 + r0 * a_free.sin(),
+    ));
+
+    let pre_drag_pix = rasterize_canvas_subregion(&state, &state.theme, 640, 480);
+    pointer_press(&mut state, rect, start_scr, false, false, false, false);
+    pointer_move(&mut state, rect, free_end_scr, false, false, false, false);
+
+    let pill = state
+        .active_bbox_rotation_pill_label()
+        .expect("live ∠ telemetry pill must be active during BBox rotation drag");
+    assert!(
+        pill.starts_with("∠") && pill.contains("24.5"),
+        "expected live angle pill containing '∠' and '24.5', got {pill}"
+    );
+    let mid_drag_pix = rasterize_canvas_subregion(&state, &state.theme, 640, 480);
+    assert_ne!(pre_drag_pix.data(), mid_drag_pix.data());
+
+    pointer_release(&mut state, rect, free_end_scr, false, false, false, false);
+    assert!(state.active_bbox_rotation_pill_label().is_none());
+
+    let rot_aff = kurbo::Affine::rotate_about(free_deg.to_radians(), Point::new(100.0, 50.0));
+    for orig in &orig_nodes {
+        let expected = rot_aff * Point::new(orig.point.x.0, orig.point.y.0);
+        let actual = state.find_node(orig.id).expect("node").point;
+        assert_relative_eq!(actual.x.0, expected.x, epsilon = 1e-3);
+        assert_relative_eq!(actual.y.0, expected.y, epsilon = 1e-3);
+    }
+
+    let rotated_snap = state.snapshot();
+    assert!(state.undo());
+    assert_eq!(state.contours[0], orig_nodes);
+    assert!(state.redo());
+    assert_eq!(state.snapshot(), rotated_snap);
+    assert!(state.undo());
+
+    // 2. Shift-snapped rotation (+28° -> quantizes to +30.0°, 15° multiple!) around BottomLeft pivot (0, 0)
+    state.set_transform_grid_anchor(TransformGridAnchor::BottomLeft);
+    let bounds2 = state.selection_bounds().expect("bounds2");
+    let k8_2 = bounds2.knob_screen_center(8, &state.viewport);
+    let b8_2 = bounds2.box_screen_point(8, &state.viewport);
+    let dx2 = k8_2.x.0 - b8_2.x.0;
+    let dy2 = k8_2.y.0 - b8_2.y.0;
+    let l2 = dx2.hypot(dy2);
+    let start_scr_2 = ScreenPoint::new(k8_2.x.0 + (dx2 / l2) * 12.0, k8_2.y.0 + (dy2 / l2) * 12.0);
+    let sf2 = state.viewport.to_font(start_scr_2);
+    let a0_bl = sf2.y.0.atan2(sf2.x.0);
+    let r_bl = sf2.x.0.hypot(sf2.y.0);
+    let raw_shift_deg = 28.0_f64;
+    let end_scr_2 = state.viewport.to_screen(FontPoint::new(
+        r_bl * (a0_bl + raw_shift_deg.to_radians()).cos(),
+        r_bl * (a0_bl + raw_shift_deg.to_radians()).sin(),
+    ));
+
+    pointer_press(&mut state, rect, start_scr_2, true, false, false, false);
+    pointer_move(&mut state, rect, end_scr_2, true, false, false, false);
+    let shift_pill = state
+        .active_bbox_rotation_pill_label()
+        .expect("Shift rotation pill");
+    assert!(
+        shift_pill.contains("30"),
+        "28° with Shift must quantize to 30° (15° step), got pill {shift_pill}"
+    );
+    pointer_release(&mut state, rect, end_scr_2, true, false, false, false);
+
+    let rot30 = kurbo::Affine::rotate_about(30.0_f64.to_radians(), Point::new(0.0, 0.0));
+    for orig in &orig_nodes {
+        let expected = rot30 * Point::new(orig.point.x.0, orig.point.y.0);
+        let actual = state.find_node(orig.id).expect("node").point;
+        assert_relative_eq!(actual.x.0, expected.x, epsilon = 1e-3);
+        assert_relative_eq!(actual.y.0, expected.y, epsilon = 1e-3);
+    }
+    assert!(state.undo());
+    assert_eq!(state.contours[0], orig_nodes);
+}
+
+// ============================================================================
+// TC-V080-004: 8+4 BBox Mid-Edge Shear (Ctrl+Alt)
+// ============================================================================
+#[test]
+fn tc_v080_004_bbox_mid_edge_shear_ctrl_alt() {
+    let rect = canvas_rect(800.0, 600.0);
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
+    state.viewport.zoom = 1.0;
+    state.viewport.pan_offset = ScreenPoint::new(250.0, 420.0);
+    state.show_bounding_box = true;
+
+    // Closed contour spanning x in [0, 100], y in [0, 200] with Smooth right-side node (100, 100)
+    // and collinear vertical handles (100, 60) & (100, 140)
+    let orig_nodes = vec![
+        Node::new(NodeId(1), 0.0, 0.0, NodeType::Corner),
+        Node::new(NodeId(2), 100.0, 0.0, NodeType::Corner),
+        Node::new(NodeId(3), 100.0, 60.0, NodeType::OffCurve),
+        Node::new(NodeId(4), 100.0, 100.0, NodeType::Smooth),
+        Node::new(NodeId(5), 100.0, 140.0, NodeType::OffCurve),
+        Node::new(NodeId(6), 100.0, 200.0, NodeType::Corner),
+        Node::new(NodeId(7), 0.0, 200.0, NodeType::Corner),
+    ];
+    set_contours(
+        &mut state,
+        vec![GlyphContour::new(ContourId(0), orig_nodes.clone())],
+    );
+    state.selected_nodes = vec![NodeId(1), NodeId(2), NodeId(4), NodeId(6), NodeId(7)];
+
+    let bounds = state.selection_bounds().expect("bounds");
+    let top_mid_scr = bounds.knob_screen_center(7, &state.viewport);
+    assert_eq!(
+        state.hit_test_bbox_knob(top_mid_scr, true, true),
+        Some(BBoxAction::Slant(7))
+    );
+
+    let sheared_scr = ScreenPoint::new(top_mid_scr.x.0 + 40.0, top_mid_scr.y.0);
+    pointer_press(&mut state, rect, top_mid_scr, false, true, false, true);
+    pointer_move(&mut state, rect, sheared_scr, false, true, false, true);
+    pointer_release(&mut state, rect, sheared_scr, false, true, false, true);
+
+    // Bottom edge (y = 0) fixed
+    let p1 = state.find_node(NodeId(1)).expect("p1").point;
+    let p2 = state.find_node(NodeId(2)).expect("p2").point;
+    assert_relative_eq!(p1.x.0, 0.0, epsilon = 1e-4);
+    assert_relative_eq!(p1.y.0, 0.0, epsilon = 1e-4);
+    assert_relative_eq!(p2.x.0, 100.0, epsilon = 1e-4);
+    assert_relative_eq!(p2.y.0, 0.0, epsilon = 1e-4);
+
+    // Top edge (y = 200) shifted horizontally by +40 UPM
+    let p6 = state.find_node(NodeId(6)).expect("p6").point;
+    let p7 = state.find_node(NodeId(7)).expect("p7").point;
+    assert_relative_eq!(p6.x.0, 140.0, epsilon = 1e-4);
+    assert_relative_eq!(p6.y.0, 200.0, epsilon = 1e-4);
+    assert_relative_eq!(p7.x.0, 40.0, epsilon = 1e-4);
+    assert_relative_eq!(p7.y.0, 200.0, epsilon = 1e-4);
+
+    // Smooth-node collinearity at NodeId(4) (between OffCurve NodeId(3) and OffCurve NodeId(5))
+    let h_in = state.find_node(NodeId(3)).expect("h_in").point;
+    let p_sm = state.find_node(NodeId(4)).expect("p_sm").point;
+    let h_out = state.find_node(NodeId(5)).expect("h_out").point;
+    let v_in = (p_sm.x.0 - h_in.x.0, p_sm.y.0 - h_in.y.0);
+    let v_out = (h_out.x.0 - p_sm.x.0, h_out.y.0 - p_sm.y.0);
+    let cross = (v_in.0 * v_out.1 - v_in.1 * v_out.0).abs();
+    assert!(
+        cross < 1e-4 && (v_in.0 * v_out.0 + v_in.1 * v_out.1) > 0.0,
+        "Smooth node handles must remain strictly collinear after shear, cross={cross}"
+    );
+
+    assert_eq!(state.history.last_undo_label(), Some("Transform Selection"));
+    assert!(state.undo());
+    assert_eq!(state.contours[0], orig_nodes);
+
+    // Adversarial edge case (a): 0-height & 0-width degenerate selections during BBox shear/rotation
+    // 1) 0-height selection (NodeId(1) at (0, 0) and NodeId(2) at (100, 0))
+    state.selected_nodes = vec![NodeId(1), NodeId(2)];
+    let zero_h_bounds = state.selection_bounds().expect("zero_h_bounds");
+    assert_relative_eq!(zero_h_bounds.height(), 0.0, epsilon = 1e-9);
+    let zero_h_shear = grafia::core::bbox_rotate_shear_ops::compute_bbox_shear_affine(
+        &zero_h_bounds,
+        7,
+        FontPoint::new(50.0, 0.0),
+        FontPoint::new(120.0, 0.0),
+    );
+    for coeff in zero_h_shear.as_coeffs() {
+        assert!(coeff.is_finite());
+    }
+    let (_, zero_h_rot) = grafia::core::bbox_rotate_shear_ops::compute_bbox_rotation_deg_and_affine(
+        FontPoint::new(0.0, 0.0),
+        FontPoint::new(0.0, 0.0),
+        FontPoint::new(0.0, 0.0),
+        true,
+    );
+    for coeff in zero_h_rot.as_coeffs() {
+        assert!(coeff.is_finite());
+    }
+    let top_zero_h = zero_h_bounds.knob_screen_center(7, &state.viewport);
+    pointer_press(&mut state, rect, top_zero_h, false, true, false, true);
+    pointer_move(
+        &mut state,
+        rect,
+        ScreenPoint::new(top_zero_h.x.0 + 50.0, top_zero_h.y.0),
+        false,
+        true,
+        false,
+        true,
+    );
+    pointer_release(
+        &mut state,
+        rect,
+        ScreenPoint::new(top_zero_h.x.0 + 50.0, top_zero_h.y.0),
+        false,
+        true,
+        false,
+        true,
+    );
+    for n in state.contours.iter().flatten() {
+        assert!(n.point.x.0.is_finite() && n.point.y.0.is_finite());
+    }
+    assert!(state.validate_invariants().is_ok());
+
+    // 2) 0-width selection (NodeId(1) at (0, 0) and NodeId(7) at (0, 200))
+    state.show_bounding_box_slanted = false;
+    set_contours(
+        &mut state,
+        vec![GlyphContour::new(ContourId(0), orig_nodes)],
+    );
+    state.selected_nodes = vec![NodeId(1), NodeId(7)];
+    let zero_w_bounds = state.selection_bounds().expect("zero_w_bounds");
+    assert_relative_eq!(zero_w_bounds.width(), 0.0, epsilon = 1e-9);
+    let zero_w_shear = grafia::core::bbox_rotate_shear_ops::compute_bbox_shear_affine(
+        &zero_w_bounds,
+        5,
+        FontPoint::new(0.0, 100.0),
+        FontPoint::new(0.0, 180.0),
+    );
+    for coeff in zero_w_shear.as_coeffs() {
+        assert!(coeff.is_finite());
+    }
+    let right_zero_w = zero_w_bounds.knob_screen_center(5, &state.viewport);
+    pointer_press(&mut state, rect, right_zero_w, false, true, false, true);
+    pointer_move(
+        &mut state,
+        rect,
+        ScreenPoint::new(right_zero_w.x.0, right_zero_w.y.0 + 50.0),
+        false,
+        true,
+        false,
+        true,
+    );
+    pointer_release(
+        &mut state,
+        rect,
+        ScreenPoint::new(right_zero_w.x.0, right_zero_w.y.0 + 50.0),
+        false,
+        true,
+        false,
+        true,
+    );
+    for n in state.contours.iter().flatten() {
+        assert!(n.point.x.0.is_finite() && n.point.y.0.is_finite());
+    }
+    assert!(state.validate_invariants().is_ok());
+}
+
+// ============================================================================
+// TC-V080-005: CanvasSmartHandle Ray Projection, Clamping & 4.0 dp Default Snap
+// ============================================================================
+#[test]
+fn tc_v080_005_smart_handle_ray_projection_clamping_and_snap() {
+    let rect = canvas_rect(800.0, 600.0);
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
+    state.viewport.zoom = 1.0;
+    state.viewport.pan_offset = ScreenPoint::new(200.0, 400.0);
+
+    let comp_contour = GlyphContour::new(
+        ContourId(0),
+        vec![
+            Node::new(NodeId(1), 0.0, 0.0, NodeType::Corner),
+            Node::new(NodeId(2), 80.0, 0.0, NodeType::Corner),
+            Node::new(NodeId(3), 80.0, 200.0, NodeType::Corner),
+            Node::new(NodeId(4), 0.0, 200.0, NodeType::Corner),
+        ],
+    );
+    state.set_components(vec![CanvasComponent {
+        id: ComponentId(1),
+        component_name: "stem".into(),
+        contours: vec![comp_contour],
+        transform: Affine2D::identity(),
+        locked: false,
+        automatic_alignment: false,
+        selected: false,
+    }]);
+
+    let angle_rad = 30.0_f64.to_radians();
+    let dir = (angle_rad.cos(), angle_rad.sin());
+    state.set_smart_handles(vec![CanvasSmartHandle {
+        component_id: ComponentId(1),
+        axis_id: "width".into(),
+        axis_name: "width".into(),
+        anchor_upm: FontPoint::new(100.0, 100.0),
+        direction_unit: dir,
+        scale_upm_per_unit: 2.0,
+        min_val: 10.0,
+        default_val: 50.0,
+        max_val: 100.0,
+        current_val: 30.0,
+    }]);
+
+    let pix_unsel = rasterize_canvas_subregion(&state, &state.theme, 640, 480);
+    state.components[0].selected = true;
+    let pix_sel = rasterize_canvas_subregion(&state, &state.theme, 640, 480);
+    assert_ne!(
+        pix_unsel.data(),
+        pix_sel.data(),
+        "Selected component must render smart handle diamond, track, and pill"
+    );
+
+    // Initial handle UPM position: anchor + 2.0 * (30 - 10) * dir = (100, 100) + 40 * dir
+    let h_start_upm = FontPoint::new(100.0 + 40.0 * dir.0, 100.0 + 40.0 * dir.1);
+    let h_start_scr = state.viewport.to_screen(h_start_upm);
+    let _ = state.drain_host_requests();
+
+    pointer_press(&mut state, rect, h_start_scr, false, false, false, false);
+
+    // 1. Drag way past min_val (s = -60 UPM along ray) -> clamps strictly to min_val = 10.0
+    let past_min_scr = state
+        .viewport
+        .to_screen(FontPoint::new(100.0 - 60.0 * dir.0, 100.0 - 60.0 * dir.1));
+    pointer_move(&mut state, rect, past_min_scr, false, false, false, false);
+    assert_relative_eq!(state.smart_handles[0].current_val, 10.0, epsilon = 1e-6);
+    let reqs_min = state.drain_host_requests();
+    assert_eq!(
+        reqs_min.last(),
+        Some(&CanvasHostRequest::UpdateSmartComponentAxis {
+            component_id: ComponentId(1),
+            axis_id: "width".into(),
+            new_value: 10.0,
+        })
+    );
+
+    // 2. Drag within 4.0 dp (2.5 dp at zoom 1.0 -> 2.5 UPM along ray) of default_val = 50.0
+    // default_val = 50.0 sits at anchor + 2.0 * (50 - 10) * dir = anchor + 80.0 * dir
+    let near_def_scr = state.viewport.to_screen(FontPoint::new(
+        100.0 + 82.5 * dir.0 + 10.0 * (-dir.1),
+        100.0 + 82.5 * dir.1 + 10.0 * dir.0,
+    ));
+    pointer_move(&mut state, rect, near_def_scr, false, false, false, false);
+    assert_relative_eq!(state.smart_handles[0].current_val, 50.0, epsilon = 1e-6);
+    let reqs_def = state.drain_host_requests();
+    assert_eq!(
+        reqs_def.last(),
+        Some(&CanvasHostRequest::UpdateSmartComponentAxis {
+            component_id: ComponentId(1),
+            axis_id: "width".into(),
+            new_value: 50.0,
+        })
+    );
+
+    // 3. Drag way past max_val (s = +260 UPM along ray > 2.0 * (100 - 10) = 180) -> clamps to 100.0
+    let past_max_scr = state
+        .viewport
+        .to_screen(FontPoint::new(100.0 + 260.0 * dir.0, 100.0 + 260.0 * dir.1));
+    pointer_move(&mut state, rect, past_max_scr, false, false, false, false);
+    pointer_release(&mut state, rect, past_max_scr, false, false, false, false);
+    assert_relative_eq!(state.smart_handles[0].current_val, 100.0, epsilon = 1e-6);
+    let reqs_max = state.drain_host_requests();
+    assert!(
+        reqs_max.contains(&CanvasHostRequest::UpdateSmartComponentAxis {
+            component_id: ComponentId(1),
+            axis_id: "width".into(),
+            new_value: 100.0,
+        })
+    );
+}
+
+// ============================================================================
+// TC-V080-006: Virtual ExtraNode Intersection Stability & Click Host Event
+// ============================================================================
+#[test]
+fn tc_v080_006_virtual_extra_nodes_intersection_stability() {
+    let rect_canvas = canvas_rect(800.0, 600.0);
+    let horiz = GlyphContour::new(
+        ContourId(0),
+        vec![
+            Node::new(NodeId(1), 0.0, 100.0, NodeType::Corner),
+            Node::new(NodeId(2), 300.0, 100.0, NodeType::Corner),
+            Node::new(NodeId(3), 300.0, 160.0, NodeType::Corner),
+            Node::new(NodeId(4), 0.0, 160.0, NodeType::Corner),
+        ],
+    );
+    let vert = GlyphContour::new(
+        ContourId(1),
+        vec![
+            Node::new(NodeId(5), 120.0, 0.0, NodeType::Corner),
+            Node::new(NodeId(6), 180.0, 0.0, NodeType::Corner),
+            Node::new(NodeId(7), 180.0, 260.0, NodeType::Corner),
+            Node::new(NodeId(8), 120.0, 260.0, NodeType::Corner),
+        ],
+    );
+    let contours_a = vec![horiz, vert];
+    let extra_a = compute_layer_extra_nodes(&contours_a);
+    assert_eq!(
+        extra_a.len(),
+        4,
+        "Two overlapping perpendicular stroke rectangles must have exactly 4 interior crossings"
+    );
+
+    // Translate both contours by (+10, +5) UPM
+    let mut contours_b = contours_a.clone();
+    for c in &mut contours_b {
+        for n in &mut c.nodes {
+            n.point.x.0 += 10.0;
+            n.point.y.0 += 5.0;
+        }
+    }
+    let extra_b = compute_layer_extra_nodes(&contours_b);
+    assert_eq!(extra_b.len(), 4);
+    for (ea, eb) in extra_a.iter().zip(extra_b.iter()) {
+        assert_eq!(
+            ea.key, eb.key,
+            "ExtraNodeKey must remain strictly identical under rigid translation"
+        );
+        assert_relative_eq!(eb.position.x.0, ea.position.x.0 + 10.0, epsilon = 1e-4);
+        assert_relative_eq!(eb.position.y.0, ea.position.y.0 + 5.0, epsilon = 1e-4);
+    }
+
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
+    state.viewport.zoom = 1.0;
+    state.viewport.pan_offset = ScreenPoint::new(150.0, 420.0);
+    set_contours(&mut state, contours_a);
+
+    state.show_extra_nodes = false;
+    let pix_off = rasterize_canvas_subregion(&state, &state.theme, 640, 480);
+    state.show_extra_nodes = true;
+    let pix_on = rasterize_canvas_subregion(&state, &state.theme, 640, 480);
+    assert_ne!(
+        pix_off.data(),
+        pix_on.data(),
+        "show_extra_nodes == true must render hollow diamond markers"
+    );
+
+    let first_extra = extra_a[0];
+    let click_scr = state.viewport.to_screen(first_extra.position);
+    let _ = state.drain_host_requests();
+    pointer_press(
+        &mut state,
+        rect_canvas,
+        click_scr,
+        false,
+        false,
+        false,
+        false,
+    );
+    pointer_release(
+        &mut state,
+        rect_canvas,
+        click_scr,
+        false,
+        false,
+        false,
+        false,
+    );
+
+    assert_eq!(state.selected_extra_node, Some(first_extra.key));
+    assert_eq!(
+        state.drain_host_requests(),
+        vec![CanvasHostRequest::SelectOrMutateExtraNode {
+            key: first_extra.key,
+        }]
+    );
+}
+
+// ============================================================================
+// TC-V080-015: HobbyNode & BackgroundImage SelectionInfo + interpolate_with_background
+// ============================================================================
+#[test]
+fn tc_v080_015_hobby_and_background_image_selection_info_and_interpolate() {
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
+    let fg_nodes = vec![
+        Node::new(
+            NodeId(1),
+            100.0,
+            0.0,
+            NodeType::HobbyStar {
+                tension_in: 1.0,
+                tension_out: 1.0,
+                dir_constraint: HobbyDirConstraint::Free,
+            },
+        ),
+        Node::new(NodeId(2), 300.0, 0.0, NodeType::Corner),
+        Node::new(NodeId(3), 300.0, 400.0, NodeType::Corner),
+        Node::new(NodeId(4), 100.0, 400.0, NodeType::Corner),
+    ];
+    set_contours(
+        &mut state,
+        vec![GlyphContour::new(ContourId(0), fg_nodes.clone())],
+    );
+
+    // 1. HobbyNode SelectionInfo query & mutation
+    state.selected_nodes = vec![NodeId(1)];
+    match state.selection_info() {
+        SelectionInfo::HobbyNode(h) => {
+            assert_eq!(h.node_id, NodeId(1));
+            assert_relative_eq!(h.tension_in, 1.0, epsilon = 1e-6);
+            assert_relative_eq!(h.tension_out, 1.0, epsilon = 1e-6);
+            assert_eq!(h.dir_constraint, HobbyDirConstraint::Free);
+        }
+        other => panic!("expected SelectionInfo::HobbyNode, got {other:?}"),
+    }
+
+    assert!(
+        state.apply_selection_info_action(SelectionInfoAction::SetHobbyNode {
+            tension_in: 1.75,
+            tension_out: 2.4,
+            dir_constraint: HobbyDirConstraint::Horizontal,
+        })
+    );
+    match state.selection_info() {
+        SelectionInfo::HobbyNode(h) => {
+            assert_relative_eq!(h.tension_in, 1.75, epsilon = 1e-6);
+            assert_relative_eq!(h.tension_out, 2.4, epsilon = 1e-6);
+            assert_eq!(h.dir_constraint, HobbyDirConstraint::Horizontal);
+        }
+        other => panic!("expected updated HobbyNode, got {other:?}"),
+    }
+    assert!(state.undo());
+
+    // 2. BackgroundImage SelectionInfo query, mutation & reset
+    state.selected_nodes.clear();
+    let mut bg_img = CanvasBackgroundImage::new([200u8, 100, 50, 255].repeat(16), 4, 4);
+    bg_img.selected = true;
+    state.set_background_image(Some(bg_img));
+
+    match state.selection_info() {
+        SelectionInfo::BackgroundImage(info) => {
+            assert_relative_eq!(info.x, 0.0, epsilon = 1e-6);
+            assert_relative_eq!(info.scale_x_pct, 100.0, epsilon = 1e-6);
+            assert_relative_eq!(info.scale_y_pct, 100.0, epsilon = 1e-6);
+            assert!(!info.locked);
+        }
+        other => panic!("expected SelectionInfo::BackgroundImage, got {other:?}"),
+    }
+
+    assert!(
+        state.apply_selection_info_action(SelectionInfoAction::MutateBackgroundImage(
+            BackgroundImageMutation {
+                position: Some(FontPoint::new(45.0, -20.0)),
+                scale_x: Some(1.5),
+                scale_y: Some(0.8),
+                rotation_deg: Some(12.5),
+                alpha: Some(0.65),
+                locked: Some(false),
+                crop_rect_px: Some(Some([1, 1, 2, 2])),
+            }
+        ))
+    );
+    match state.selection_info() {
+        SelectionInfo::BackgroundImage(info) => {
+            assert_relative_eq!(info.x, 45.0, epsilon = 1e-6);
+            assert_relative_eq!(info.y, -20.0, epsilon = 1e-6);
+            assert_relative_eq!(info.scale_x_pct, 150.0, epsilon = 1e-6);
+            assert_relative_eq!(info.scale_y_pct, 80.0, epsilon = 1e-6);
+            assert_relative_eq!(info.rotation_deg, 12.5, epsilon = 1e-6);
+            assert_relative_eq!(info.alpha, 0.65, epsilon = 1e-5);
+            assert_eq!(info.crop_rect_px, Some([1, 1, 2, 2]));
+        }
+        other => panic!("expected mutated BackgroundImage, got {other:?}"),
+    }
+
+    assert!(state.apply_selection_info_action(SelectionInfoAction::ResetBackgroundImageTransform));
+    match state.selection_info() {
+        SelectionInfo::BackgroundImage(info) => {
+            assert_relative_eq!(info.x, 0.0, epsilon = 1e-6);
+            assert_relative_eq!(info.y, 0.0, epsilon = 1e-6);
+            assert_relative_eq!(info.scale_x_pct, 100.0, epsilon = 1e-6);
+            assert_relative_eq!(info.scale_y_pct, 100.0, epsilon = 1e-6);
+            assert_relative_eq!(info.rotation_deg, 0.0, epsilon = 1e-6);
+            assert_eq!(info.crop_rect_px, None);
+        }
+        other => panic!("expected reset BackgroundImage, got {other:?}"),
+    }
+
+    // 3. interpolate_with_background(0.5) + Undo ("Interpolate with Background")
+    let bg_nodes = vec![
+        Node::new(
+            NodeId(101),
+            140.0,
+            20.0,
+            NodeType::HobbyStar {
+                tension_in: 1.0,
+                tension_out: 1.0,
+                dir_constraint: HobbyDirConstraint::Free,
+            },
+        ),
+        Node::new(NodeId(102), 360.0, 20.0, NodeType::Corner),
+        Node::new(NodeId(103), 360.0, 440.0, NodeType::Corner),
+        Node::new(NodeId(104), 140.0, 440.0, NodeType::Corner),
+    ];
+    state.background_contours = vec![GlyphContour::new(ContourId(100), bg_nodes.clone())];
+    assert!(state.interpolate_with_background(0.5));
+    assert_eq!(
+        state.history.last_undo_label(),
+        Some("Interpolate with Background")
+    );
+    for (i, n) in state.contours[0].iter().enumerate() {
+        let ex = 0.5 * (fg_nodes[i].point.x.0 + bg_nodes[i].point.x.0);
+        let ey = 0.5 * (fg_nodes[i].point.y.0 + bg_nodes[i].point.y.0);
+        assert_relative_eq!(n.point.x.0, ex, epsilon = 1e-6);
+        assert_relative_eq!(n.point.y.0, ey, epsilon = 1e-6);
+    }
+    assert!(state.undo());
+    for (i, n) in state.contours[0].iter().enumerate() {
+        assert_relative_eq!(n.point.x.0, fg_nodes[i].point.x.0, epsilon = 1e-6);
+        assert_relative_eq!(n.point.y.0, fg_nodes[i].point.y.0, epsilon = 1e-6);
+    }
+}
+
+// ============================================================================
+// TC-V080-016: Curve Conversions, All-Layers Path Ops, Bookmarks & Node Visibility Parity
+// ============================================================================
+#[test]
+fn tc_v080_016_curve_conversions_all_layers_path_ops_bookmarks_and_node_toggles() {
+    let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
+    state.viewport.zoom = 0.8;
+    state.viewport.pan_offset = ScreenPoint::new(140.0, 430.0);
+
+    // 1. Cubic <-> Hobby conversion roundtrip
+    let cubic_arch = GlyphContour::new(
+        ContourId(0),
+        vec![
+            Node::new(NodeId(1), 0.0, 0.0, NodeType::Corner),
+            Node::new(NodeId(2), 0.0, 120.0, NodeType::OffCurve),
+            Node::new(NodeId(3), 80.0, 200.0, NodeType::OffCurve),
+            Node::new(NodeId(4), 200.0, 200.0, NodeType::Smooth),
+            Node::new(NodeId(5), 320.0, 200.0, NodeType::OffCurve),
+            Node::new(NodeId(6), 400.0, 120.0, NodeType::OffCurve),
+            Node::new(NodeId(7), 400.0, 0.0, NodeType::Corner),
+        ],
+    );
+    set_contours(&mut state, vec![cubic_arch.clone()]);
+    state.selected_nodes = vec![NodeId(1), NodeId(4), NodeId(7)];
+    assert!(state.convert_selected_cubic_nodes_to_hobby());
+    state.assert_invariants();
+    assert_eq!(state.contours[0].len(), 3);
+    assert!(state.contours[0]
+        .iter()
+        .all(|n| matches!(n.node_type, NodeType::HobbyStar { .. })));
+    assert!(state.undo());
+    assert_eq!(state.contours[0], cubic_arch.nodes);
+
+    // 2. Cubic -> Quadratic (<= 0.5 UPM geometric error) & exact Quadratic -> Cubic degree elevation
+    let mut open_cubic = cubic_arch.clone();
+    open_cubic.closed = false;
+    set_contours(&mut state, vec![open_cubic]);
+    let orig_bez = contour_to_bezpath_with_splines(&state.contours[0], false, 0.0, &[]);
+    assert!(state.convert_selected_contours_to_quadratic());
+    state.assert_invariants();
+    assert!(state.paths[0]
+        .elements()
+        .iter()
+        .any(|el| matches!(el, PathEl::QuadTo(..))));
+    assert!(!state.paths[0]
+        .elements()
+        .iter()
+        .any(|el| matches!(el, PathEl::CurveTo(..))));
+
+    let quad_bez = state.paths[0].clone();
+    // Sample 40 points along original cubic segments and check nearest distance to quad_bez <= 0.5 UPM
+    let mut max_err = 0.0_f64;
+    let mut last_pt = Point::ZERO;
+    for el in orig_bez.elements() {
+        match *el {
+            PathEl::MoveTo(p) | PathEl::LineTo(p) => last_pt = p,
+            PathEl::CurveTo(p1, p2, p3) => {
+                let c = CubicBez::new(last_pt, p1, p2, p3);
+                for step in 0..=20 {
+                    let pt = c.eval(f64::from(step) / 20.0);
+                    let mut best = f64::INFINITY;
+                    let mut q_prev = Point::ZERO;
+                    for qel in quad_bez.elements() {
+                        match *qel {
+                            PathEl::MoveTo(qp) => q_prev = qp,
+                            PathEl::LineTo(qp) => {
+                                let d = kurbo::Line::new(q_prev, qp)
+                                    .nearest(pt, 1e-6)
+                                    .distance_sq
+                                    .sqrt();
+                                best = best.min(d);
+                                q_prev = qp;
+                            }
+                            PathEl::QuadTo(qc, qp) => {
+                                let d = kurbo::QuadBez::new(q_prev, qc, qp)
+                                    .nearest(pt, 1e-6)
+                                    .distance_sq
+                                    .sqrt();
+                                best = best.min(d);
+                                q_prev = qp;
+                            }
+                            _ => {}
+                        }
+                    }
+                    max_err = max_err.max(best);
+                }
+                last_pt = p3;
+            }
+            _ => {}
+        }
+    }
+    assert!(
+        max_err <= 0.5,
+        "Cubic -> Quadratic approximation error must be <= 0.5 UPM, got {max_err:.6}"
+    );
+
+    // Exact degree elevation Quadratic -> Cubic
+    let first_quad = quad_bez
+        .elements()
+        .iter()
+        .find_map(|el| match *el {
+            PathEl::QuadTo(q1, p2) => Some((q1, p2)),
+            _ => None,
+        })
+        .expect("at least one QuadTo");
+    let p0_q = match quad_bez.elements()[0] {
+        PathEl::MoveTo(p) => p,
+        _ => Point::ZERO,
+    };
+    assert!(state.convert_selected_contours_to_cubic());
+    state.assert_invariants();
+    match state.paths[0].elements()[1] {
+        PathEl::CurveTo(h1, h2, p3) => {
+            let exp_h1 = Point::new(
+                (p0_q.x + 2.0 * first_quad.0.x) / 3.0,
+                (p0_q.y + 2.0 * first_quad.0.y) / 3.0,
+            );
+            let exp_h2 = Point::new(
+                (2.0 * first_quad.0.x + first_quad.1.x) / 3.0,
+                (2.0 * first_quad.0.y + first_quad.1.y) / 3.0,
+            );
+            assert_relative_eq!(h1.x, exp_h1.x, epsilon = 1e-6);
+            assert_relative_eq!(h1.y, exp_h1.y, epsilon = 1e-6);
+            assert_relative_eq!(h2.x, exp_h2.x, epsilon = 1e-6);
+            assert_relative_eq!(h2.y, exp_h2.y, epsilon = 1e-6);
+            assert_relative_eq!(p3.x, first_quad.1.x, epsilon = 1e-6);
+        }
+        other => panic!("expected elevated CurveTo, got {other:?}"),
+    }
+
+    // 3. add_offcurve_to_selected_segments & remove_offcurve_from_selected_segments
+    let box_contour = GlyphContour::new(
+        ContourId(0),
+        vec![
+            Node::new(NodeId(1), 0.0, 0.0, NodeType::Corner),
+            Node::new(NodeId(2), 300.0, 0.0, NodeType::Corner),
+            Node::new(NodeId(3), 300.0, 300.0, NodeType::Corner),
+            Node::new(NodeId(4), 0.0, 300.0, NodeType::Corner),
+        ],
+    );
+    set_contours(&mut state, vec![box_contour.clone()]);
+    state.selected_nodes = vec![NodeId(1), NodeId(2)];
+    assert!(state.add_offcurve_to_selected_segments());
+    state.assert_invariants();
+    assert_eq!(state.contours[0].len(), 6);
+    assert_relative_eq!(state.contours[0][1].point.x.0, 100.0, epsilon = 1e-6);
+    assert_relative_eq!(state.contours[0][2].point.x.0, 200.0, epsilon = 1e-6);
+
+    state.selected_nodes = vec![NodeId(1), NodeId(2)];
+    assert!(state.remove_offcurve_from_selected_segments());
+    state.assert_invariants();
+    assert_eq!(state.contours[0].len(), 4);
+
+    // 4. apply_path_op_across_all_layers(LayerPathOp::ReverseContours)
+    let active_area_before = contour_signed_area(&state.contours[0]);
+    let edit_nodes = vec![
+        Node::new(NodeId(51), 0.0, 0.0, NodeType::Corner),
+        Node::new(NodeId(52), 240.0, 0.0, NodeType::Corner),
+        Node::new(NodeId(53), 240.0, 240.0, NodeType::Corner),
+        Node::new(NodeId(54), 0.0, 240.0, NodeType::Corner),
+    ];
+    let locked_nodes = vec![
+        Node::new(NodeId(61), 0.0, 0.0, NodeType::Corner),
+        Node::new(NodeId(62), 180.0, 0.0, NodeType::Corner),
+        Node::new(NodeId(63), 180.0, 180.0, NodeType::Corner),
+        Node::new(NodeId(64), 0.0, 180.0, NodeType::Corner),
+    ];
+    let edit_area_before = contour_signed_area(&edit_nodes);
+    state.set_companion_master_layers(vec![
+        CompanionMasterLayer {
+            id: 1,
+            name: "Bold".into(),
+            color_rgba: [220, 60, 80, 180],
+            contours: vec![edit_nodes],
+            closed_flags: vec![true],
+            anchors: Vec::new(),
+            editable: true,
+        },
+        CompanionMasterLayer {
+            id: 2,
+            name: "Locked".into(),
+            color_rgba: [60, 140, 220, 180],
+            contours: vec![locked_nodes.clone()],
+            closed_flags: vec![true],
+            anchors: Vec::new(),
+            editable: false,
+        },
+    ]);
+    state.selected_nodes.clear();
+    let snap_pre_op = state.snapshot();
+    assert!(state.apply_path_op_across_all_layers(LayerPathOp::ReverseContours));
+    assert_relative_eq!(
+        contour_signed_area(&state.contours[0]),
+        -active_area_before,
+        epsilon = 1e-6
+    );
+    assert_relative_eq!(
+        contour_signed_area(&state.companion_master_layers[0].contours[0]),
+        -edit_area_before,
+        epsilon = 1e-6
+    );
+    assert_eq!(
+        state.companion_master_layers[1].contours[0], locked_nodes,
+        "editable == false companion layer must remain untouched"
+    );
+    assert!(state.undo() && state.snapshot() == snap_pre_op);
+
+    // 5. Viewport Bookmark save & swap toggle
+    state.viewport.zoom = 1.25;
+    state.viewport.pan_offset = ScreenPoint::new(180.0, 390.0);
+    state.save_viewport_bookmark();
+    state.viewport.zoom = 2.5;
+    state.viewport.pan_offset = ScreenPoint::new(90.0, 210.0);
+    assert!(state.toggle_saved_viewport_bookmark());
+    assert_relative_eq!(state.viewport.zoom, 1.25, epsilon = 1e-6);
+    assert_relative_eq!(state.viewport.pan_offset.x.0, 180.0, epsilon = 1e-4);
+    assert!(state.toggle_saved_viewport_bookmark());
+    assert_relative_eq!(state.viewport.zoom, 2.5, epsilon = 1e-6);
+
+    // 6. Granular node/overlay visibility toggles & egui vs tiny-skia SSIM >= 0.985 parity
+    state.companion_master_layers.clear();
+    state.viewport.zoom = 1.0;
+    state.viewport.pan_offset = ScreenPoint::new(150.0, 360.0);
+    state.show_metrics = false;
+    state.show_grid = false;
+    state.show_selection_info_hud = false;
+
+    set_contours(&mut state, vec![cubic_arch]);
+    state.background_contours = vec![GlyphContour::new(
+        ContourId(10),
+        vec![
+            Node::new(NodeId(201), 40.0, 40.0, NodeType::Corner),
+            Node::new(NodeId(202), 140.0, 40.0, NodeType::Corner),
+            Node::new(NodeId(203), 140.0, 140.0, NodeType::Corner),
+        ],
+    )];
+    state.set_components(vec![CanvasComponent {
+        id: ComponentId(9),
+        component_name: "dot".into(),
+        contours: vec![GlyphContour::new(
+            ContourId(20),
+            vec![
+                Node::new(NodeId(301), 220.0, 40.0, NodeType::Corner),
+                Node::new(NodeId(302), 280.0, 40.0, NodeType::Corner),
+                Node::new(NodeId(303), 280.0, 100.0, NodeType::Corner),
+                Node::new(NodeId(304), 220.0, 100.0, NodeType::Corner),
+            ],
+        )],
+        transform: Affine2D::identity(),
+        locked: false,
+        automatic_alignment: false,
+        selected: false,
+    }]);
+
+    let base_ts = rasterize_canvas_subregion(&state, &state.theme, 560, 400);
+    state.show_nodes_oncurve = false;
+    let no_on_ts = rasterize_canvas_subregion(&state, &state.theme, 560, 400);
+    assert_ne!(base_ts.data(), no_on_ts.data());
+    state.show_nodes_oncurve = true;
+
+    state.show_nodes_offcurve = false;
+    let no_off_ts = rasterize_canvas_subregion(&state, &state.theme, 560, 400);
+    assert_ne!(base_ts.data(), no_off_ts.data());
+    state.show_nodes_offcurve = true;
+
+    state.show_node_coordinates = true;
+    let coords_ts = rasterize_canvas_subregion(&state, &state.theme, 560, 400);
+    assert_ne!(base_ts.data(), coords_ts.data());
+    state.show_node_coordinates = false;
+
+    state.show_background_nodes = true;
+    state.show_component_piece_frames = true;
+    let rich_ts = rasterize_canvas_subregion(&state, &state.theme, 560, 400);
+    assert_ne!(base_ts.data(), rich_ts.data());
+
+    let egui_img = rasterize_egui_canvas(&state, 560, 400);
+    let ts_img = DynamicImage::ImageRgba8(pixmap_to_rgba_image(rich_ts));
+    let parity_ssim = compute_ssim(&egui_img, &ts_img, SSIM_DEFAULT_WINDOW_SIZE);
+    assert!(
+        parity_ssim >= 0.985,
+        "egui vs tiny-skia rendering parity must achieve SSIM >= 0.985, got {parity_ssim:.6}"
+    );
+}
+
+mod v080_autotrace_prefs_parity;

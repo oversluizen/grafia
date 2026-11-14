@@ -1,3 +1,12 @@
+#![allow(
+    clippy::too_many_lines,
+    clippy::cognitive_complexity,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::too_many_arguments,
+    clippy::iter_over_hash_type
+)]
 //! Normative COTS Verification Suite for `SPEC-003` (`grafia v0.2.0`):
 //! Transform Tools (`R`, `S`), 8-Knob Bounding Box (`Cmd+Alt+Shift+B`), `LassoTool` (`Shift+V`),
 //! `ZoomTool` (`Z`, `Cmd+Space`), Canvas Clipboard (`Cmd+C`, `Cmd+X`, `Cmd+V`), and the
@@ -1943,8 +1952,8 @@ fn test_spec003_vector_cursors_slanted_marquee_render_cmd_space_zoom_and_scale_a
     pointer_move(&mut state, near_x_end, false, false, false, false);
     assert!(
         matches!(
-            state.v020_drag,
-            grafia::V020DragState::TransformPendingOrDragging { active: false, .. }
+            state.bbox_drag,
+            grafia::BBoxDragState::TransformPendingOrDragging { active: false, .. }
         ),
         "M-37: ScaleTool drag starting within <= 5.0 UPM on X axis must keep active == false"
     );
@@ -1957,7 +1966,7 @@ fn test_spec003_vector_cursors_slanted_marquee_render_cmd_space_zoom_and_scale_a
 #[test]
 fn test_spec003_v020_visual_verification_renders_and_strip() {
     use grafia::adapters::headless::pixmap_to_rgba_image;
-    use grafia::V020DragState;
+    use grafia::BBoxDragState;
     use image::{Rgba, RgbaImage};
     use std::fs;
     use std::path::PathBuf;
@@ -2341,8 +2350,8 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
     pointer_press(&mut s38_a, r38_start_s, false, false, false, false);
     pointer_move(&mut s38_a, r38_end_s, false, false, false, false);
     assert!(matches!(
-        s38_a.v020_drag,
-        V020DragState::TransformPendingOrDragging {
+        s38_a.bbox_drag,
+        BBoxDragState::TransformPendingOrDragging {
             active: true,
             is_rotate: true,
             ..
@@ -2389,8 +2398,8 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
     pointer_press(&mut s38_c, s38c_start_s, false, false, false, false);
     pointer_move(&mut s38_c, s38c_end_s, false, false, false, false);
     assert!(matches!(
-        s38_c.v020_drag,
-        V020DragState::TransformPendingOrDragging {
+        s38_c.bbox_drag,
+        BBoxDragState::TransformPendingOrDragging {
             active: true,
             is_rotate: false,
             ..
@@ -2443,8 +2452,8 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
         pointer_move(&mut s39_a, scr, false, false, false, false);
     }
     assert!(matches!(
-        s39_a.v020_drag,
-        V020DragState::LassoDragging { .. }
+        s39_a.bbox_drag,
+        BBoxDragState::LassoDragging { .. }
     ));
     assert!(!s39_a.selected_nodes.is_empty());
     let scr_a_last = s39_a.viewport.to_screen(*lasso_pts_a.last().unwrap());
@@ -2492,8 +2501,8 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
     pointer_press(&mut s39_c, z_start, false, false, false, false);
     pointer_move(&mut s39_c, z_end, false, false, false, false);
     assert!(matches!(
-        s39_c.v020_drag,
-        V020DragState::ZoomDragging { .. }
+        s39_c.bbox_drag,
+        BBoxDragState::ZoomDragging { .. }
     ));
     let q39_c = raster_quad(
         &s39_c,
@@ -2508,7 +2517,7 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
     s39_d.activate_tool(CanvasTool::Zoom);
     let z_start_f = s39_d.viewport.to_font(z_start);
     let z_end_f = s39_d.viewport.to_font(z_end);
-    let _ = grafia::adapters::v020_interaction::handle_v020_pointer_press(
+    let _ = grafia::adapters::contour_edit_interaction::handle_bbox_and_transform_pointer_press(
         &mut s39_d,
         z_start,
         z_start_f,
@@ -2516,10 +2525,10 @@ fn test_spec003_v020_visual_verification_renders_and_strip() {
         false,
         false,
     );
-    let _ = grafia::adapters::v020_interaction::handle_v020_pointer_move(
+    let _ = grafia::adapters::contour_edit_interaction::handle_bbox_and_transform_pointer_move(
         &mut s39_d, z_end, z_end_f, false, false, false, false,
     );
-    let _ = grafia::adapters::v020_interaction::handle_v020_pointer_release(
+    let _ = grafia::adapters::contour_edit_interaction::handle_bbox_and_transform_pointer_release(
         &mut s39_d,
         false,
         false,

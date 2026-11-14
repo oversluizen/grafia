@@ -1,8 +1,8 @@
 //! Pass 4/5 Pen close-halo, `pending_pen_first_bcp_in`, and authentic Reference Vector Canvas vector cursor overlay (`SPEC-002 §3.2.4.4`, `SPEC-003 §2.1.3, §2.2, §2.3 & §2.4`).
 
-pub use crate::adapters::cursor_overlay_ts::render_pen_extras_and_cursor_tiny_skia;
+use crate::adapters::bbox_selection_tools::BBoxDragState;
+pub use crate::adapters::cursor_pixmap_pass::render_pen_extras_and_cursor_tiny_skia;
 use crate::adapters::state::{CanvasTool, CanvasViewMode, GrafiaCanvasState};
-use crate::adapters::v020_tools::V020DragState;
 use crate::core::{BBoxAction, Node, NodeType, ScreenPoint};
 use crate::interaction::{PenToolState, SelectToolState};
 use crate::tokens::{
@@ -12,11 +12,10 @@ use crate::tokens::{
     LASSO_CURSOR_TAIL_OUTER_POLYGON_DP, PEN_CLOSE_HALO_RADIUS_FACTOR,
     PEN_ELEMENT_BADGE_INNER_RECT_DP, PEN_ELEMENT_BADGE_OUTER_RECT_DP, PEN_NIB_BREATHER_HOLE_DP,
     PEN_NIB_COLLAR_CUFF_RECT_DP, PEN_NIB_INNER_POLYGON_DP, PEN_NIB_OUTER_POLYGON_DP,
-    PEN_NIB_SLIT_Y_RANGE_AND_WIDTH_DP, PEN_NODE_HIT_RADIUS_DP, PEN_PLUS_INNER_HBAR_RECT_DP,
-    PEN_PLUS_INNER_VBAR_RECT_DP, PEN_PLUS_OUTER_HBAR_RECT_DP, PEN_PLUS_OUTER_VBAR_RECT_DP,
-    ROTATE_CURSOR_GAP_RECT_DP, ROTATE_CURSOR_HEAD_INNER_POLYGON_DP,
-    ROTATE_CURSOR_HEAD_OUTER_POLYGON_DP, ROTATE_CURSOR_RING_RADII_DP,
-    SCALE_CURSOR_LEFT_HEAD_INNER_DP, SCALE_CURSOR_LEFT_HEAD_OUTER_DP,
+    PEN_NIB_SLIT_Y_RANGE_AND_WIDTH_DP, PEN_PLUS_INNER_HBAR_RECT_DP, PEN_PLUS_INNER_VBAR_RECT_DP,
+    PEN_PLUS_OUTER_HBAR_RECT_DP, PEN_PLUS_OUTER_VBAR_RECT_DP, ROTATE_CURSOR_GAP_RECT_DP,
+    ROTATE_CURSOR_HEAD_INNER_POLYGON_DP, ROTATE_CURSOR_HEAD_OUTER_POLYGON_DP,
+    ROTATE_CURSOR_RING_RADII_DP, SCALE_CURSOR_LEFT_HEAD_INNER_DP, SCALE_CURSOR_LEFT_HEAD_OUTER_DP,
     SCALE_CURSOR_RIGHT_HEAD_INNER_DP, SCALE_CURSOR_RIGHT_HEAD_OUTER_DP,
     SCALE_CURSOR_SHAFT_INNER_RECT_DP, SCALE_CURSOR_SHAFT_OUTER_RECT_DP,
     SELECT_ARROW_INNER_POLYGON_DP, SELECT_ARROW_OUTER_POLYGON_DP,
@@ -54,6 +53,7 @@ pub fn find_open_contour_close_or_resume_target(
                 && !state.contours[a].is_empty()
         })
     };
+    let hit_r = state.effective_pen_node_hit_radius_dp();
     for c_idx in order {
         if state.is_contour_closed(c_idx) || state.contours[c_idx].is_empty() {
             continue;
@@ -68,13 +68,14 @@ pub fn find_open_contour_close_or_resume_target(
                 .viewport
                 .to_screen(on_curve[0].point)
                 .distance_to(scr_pt)
-                < PEN_NODE_HIT_RADIUS_DP
+                < hit_r
         {
             return Some((c_idx, on_curve[0].clone(), true));
         }
-        if let Some(last) = on_curve.last().filter(|n| {
-            state.viewport.to_screen(n.point).distance_to(scr_pt) < PEN_NODE_HIT_RADIUS_DP
-        }) {
+        if let Some(last) = on_curve
+            .last()
+            .filter(|n| state.viewport.to_screen(n.point).distance_to(scr_pt) < hit_r)
+        {
             return Some((c_idx, last.clone(), false));
         }
     }
@@ -101,7 +102,7 @@ impl GrafiaCanvasState {
         let pt = pointer_pos?;
         let active_drag = !matches!(self.select_state, SelectToolState::Idle)
             || !matches!(self.pen_state, PenToolState::Idle)
-            || !matches!(self.v020_drag, V020DragState::Idle);
+            || !matches!(self.bbox_drag, BBoxDragState::Idle);
         if !canvas_rect.contains(Pos2::new(pt.x.0, pt.y.0)) && !active_drag {
             return None;
         }
@@ -111,20 +112,22 @@ impl GrafiaCanvasState {
         if self.view_mode == CanvasViewMode::PreviewFilled {
             return Some(GrafiaCursorKind::HandOpen);
         }
-        if let V020DragState::BBoxDragging { action, .. } = self.v020_drag {
+        if let BBoxDragState::BBoxDragging { action, .. } = self.bbox_drag {
             return Some(bbox_action_to_cursor(action));
         }
         if !matches!(self.select_state, SelectToolState::Idle) {
             return Some(GrafiaCursorKind::SelectArrow);
         }
 
-        let (is_ctrl, is_alt) = (self.last_modifiers.control, self.last_modifiers.option);
+        let (is_ctrl, is_alt) = (
+            self.drag_transients.last_modifiers.control,
+            self.drag_transients.last_modifiers.option,
+        );
         match self.active_tool {
             CanvasTool::Pen => {
-                if self.hovered_pen_close_node.is_some()
-                    || self.hovered_pen_close_target.is_some()
+                if self.hovered_pen_close_target.is_some()
                     || find_open_contour_close_or_resume_target(self, pt).is_some()
-                    || self.hit_test_pen_node(pt).is_some_and(|id| {
+                    || self.pen_hover_node_hit(pt).is_some_and(|id| {
                         self.find_node(id)
                             .is_some_and(|n| n.node_type != NodeType::OffCurve)
                     })
@@ -161,7 +164,9 @@ impl GrafiaCanvasState {
             | CanvasTool::Measurement
             | CanvasTool::Annotation
             | CanvasTool::Pixel
-            | CanvasTool::Text => Some(GrafiaCursorKind::SelectArrow),
+            | CanvasTool::Text
+            | CanvasTool::TrueTypeInstructor
+            | CanvasTool::Hoi => Some(GrafiaCursorKind::SelectArrow),
         }
     }
 }
@@ -171,6 +176,25 @@ pub(crate) trait CursorSink {
     fn rect(&mut self, r: [f32; 4], is_black: bool);
     fn circle(&mut self, dx: f32, dy: f32, r: f32, is_black: bool);
     fn vline(&mut self, y0: f32, y1: f32, w: f32, is_black: bool);
+}
+
+fn emit_pen_cursor_primitives(kind: GrafiaCursorKind, sink: &mut impl CursorSink) {
+    sink.poly(PEN_NIB_OUTER_POLYGON_DP, false);
+    sink.poly(PEN_NIB_INNER_POLYGON_DP, true);
+    sink.rect(PEN_NIB_COLLAR_CUFF_RECT_DP, true);
+    let slit = PEN_NIB_SLIT_Y_RANGE_AND_WIDTH_DP;
+    sink.vline(slit[0], slit[1], slit[2], false);
+    let hole = PEN_NIB_BREATHER_HOLE_DP;
+    sink.circle(hole[0], hole[1], hole[2], false);
+    if kind == GrafiaCursorKind::PenElement {
+        sink.rect(PEN_ELEMENT_BADGE_OUTER_RECT_DP, false);
+        sink.rect(PEN_ELEMENT_BADGE_INNER_RECT_DP, true);
+    } else if kind == GrafiaCursorKind::PenPlus {
+        sink.rect(PEN_PLUS_OUTER_VBAR_RECT_DP, false);
+        sink.rect(PEN_PLUS_OUTER_HBAR_RECT_DP, false);
+        sink.rect(PEN_PLUS_INNER_VBAR_RECT_DP, true);
+        sink.rect(PEN_PLUS_INNER_HBAR_RECT_DP, true);
+    }
 }
 
 pub(crate) fn emit_cursor_primitives(kind: GrafiaCursorKind, sink: &mut impl CursorSink) {
@@ -185,24 +209,7 @@ pub(crate) fn emit_cursor_primitives(kind: GrafiaCursorKind, sink: &mut impl Cur
         }
         GrafiaCursorKind::PenStandard
         | GrafiaCursorKind::PenElement
-        | GrafiaCursorKind::PenPlus => {
-            sink.poly(PEN_NIB_OUTER_POLYGON_DP, false);
-            sink.poly(PEN_NIB_INNER_POLYGON_DP, true);
-            sink.rect(PEN_NIB_COLLAR_CUFF_RECT_DP, true);
-            let slit = PEN_NIB_SLIT_Y_RANGE_AND_WIDTH_DP;
-            sink.vline(slit[0], slit[1], slit[2], false);
-            let hole = PEN_NIB_BREATHER_HOLE_DP;
-            sink.circle(hole[0], hole[1], hole[2], false);
-            if kind == GrafiaCursorKind::PenElement {
-                sink.rect(PEN_ELEMENT_BADGE_OUTER_RECT_DP, false);
-                sink.rect(PEN_ELEMENT_BADGE_INNER_RECT_DP, true);
-            } else if kind == GrafiaCursorKind::PenPlus {
-                sink.rect(PEN_PLUS_OUTER_VBAR_RECT_DP, false);
-                sink.rect(PEN_PLUS_OUTER_HBAR_RECT_DP, false);
-                sink.rect(PEN_PLUS_INNER_VBAR_RECT_DP, true);
-                sink.rect(PEN_PLUS_INNER_HBAR_RECT_DP, true);
-            }
-        }
+        | GrafiaCursorKind::PenPlus => emit_pen_cursor_primitives(kind, sink),
         GrafiaCursorKind::HandOpen | GrafiaCursorKind::HandClosed => {
             let [palm_r, outline_w, finger_dy] = HAND_CURSOR_DIMENSIONS_DP;
             sink.circle(0.0, 0.0, palm_r + outline_w, false);
@@ -347,10 +354,7 @@ pub fn paint_pen_extras_and_cursor_egui(
             }
         }
         if state.active_tool == CanvasTool::Pen {
-            if let Some(close_id) = state
-                .hovered_pen_close_node
-                .or_else(|| state.hovered_pen_close_target.map(|(_, id)| id))
-            {
+            if let Some((_, close_id)) = state.hovered_pen_close_target {
                 if let Some(node) = state.find_node(close_id) {
                     let scr = state.viewport.to_screen(node.point);
                     let radius =

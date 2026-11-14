@@ -1,73 +1,177 @@
-# `grafia` — Universal Interactive Glyph & Cubic Bézier Vector Canvas Engine (`v0.7.0`)
+# grafia
 
-`grafia` is a standalone, application-agnostic Rust 2D cubic Bézier contour, glyph, and vector canvas engine built on Linebender (`kurbo`), `lyon_tessellation`, `egui`, and `tiny-skia`.
+**Interactive 2D Cubic Bézier, Spline, Vector & Typography Canvas Widget for `egui`**
 
----
+[![Crates.io](https://img.shields.io/crates/v/grafia.svg)](https://crates.io/crates/grafia)
+[![Docs.rs](https://docs.rs/grafia/badge.svg)](https://docs.rs/grafia)
+[![egui 0.37](https://img.shields.io/badge/egui-0.37-blue.svg)](https://github.com/emilk/egui)
+[![forbid(unsafe_code)](https://img.shields.io/badge/unsafe-forbid-success.svg)](https://github.com/oversluizen/grafia)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](https://github.com/oversluizen/grafia)
 
-## 1. Architecture & Scope (`SPEC-001` .. `SPEC-010`)
+![grafia — Interactive 2D Vector & Typography Canvas for egui](https://raw.githubusercontent.com/oversluizen/grafia/main/docs/assets/grafia_hero_banner.png)
 
-`grafia` serves as a dedicated **2D Vector Canvas View & Controller** component (`GrafiaCanvasState`, `GrafiaCanvasWidget`, `GrafiaPreviewWidget`, `PreviewStripCache`, `GrafiaTheme`) with a strict **Hexagonal Data-In / Event-Out Host Bridge** (`load_glyph`, `export_glyph`, `drain_host_requests`, `drain_spacing_deltas`, `drain_kerning_deltas`, `compute_selection_info`, `apply_selection_info_action`, `GrafiaCanvasResponse`).
-
-- **Implemented in `v0.1.0` through `v0.7.0`**:
-  - **Background Layer, 2D Anchors, Pre-Resolved Components, Fit Curve, Live Contour Stroke & `CompanionMasterLayer` (`v0.7.0` — `SPEC-008`)**:
-    - Foreground/Background contour layer workflow (`Cmd/Ctrl + J` selection-to-background, `Cmd/Ctrl + K` layer swap, background editing toggle).
-    - 2D `CanvasAnchor` placement, `Tab` cycling, magnetic `SnapEngine` integration, `GhostMarkPath` mark cloud overlay, and `CanvasHostRequest::ResetDefaultAnchors`.
-    - Pre-resolved `CanvasComponent` rendering, locking, auto-alignment, `decompose_selected_components` (`Cmd/Ctrl + Shift + D`), and double-click `CanvasHostRequest::OpenComponentSource`.
-    - 8-step `fit_selected_curves_by_step` (`57%..92%`), live `ContourStrokeStyle` offset preview, destructive `expand_selected_contour_strokes`, and `CompanionMasterLayer` interpolation compatibility diagnostics.
-  - **Separable Blur Preview Strip, `PreviewStripCache`, Pure 2D `SelectionInfo`, Rulers & Background Image (`v0.6.0` — `SPEC-007`)**:
-    - `render_preview_strip_rgba` and generation-gated `PreviewStripCache` (`GrafiaCanvasState::content_generation()`) for zero-CPU / zero-GPU idle frame overhead.
-    - Pure 2D 5-mode `SelectionInfo` inspector projection, `SelectionInfoAction`, top/left UPM rulers (`Cmd/Ctrl + R`), and `CanvasBackgroundImage`.
-  - **Multi-Glyph Horizontal Text Stream, Caret Navigation & Interactive Spacing/Kerning (`v0.5.0` — `SPEC-006`)**:
-    - `CanvasTool::Text` (`T`), `GlyphSlot` horizontal text run, double-click slot activation, and `SpacingDelta` / `KerningDelta` / `TextStreamEditRequest` host ports.
-  - Interactive single-glyph vector editing with `Select` (`V`), `Pen` (`P`), `Rotate` (`R`), `Scale` (`S`), `CanvasTool::Lasso` (`Shift + V`), `Zoom` (`Z` / `Cmd/Ctrl + Space`), `Knife` (`E` / `Shift + E`), `Primitives` (`F` / `Shift + F`), `Measurement` (`L` / `Cmd + Ctrl + Opt`), `Annotation` (`A` / `Shift + A`), `Pencil` (`B`), `Pixel` (`X`), and `Text` (`T`).
-  - **Specialized Edit View Tools, Boolean Path Operations & Canvas Annotations (`v0.4.0` — `SPEC-005`)**:
-    - **Boolean Path Operations (`remove_overlap_in_contours` `Cmd/Ctrl + Shift + O`, `subtract_contours`, `intersect_contours`)**: Cubic Bézier and line segment intersection graph solver, cycle extraction, inner-segment pruning, and Non-Zero Winding outer/counter reconstruction.
-    - **`Knife` (`E` / `Shift + E`)**: Recursive De Casteljau line-segment and line-cubic intersection solver, multi-hit and counter-ring closed-contour slicing (`knife_cut_paths_in_layer`), single-hit contour opening, `Alt/Option` node insertion without slicing (`knife_add_nodes_in_layer`), `Shift` $15^\circ$ angle constraint, and orange slice-line + intersection dot overlay (`r = 3.0 dp`).
-    - **`Primitives` (`F` / `Shift + F`)**: Rectangle and 4-anchor $\kappa \approx 0.55228475$ circle/ellipse placement with `Shift` 1:1 aspect lock, `Alt/Option` center-outward expansion, `Space` origin panning during drag, `"W × H"` dimension pill, and single-click `ToolDialogRequest::Primitive` (`100 × 100 UPM`).
-    - **`Measurement` (`L` & temporary `Cmd + Ctrl + Opt`)**: Selected-node Blue `OnCurve` `(x, y)` labels, Green `OffCurve` `(Δx, Δy)` handle offset labels, Red segment-midpoint `Δx, Δy` span labels, active ruler ray intersecting LSB/RSB and all contours, node snapping, `Shift` $15^\circ$ constraint, typographic vertical angle (`atan2(dx, dy)` in `(-180°, 180°]`), and `'G'` *Add Measurement Line as Guide*.
-    - **`Annotation` (`A` / `Shift + A` & `CanvasAnnotation`)**: All 5 annotation kinds (`Text`, `Arrow`, `Circle`, `Plus`, `Minus`), interactive handle manipulation, `Shift`-axis-constrained dragging, `Delete`/`Backspace`, and `Cmd/Ctrl + X/C/V` clipboard support.
-    - **`Pencil` (`B`)**: Freehand sketching with Ramer-Douglas-Peucker simplification, automatic closure detection on `P0`, and least-squares Schneider cubic Bézier curve fitting (`fit_freehand_contour_nodes`).
-    - **`Pixel` (`X`)**: Grid-cell stamping and erasing (`remove` toggle on occupied cells) plus `Shift + Click` Bresenham line placement (`bresenham_pixel_cells`).
-  - **Canvas Grid, Local & Global Guides, Magnetic `SnapEngine`, Alignment Zones & Light/Dark/System Appearance (`v0.3.0` — `SPEC-004`)**.
-  - **8-Knob Selection Bounding Box (`Cmd/Ctrl + Alt + Shift + B`)**, **Canvas Outline Clipboard (`Cmd/Ctrl + C/X/V`)**, and **Topological Path Operations (`v0.2.0` — `SPEC-003`)**: `reverse_selected_contours`, `make_node_first`, `correct_path_direction` (`Cmd/Ctrl + Shift + R`), `add_extremes`, `add_inflection_points`, `tidy_up_contours` (`Cmd/Ctrl + Shift + T`), `align_selected_nodes` (`Cmd/Ctrl + Shift + A`), `connect_selected_open_endpoints_in_contours`, `close_open_contours_in_layer`, duplicate-node warning rings, and `TransformGridAnchor` (`0..8`) / `MetricsOrigin` (`0..4`) transforms.
-  - **Core Cubic Bézier Topology & 5-Pass Rendering (`v0.1.0` — `SPEC-002`)**: Persistent cubic Bézier construction, De Casteljau segment splitting, extremum snapping ($dx/dt = 0, dy/dt = 0$), curve-healing node deletion (`heal_delete_nodes`), 4-case inverse-Bernstein `drag_cubic_segment` belly dragging, Non-Zero Winding (`FillRule::NonZero`), 3 view modes (`EditWireframe`, `PreviewFilled`, `ShapeThumbnail`), 2-layer `ShapeLocator` minimap, atomic `CommandHistory` (`Undo` / `Redo`), and 1-to-1 rendering parity between `egui::Painter` and `tiny_skia::Pixmap`.
-- **Normatively Specified & Anchored with RED COTS Tests (`v0.5.0` through `v0.9.0`)**:
-  - `SPEC-006` (`v0.5.0` — Multi-Glyph Horizontal Text Stream & Kerning)
-  - `SPEC-007` (`v0.6.0` — Separable Gaussian Blur Preview, 5-Mode `SelectionInfo` & Canvas Rulers)
-  - `SPEC-008` (`v0.7.0` — Background Layer, 2D Anchors, Pre-Resolved Components, Fit Curve, Live Contour Stroke & `CompanionMasterLayer` Compatibility)
-  - `SPEC-009` (`v0.8.0` — $G^2$ Curve Harmonization, Tangent Balance Lines, Proportional Handle Servo, Interpolated Nudge, Master Trajectory Kinks & Proactive Outline Audit)
-  - `SPEC-010` (`v0.9.0` — Non-Destructive Smart Corners, Ink Traps, W3C Stylus Calligraphic Brush, Curvature Heatmap Envelope, Orthogonal Stem Thickness Gauge, Green's Theorem Counter Balance & Symmetry Overlays)
+> **Try the live interactive desktop showcase in one command:**
+> ```sh
+> cargo run --example vector_canvas_demo
+> ```
 
 ---
 
-## 2. Module Overview (`src/`)
+## 1. Why `grafia`?
 
-| Module | Responsibility |
+`grafia` is a zero-`unsafe`, battery-efficient, drop-in 2D vector and spline canvas widget for [`egui`](https://github.com/emilk/egui), built on the Linebender geometry stack (`kurbo`), `lyon_tessellation`, and `tiny-skia`.
+
+Rather than locking your application into a rigid document format or monolithic editor shell, `grafia` operates as a **Hexagonal Data-In / Event-Out View & Controller**: your host application feeds pure 2D scene geometry into [`GrafiaCanvasState`], renders [`GrafiaCanvasWidget`] inside any `egui::Ui`, and drains strongly-typed semantic events and mutations from the host-port queues.
+
+### Built for Four Core Domains
+
+1. **Vector Illustration & SVG Editors**
+   - Persistent cubic Bézier pen & select state machines, tension-controlled **Hobby splines** (`NodeType::HobbyStar`) and $G^2$ **Euler/Spiro spirals** (`NodeType::EulerSpiro`).
+   - Exact **Boolean Pathfinder** operations (`remove_overlap_in_contours`, `subtract_contours`, `intersect_contours`), recursive De Casteljau **Knife** slicing, geometric **Primitives** (rectangles, ellipses), freehand **Pencil** curve fitting, and **Multi-Layer Vector Color/Gradients** (`Solid`, `LinearGradient`, `RadialGradient`, `SweepGradient`, `Bitmap`, `ClippingMask`) with interactive on-canvas gradient stop handles.
+2. **Typeface & Font Engineering**
+   - Native UPM (`FontUnit` / `FontPoint`) coordinate space, foreground/background layers, **2D Anchors** with diacritic mark-cloud overlays (`GhostMarkPath`), and pre-resolved **Components** with parametric **Smart Handles** (`CanvasSmartHandle`).
+   - Interactive **Multi-Glyph Text Streams** (`WritingDirection::LeftToRight` horizontal and `WritingDirection::TopToBottom` vertical CJK layout) with live in-canvas spacing (`LSB`/`RSB`/`TSB`/`BSB`) and pair kerning deltas.
+   - Variable-font **Companion Master Compatibility** diagnostics, **Higher-Order Interpolation (`HOI`)** control-polygon overlays, and **PostScript / TrueType Hinting** visual instructors.
+3. **2D CAD, CAM, Plotter & Profile Editors**
+   - Type-safe bijective coordinate transforms (`FontPoint` $\leftrightarrow$ `ScreenPoint`), domain-agnostic **Custom Reference Frames** (`CustomReferenceFrame` with outer/inner bounds, $N_x \times N_y$ grids, keyline circles, and zoom-scaling band lines), top/left UPM rulers, magnetic **SnapEngine**, and live **Measurement Rays** with typographic angle and span readouts.
+4. **Bitmap-to-Vector Digitization**
+   - Built-in deterministic **7-stage Bitmap & Camera Auto-Trace** (`trace_background_image`) featuring Sauvola integral-image adaptive thresholding, $3\times 3$ homography perspective deskew, marching squares, Ramer-Douglas-Peucker simplification, and Schneider least-squares cubic Bézier fitting.
+
+---
+
+## 2. Quick Start
+
+Add `grafia` to your `Cargo.toml` and drop [`GrafiaCanvasWidget`] into any `egui::Ui`:
+
+```rust
+use grafia::{
+    CanvasHostRequest, ContourId, Glyph, GlyphContour, GlyphMetrics,
+    GrafiaCanvasState, GrafiaCanvasWidget, GrafiaTheme, Node, NodeId, NodeType,
+};
+
+// 1. Initialize the theme and canvas state once in your application struct:
+let theme = GrafiaTheme::sonoma_default();
+let mut state = GrafiaCanvasState::new(theme.clone());
+
+// 2. Load a 2D vector shape or glyph into the hexagonal Data-In port:
+let contour = GlyphContour::new(
+    ContourId(0),
+    vec![
+        Node::new(NodeId(1), 100.0, 0.0, NodeType::Corner),
+        Node::new(NodeId(2), 350.0, 700.0, NodeType::Corner),
+        Node::new(NodeId(3), 600.0, 0.0, NodeType::Corner),
+    ],
+);
+let glyph = Glyph {
+    name: "A".to_string(),
+    upm: 1000,
+    width: 700.0,
+    height: 700.0,
+    contours: vec![contour],
+    ..Glyph::default()
+};
+state.load_glyph(glyph, GlyphMetrics::default());
+
+// 3. Inside your egui update loop, render the widget and poll Event-Out requests:
+fn update_canvas(ui: &mut egui::Ui, state: &mut GrafiaCanvasState, theme: &GrafiaTheme) {
+    let _response = GrafiaCanvasWidget::new(state, theme).show(ui);
+
+    for request in state.drain_host_requests() {
+        if let CanvasHostRequest::OpenComponentSource { id, component_name } = request {
+            let _ = (id, component_name);
+        }
+    }
+}
+```
+
+---
+
+## 3. Visual Feature Showcase
+
+| Dark Mode Cubic Bézier & Measurement Guides | Light Mode Rulers, Background Layer & 2D Anchors |
+| :---: | :---: |
+| ![Dark Mode Cubic Bézier & Guides](https://raw.githubusercontent.com/oversluizen/grafia/main/docs/assets/dark_cubic_bezier_and_guides.png) | ![Light Mode Rulers & 2D Anchors](https://raw.githubusercontent.com/oversluizen/grafia/main/docs/assets/light_rulers_and_anchors.png) |
+| Full dark-mode wireframe editing with cubic off-curve handles, angled measurement guide with live span/angle telemetry pills, alignment zone badges, and bottom filled preview strip. | Precision top/left UPM rulers with cursor hairlines, rose background reference layer, named 2D anchors (`top`, `bottom`, `ogonek`), and live glyph metrics HUD. |
+| **Multi-Glyph Text Stream & Live Kerning** | **Live Contour Stroke & Master Compatibility** |
+| ![Multi-Glyph Text Stream & Kerning](https://raw.githubusercontent.com/oversluizen/grafia/main/docs/assets/text_stream_and_kerning.png) | ![Live Contour Stroke & Master Compatibility](https://raw.githubusercontent.com/oversluizen/grafia/main/docs/assets/live_stroke_and_master_compat.png) |
+| Interactive multi-glyph text run (`AonsA`) with caret navigation, text range selection, beneath-slot LSB/RSB/kerning readouts, and synchronized separable-blur bottom preview strip. | Non-destructive calligraphic stroke expansion (`ContourStrokeStyle` with round caps/joins) alongside variable-font companion master compatibility diagnostics. |
+
+---
+
+## 4. Hexagonal Host-Port Architecture (Data-In / Event-Out)
+
+`grafia` never couples your application to a specific disk format (such as UFO, OTF/TTF, SVG, or DXF). All communication flows through deterministic, serializable Rust value types:
+
+```mermaid
+flowchart LR
+    Host["Host Application<br/>(Font Editor / SVG Studio / CAD Tool)"]
+    State["GrafiaCanvasState<br/>(2D CAGD Solvers, 14 Tools, Undo/Redo)"]
+    Widget["GrafiaCanvasWidget<br/>(5-Pass egui::Painter & tiny-skia Verifier)"]
+
+    Host -->|"Data-In: Glyph, CanvasTextStream,<br/>CanvasColorSublayer, CustomReferenceFrame,<br/>GrafiaPreferences"| State
+    State -->|"content_generation() Cache Gate<br/>(0% CPU Idle)"| Widget
+    State -->|"Event-Out: CanvasHostRequest,<br/>SpacingDelta, KerningDelta,<br/>SelectionInfoAction"| Host
+```
+
+---
+
+## 5. Feature Matrix
+
+| Capability Pillar | Highlights |
 | :--- | :--- |
-| `src/core/` | Type-safe coordinates (`FontUnit`, `FontPoint`, `ScreenDp`, `ScreenPoint`, `ViewportTransform`), cubic Bézier math, `boolean_ops`, `knife_ops`, `primitives_ops`, `measurement_ops`, `annotations`, `extract_segments`, `heal_delete_nodes`, `segment_ops`, `nudge_ops`, and `transform_ops`. |
-| `src/interaction/` | Finite state machines (`SelectToolState`, `PenToolState`), `Modifiers`, and atomic `CommandHistory` (`GlyphSnapshot`). |
-| `src/render/` | GPU tessellation (`tessellate_contours_nonzero`), projections (`ProjectedNode`, `PreviewFilledProjection`, `ShapeThumbnailProjection`), start-arrow and open-endpoint geometry, and `v020`/`v030`/`v040` overlays. |
-| `src/locator/` | `ShapeLocatorRenderer` & `ShapeLocatorWidget` 2-layer vector minimap with Non-Zero Winding and `CCW`/`CW` direction indicators. |
-| `src/adapters/` | `GrafiaCanvasState` (with `load_glyph` / `export_glyph` host bridge), `GrafiaCanvasWidget`, `CanvasPainter` (5-pass `egui` pipeline), `InputDispatcher`, `invariants` (`validate_invariants`), `cursor_overlay`, `keyboard`, and `headless` (`tiny-skia` offscreen verifier). |
-| `src/tokens/` | Data-driven theme, color, metric, cursor, and interaction tokens (`Zero Magic Numbers`, `Zero Hardcoded Colors`). |
+| **Curve & Spline Mathematics** | Cubic Béziers (`Corner`, `Smooth`, `OffCurve`), tension-controlled **Hobby splines** (`NodeType::HobbyStar`), $G^2$ **Euler/Spiro spirals** (`NodeType::EulerSpiro`), 4-mode inverse-Bernstein belly dragging (`apply_cubic_segment_belly_drag`), curve-healing deletion (`heal_delete_nodes`), De Casteljau splitting, extremum & inflection insertion, and 8-step `fit_selected_curves_step` (`apply_fit_curve_ratio_to_contours`). |
+| **14 Interactive Canvas Tools** | `Select` (`V`), `Lasso` (`Shift+V`), `Pen` (`P`), `Rotate` (`R`), `Scale` (`S`), `Zoom` (`Z`), `Knife` (`E`), `Primitives` (`F`), `Measurement` (`L`), `Annotation` (`A`), `Pencil` (`B`), `Pixel` (`X`), `Text` (`T`), `TrueTypeInstructor`, and `Hoi`. |
+| **Boolean Pathfinder & Topology** | Exact cubic-cubic intersection graph solver for Union (`remove_overlap_in_contours`), Subtract (`subtract_contours`), and Intersect (`intersect_contours`), plus `correct_path_direction_layer`, `tidy_up_contours`, `align_selected_nodes`, and virtual self-intersection `ExtraNode`s. |
+| **Snapping, Rulers & Reference Frames** | Magnetic `SnapEngine` across metric lines, alignment zones, local/global guides (`GuideThickness::ScreenDp` and zoom-scaling `GuideThickness::FontUnits`), nodes, 2D anchors, background contours, and `CustomReferenceFrame` grids/keyline circles. |
+| **Multi-Glyph Text & Typography** | Horizontal (`LeftToRight`) and vertical CJK (`TopToBottom`) multi-glyph streams (`CanvasTextStream`), double-click slot activation, keyboard spacing (`LSB`/`RSB`/`TSB`/`BSB`) & pair kerning adjustments, 2D `CanvasAnchor`s with `GhostMarkPath` clouds, `CanvasComponent`s with parametric `CanvasSmartHandle`s, PostScript stem/ghost hints, and TrueType visual instructions. |
+| **Color Layers & Bitmap Auto-Trace** | Multi-layer vector paint (`Solid`, `LinearGradient`, `RadialGradient`, `SweepGradient`, `Bitmap`, `ClippingMask`) with Porter-Duff `SrcOver` compositing and on-canvas gradient handles; 7-stage deterministic bitmap & camera auto-trace (`trace_background_image`). |
+| **Performance & Safety Guarantees** | `#![forbid(unsafe_code)]`, `#![forbid(dead_code)]`, zero `.unwrap()` / `.expect()` in production code, monotonic `content_generation()` cache gating for **0% CPU idle frames**, and 1:1 visual parity between `egui::Painter` and headless `tiny_skia::Pixmap`. |
 
 ---
 
-## 3. Verification & Test Commands
+## 6. Architecture, Module Map & Developer Guides (`src/`)
 
-```powershell
-# Full COTS test suite:
+Each module includes an in-depth mathematical and conceptual guide rendered on `docs.rs` (with KaTeX formula support):
+
+| Module | `docs.rs` Developer Guide | Responsibility |
+| :--- | :--- | :--- |
+| [`core`] | [Core Math, Splines, Topology & Auto-Trace](https://github.com/oversluizen/grafia/blob/main/docs/guide/core_math_and_topology.md) | Type-safe coordinates (`FontUnit`, `FontPoint`, `ScreenDp`, `ScreenPoint`, `ViewportTransform`), cubic Bézier & Hobby/Euler-Spiro spline math, 4-case inverse-Bernstein belly dragging, boolean pathfinder, knife, primitives, measurement rays, color layers, hinting/HOI models, and 7-stage Sauvola/Schneider bitmap auto-trace. |
+| [`interaction`] | [Tool State Machines & Transactional Undo/Redo](https://github.com/oversluizen/grafia/blob/main/docs/guide/interaction_and_undo.md) | Deterministic finite state machines (`SelectToolState`, `PenToolState`, `CanvasGesture`), keyboard modifiers, and atomic `CommandHistory` (`GlyphSnapshot` undo/redo). |
+| [`snapping`] | [Magnetic Snapping, Guides & Reference Frames](https://github.com/oversluizen/grafia/blob/main/docs/guide/snapping_and_reference_frames.md) | Priority-based magnetic `SnapEngine`, local and global `Guide` management (`ScreenDp` vs. zoom-scaling `FontUnits`), `AlignmentZone` overshoot badges, `CustomReferenceFrame`, and `GlyphMetrics`. |
+| [`render`] | [5-Pass Pipeline, Tessellation & Zero-CPU Caching](https://github.com/oversluizen/grafia/blob/main/docs/guide/rendering_and_caching.md) | GPU tessellation (`tessellate_contours_nonzero`, `tessellate_contours_even_odd`), view-mode projections (`EditWireframe`, `PreviewFilled`, `ShapeThumbnail`), separable Gaussian blur `GrafiaPreviewWidget` (`PreviewStripCache`), and `content_generation()` cache gating. |
+| [`locator`] | Minimap Projections | `ShapeLocatorRenderer` & `ShapeLocatorWidget` 2-layer vector minimap with Non-Zero Winding counter reconstruction and `CCW`/`CW` winding indicators. |
+| [`adapters`] | [Hexagonal Host-Port & Headless Verification](https://github.com/oversluizen/grafia/blob/main/docs/guide/adapters_and_host_port.md) | `GrafiaCanvasState` (with `load_glyph`, `export_glyph`, `load_document_scene`, and hexagonal host ports), `GrafiaCanvasWidget`, 5-pass `CanvasPainter`, `InputDispatcher`, `validate_invariants`, and `tiny-skia` headless offscreen verifier. |
+| [`tokens`] | Theme, Keymap & Preference Tokens | Data-driven theme, color, metric, cursor, keymap (`GrafiaKeymap`), and preference (`GrafiaPreferences`) tokens (`Light`, `Dark`, and `System` appearance modes). |
+
+---
+
+## 7. Verification & Development Commands
+
+```sh
+# Launch the interactive desktop vector canvas demo:
+cargo run --example vector_canvas_demo
+
+# Run the full test suite (unit, integration, property-based & headless visual parity):
 cargo test
 
-# Architecture & Clean-Room guardrails:
+# Run architectural & clean-room guardrails:
 cargo test --test architecture_guard_tests
 
-# Live egui <-> headless tiny-skia visual parity & host bridge:
-cargo test --test egui_adapter_tests
+# Run rustdoc doctests & verify documentation links:
+cargo test --doc
+cargo doc --no-deps
 
-# Strict static analysis (0 warnings):
+# Run strict static analysis (zero warnings):
 cargo clippy --all-targets -- -D warnings
-
-# Launch interactive desktop vector canvas demo:
-cargo run --example vector_canvas_demo
 ```
+
+---
+
+## License
+
+Licensed under either of:
+
+- Apache License, Version 2.0 (<https://www.apache.org/licenses/LICENSE-2.0>)
+- MIT license (<https://opensource.org/licenses/MIT>)
+
+at your option.

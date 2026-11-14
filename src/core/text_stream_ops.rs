@@ -3,17 +3,23 @@
 //! Kerning Delta Emission (`KerningDelta`), Kerning Baseline Highlight Wedges (`KerningIndicatorQuad`),
 //! and Horizontal Scanline Metrology (`SlotScanlineMeasurement`).
 
+use crate::core::math_consts::{
+    DEFAULT_ADVANCE_HEIGHT_UPM, DEFAULT_VERT_ORIGIN_Y_UPM, TEXT_SCANLINE_CUBIC_SUBDIVISIONS,
+    TEXT_SCANLINE_DEDUP_EPS_UPM, TEXT_SCANLINE_T_EPS,
+};
+use crate::core::vertical_stream::{
+    compute_vertical_kerning_indicator_quads, recompute_vertical_slot_origins,
+    resolve_vertical_caret_index_at_upm, resolve_vertical_slot_at_upm, MetricsAxis,
+    WritingDirection,
+};
 use crate::core::{
     extract_segments, ContourSegment, FontPoint, Glyph, GlyphContour, Node, NodeType,
 };
-use crate::tokens::{
-    BERNSTEIN_CUBIC_COEFF, TEXT_SCANLINE_CUBIC_SUBDIVISIONS, TEXT_SCANLINE_DEDUP_EPS_UPM,
-    TEXT_SCANLINE_T_EPS,
-};
+use kurbo::{CubicBez, ParamCurve, Point};
 
-/// A single slot in the multi-glyph horizontal text strip (`CanvasTextStream`).
-/// Supplied by the Host Application / Consumer Shell; `grafia` computes `origin_x_upm`
-/// along the continuous baseline and emits `SpacingDelta` / `KerningDelta` events.
+/// A single slot in the multi-glyph horizontal or vertical text strip (`CanvasTextStream`).
+/// Supplied by the Host Application / Consumer Shell; `grafia` computes `origin_x_upm` / `origin_y_upm`
+/// along the continuous baseline or vertical center axis and emits `SpacingDelta` / `KerningDelta` events.
 #[derive(Clone, Debug, PartialEq)]
 pub struct GlyphSlot {
     pub glyph: Glyph,
@@ -21,6 +27,12 @@ pub struct GlyphSlot {
     pub kern_with_prev: i32,
     /// Computed horizontal pen origin `X_i` in UPM along the shared baseline (`y = 0`).
     pub origin_x_upm: f64,
+    /// Computed vertical pen origin `Y_i` in UPM along the vertical progression axis (`SPEC-010 §2.2`).
+    pub origin_y_upm: f64,
+    /// Optional explicit vertical advance height (`vmtx` `advanceHeight`); defaults to `glyph.height` or `1000.0`.
+    pub advance_height: Option<f64>,
+    /// Optional explicit vertical origin Y (`VORG` `vertOriginY`); defaults to `880.0`.
+    pub vert_origin_y: Option<f64>,
 }
 
 impl GlyphSlot {
@@ -30,7 +42,30 @@ impl GlyphSlot {
             glyph,
             kern_with_prev,
             origin_x_upm: 0.0,
+            origin_y_upm: 0.0,
+            advance_height: None,
+            vert_origin_y: None,
         }
+    }
+
+    #[must_use]
+    pub fn effective_advance_height(&self) -> f64 {
+        let fallback = if self.glyph.height > 0.0 {
+            self.glyph.height
+        } else {
+            DEFAULT_ADVANCE_HEIGHT_UPM
+        };
+        self.advance_height.unwrap_or(fallback)
+    }
+
+    #[must_use]
+    pub fn effective_vert_origin_y(&self) -> f64 {
+        self.vert_origin_y.unwrap_or(DEFAULT_VERT_ORIGIN_Y_UPM)
+    }
+
+    #[must_use]
+    pub fn vertical_center_x_upm(&self) -> f64 {
+        self.origin_x_upm + 0.5 * self.glyph.width
     }
 }
 
@@ -39,9 +74,13 @@ impl GlyphSlot {
 pub struct SpacingDelta {
     pub slot_index: usize,
     pub glyph_name: String,
+    pub axis: MetricsAxis,
     pub lsb_delta_upm: i32,
     pub rsb_delta_upm: i32,
     pub width_delta_upm: i32,
+    pub tsb_delta_upm: i32,
+    pub bsb_delta_upm: i32,
+    pub advance_height_delta_upm: i32,
 }
 
 /// Pure kerning mutation event emitted by `grafia` for the Host Font Model Backend.
@@ -51,6 +90,7 @@ pub struct KerningDelta {
     pub right_slot_index: usize,
     pub left_glyph: String,
     pub right_glyph: String,
+    pub axis: MetricsAxis,
     pub delta_upm: i32,
     pub new_kern_upm: i32,
 }
@@ -80,16 +120,18 @@ pub struct SlotScanlineMeasurement {
     pub measured_rsb_upm: Option<f64>,
 }
 
-/// Multi-glyph horizontal text buffer, caret/selection state, and emitted host delta queue.
+/// Multi-glyph horizontal or vertical text buffer, caret/selection state, and emitted host delta queue.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct CanvasTextStream {
     pub slots: Vec<GlyphSlot>,
     /// Index of the active editable glyph slot (`0..slots.len()`).
     pub active_slot_index: usize,
-    /// Caret index (`0..=slots.len()`). Active glyph for spacing/kerning is the slot right of the caret.
+    /// Caret index (`0..=slots.len()`). Active glyph for spacing/kerning is the slot right/below the caret.
     pub caret_index: usize,
     /// Optional multi-slot selection range `(start_slot, end_slot_exclusive)`.
     pub selection_range: Option<(usize, usize)>,
+    /// Progression direction (`LeftToRight`, `RightToLeft`, or `TopToBottom`, `SPEC-010 §2.2`).
+    pub writing_direction: WritingDirection,
     /// Emitted spacing delta events ready to be drained by the Host Font Model Backend.
     pub pending_spacing_deltas: Vec<SpacingDelta>,
     /// Emitted kerning delta events ready to be drained by the Host Font Model Backend.
@@ -102,7 +144,7 @@ impl CanvasTextStream {
         Self::default()
     }
 
-    /// Recomputes cumulative horizontal pen origins `X_0 = 0.0`, `X_i = X_{i-1} + width_{i-1} + kern_i`.
+    /// Recomputes cumulative pen origins (`X_i` for horizontal, `Y_i` for vertical `TopToBottom`).
     pub fn recompute_origins(&mut self) {
         if self.slots.is_empty() {
             self.active_slot_index = 0;
@@ -111,10 +153,16 @@ impl CanvasTextStream {
             return;
         }
         self.slots[0].kern_with_prev = 0;
-        self.slots[0].origin_x_upm = 0.0;
-        for i in 1..self.slots.len() {
-            let prev_end = self.slots[i - 1].origin_x_upm + self.slots[i - 1].glyph.width;
-            self.slots[i].origin_x_upm = prev_end + f64::from(self.slots[i].kern_with_prev);
+        if self.writing_direction == WritingDirection::TopToBottom {
+            recompute_vertical_slot_origins(&mut self.slots);
+        } else {
+            self.slots[0].origin_x_upm = 0.0;
+            self.slots[0].origin_y_upm = 0.0;
+            for i in 1..self.slots.len() {
+                let prev_end = self.slots[i - 1].origin_x_upm + self.slots[i - 1].glyph.width;
+                self.slots[i].origin_x_upm = prev_end + f64::from(self.slots[i].kern_with_prev);
+                self.slots[i].origin_y_upm = 0.0;
+            }
         }
         let max_slot = self.slots.len() - 1;
         if self.active_slot_index > max_slot {
@@ -130,9 +178,12 @@ impl CanvasTextStream {
         }
     }
 
-    /// Resolves the nearest slot boundary index (`0..=slots.len()`) for a UPM point (`SPEC-006 §2.2.2`).
+    /// Resolves the nearest slot boundary index (`0..=slots.len()`) for a UPM point (`SPEC-006 §2.2.2` & `SPEC-010 §2.2`).
     #[must_use]
     pub fn resolve_caret_index_at_upm(&self, pt_upm: FontPoint) -> usize {
+        if self.writing_direction == WritingDirection::TopToBottom {
+            return resolve_vertical_caret_index_at_upm(&self.slots, pt_upm.y.0);
+        }
         for (idx, slot) in self.slots.iter().enumerate() {
             let mid_x = slot.origin_x_upm + 0.5 * slot.glyph.width;
             if pt_upm.x.0 < mid_x {
@@ -142,11 +193,14 @@ impl CanvasTextStream {
         self.slots.len()
     }
 
-    /// Resolves the slot index (`0..slots.len()`) hit by a double-click at `pt_upm` (`SPEC-006 §2.1.2`).
+    /// Resolves the slot index (`0..slots.len()`) hit by a double-click at `pt_upm` (`SPEC-006 §2.1.2` & `SPEC-010 §2.2`).
     #[must_use]
     pub fn resolve_slot_at_upm(&self, pt_upm: FontPoint) -> Option<usize> {
         if self.slots.is_empty() {
             return None;
+        }
+        if self.writing_direction == WritingDirection::TopToBottom {
+            return resolve_vertical_slot_at_upm(&self.slots, pt_upm);
         }
         let mut best_containing: Option<(f64, usize)> = None;
         let mut best_any: Option<(f64, usize)> = None;
@@ -179,6 +233,9 @@ impl CanvasTextStream {
     ) -> Vec<KerningIndicatorQuad> {
         if self.slots.len() < 2 {
             return Vec::new();
+        }
+        if self.writing_direction == WritingDirection::TopToBottom {
+            return compute_vertical_kerning_indicator_quads(&self.slots);
         }
         let half_xh = x_height * 0.5;
         let tan_a = italic_angle_deg.to_radians().tan();
@@ -274,20 +331,6 @@ pub fn compute_glyph_lsb_and_rsb(contours: &[Vec<Node>], advance_width: f64) -> 
     (min_x, advance_width - max_x)
 }
 
-fn eval_cubic_pt(p0: FontPoint, p1: FontPoint, p2: FontPoint, p3: FontPoint, t: f64) -> FontPoint {
-    let mt = 1.0 - t;
-    let mt2 = mt * mt;
-    let t2 = t * t;
-    let c0 = mt2 * mt;
-    let c1 = BERNSTEIN_CUBIC_COEFF * mt2 * t;
-    let c2 = BERNSTEIN_CUBIC_COEFF * mt * t2;
-    let c3 = t2 * t;
-    FontPoint::new(
-        c0 * p0.x.0 + c1 * p1.x.0 + c2 * p2.x.0 + c3 * p3.x.0,
-        c0 * p0.y.0 + c1 * p1.y.0 + c2 * p2.y.0 + c3 * p3.y.0,
-    )
-}
-
 fn intersect_segment_at_y(
     a: FontPoint,
     b: FontPoint,
@@ -345,12 +388,24 @@ pub fn intersect_contours_at_horizontal_y(
                     let p1 = gc.nodes[h1_idx].point;
                     let p2 = gc.nodes[h2_idx].point;
                     let p3 = gc.nodes[end_idx].point;
+                    let cubic = CubicBez::new(
+                        Point::new(p0.x.0, p0.y.0),
+                        Point::new(p1.x.0, p1.y.0),
+                        Point::new(p2.x.0, p2.y.0),
+                        Point::new(p3.x.0, p3.y.0),
+                    );
                     for i in 0..TEXT_SCANLINE_CUBIC_SUBDIVISIONS {
                         let t0 = (i as f64) / n_steps;
                         let t1 = ((i + 1) as f64) / n_steps;
-                        let a = eval_cubic_pt(p0, p1, p2, p3, t0);
-                        let b = eval_cubic_pt(p0, p1, p2, p3, t1);
-                        intersect_segment_at_y(a, b, origin_x_upm, y_upm, &mut hits);
+                        let pa = cubic.eval(t0);
+                        let pb = cubic.eval(t1);
+                        intersect_segment_at_y(
+                            FontPoint::new(pa.x, pa.y),
+                            FontPoint::new(pb.x, pb.y),
+                            origin_x_upm,
+                            y_upm,
+                            &mut hits,
+                        );
                     }
                 }
             }

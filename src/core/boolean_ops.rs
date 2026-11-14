@@ -9,15 +9,15 @@ use crate::core::bezier_ops::{compute_signed_area, Node, NodeId, NodeType};
 use crate::core::boolean_geom::{
     cycle_to_nodes, extract_bool_segs, intersect_pair, snap_vertex, BoolSeg,
 };
+use crate::core::contour_order_ops::correct_path_direction_layer;
 use crate::core::coordinates::FontPoint;
 use crate::core::curve_manipulation::{extract_segments, ContourSegment};
 use crate::core::lasso_and_zoom::point_in_polygon;
-use crate::core::path_ops::correct_path_direction_layer;
-use crate::core::segment_ops::reverse_contour_nodes;
-use crate::tokens::{
+use crate::core::math_consts::{
     BOOL_CUBIC_SUBDIV_STEPS, BOOL_CYCLE_CLOSE_BONUS, BOOL_PARAM_EPS, BOOL_PROBE_MAX_LEN_FRACTION,
     BOOL_PROBE_OFFSET_UPM, BOOL_VERTEX_SNAP_EPS_UPM, DEFAULT_X_HEIGHT_UPM,
 };
+use crate::core::reverse_contour_nodes;
 use kurbo::ParamCurve;
 
 fn sample_contour_fine(nodes: &[Node]) -> Vec<FontPoint> {
@@ -43,24 +43,14 @@ pub fn contour_signed_area(nodes: &[Node]) -> f64 {
     compute_signed_area(&sample_contour_fine(nodes))
 }
 
-fn execute_boolean_pipeline<F>(
+fn collect_kept_boolean_subsegments<F>(
     all_segs: &[BoolSeg],
+    split_params: &mut [Vec<f64>],
     inside_pred: F,
-    next_node_id: &mut u64,
-) -> Vec<Vec<Node>>
+) -> Vec<(usize, usize, BoolSeg)>
 where
     F: Fn(FontPoint) -> bool,
 {
-    let mut split_params: Vec<Vec<f64>> = vec![vec![0.0, 1.0]; all_segs.len()];
-    for i in 0..all_segs.len() {
-        for j in (i + 1)..all_segs.len() {
-            for (ta, tb) in intersect_pair(all_segs[i], all_segs[j]) {
-                split_params[i].push(ta);
-                split_params[j].push(tb);
-            }
-        }
-    }
-
     let mut vertices: Vec<FontPoint> = Vec::new();
     let mut kept: Vec<(usize, usize, BoolSeg)> = Vec::new();
     for (idx, &seg) in all_segs.iter().enumerate() {
@@ -68,18 +58,20 @@ where
         params.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let mut clean_t = vec![0.0];
         for &t in params.iter() {
-            let (tc, prev_t) = (t.clamp(0.0, 1.0), *clean_t.last().unwrap());
+            let (tc, prev_t) = (t.clamp(0.0, 1.0), clean_t.last().copied().unwrap_or(0.0));
             if tc - prev_t > BOOL_PARAM_EPS
                 && seg.eval(tc).distance_to(seg.eval(prev_t)) > BOOL_VERTEX_SNAP_EPS_UPM
             {
                 clean_t.push(tc);
             }
         }
-        let last_t = *clean_t.last().unwrap();
+        let last_t = clean_t.last().copied().unwrap_or(0.0);
         if (1.0 - last_t) <= BOOL_PARAM_EPS
             || seg.eval(1.0).distance_to(seg.eval(last_t)) <= BOOL_VERTEX_SNAP_EPS_UPM
         {
-            *clean_t.last_mut().unwrap() = 1.0;
+            if let Some(last) = clean_t.last_mut() {
+                *last = 1.0;
+            }
         } else {
             clean_t.push(1.0);
         }
@@ -118,7 +110,28 @@ where
             }
         }
     }
+    kept
+}
 
+fn execute_boolean_pipeline<F>(
+    all_segs: &[BoolSeg],
+    inside_pred: F,
+    next_node_id: &mut u64,
+) -> Vec<Vec<Node>>
+where
+    F: Fn(FontPoint) -> bool,
+{
+    let mut split_params: Vec<Vec<f64>> = vec![vec![0.0, 1.0]; all_segs.len()];
+    for i in 0..all_segs.len() {
+        for j in (i + 1)..all_segs.len() {
+            for (ta, tb) in intersect_pair(all_segs[i], all_segs[j]) {
+                split_params[i].push(ta);
+                split_params[j].push(tb);
+            }
+        }
+    }
+
+    let kept = collect_kept_boolean_subsegments(all_segs, &mut split_params, inside_pred);
     let mut used = vec![false; kept.len()];
     let mut result_contours: Vec<Vec<Node>> = Vec::new();
     for start_idx in 0..kept.len() {
@@ -208,6 +221,48 @@ fn eval_signed_winding(pt: FontPoint, polys: &[(Vec<FontPoint>, i32)]) -> i32 {
         .sum()
 }
 
+fn has_overlap_or_containment(
+    contour_segs: &[Vec<BoolSeg>],
+    working_closed: &[Vec<Node>],
+    signed_polys: &[(Vec<FontPoint>, i32)],
+) -> bool {
+    let has_cross_hit = (0..contour_segs.len()).any(|i| {
+        ((i + 1)..contour_segs.len()).any(|j| {
+            contour_segs[i].iter().any(|&sa| {
+                contour_segs[j]
+                    .iter()
+                    .any(|&sb| !intersect_pair(sa, sb).is_empty())
+            })
+        })
+    });
+    let has_self_hit = contour_segs.iter().any(|segs| {
+        (0..segs.len()).any(|a| {
+            ((a + 1)..segs.len()).any(|b| {
+                intersect_pair(segs[a], segs[b])
+                    .into_iter()
+                    .any(|(ta, tb)| {
+                        (ta > BOOL_PARAM_EPS && ta < 1.0 - BOOL_PARAM_EPS)
+                            || (tb > BOOL_PARAM_EPS && tb < 1.0 - BOOL_PARAM_EPS)
+                    })
+            })
+        })
+    });
+    let has_contained_pos = (0..working_closed.len()).any(|i| {
+        signed_polys[i].1 > 0
+            && working_closed[i]
+                .iter()
+                .find(|n| n.node_type != NodeType::OffCurve)
+                .is_some_and(|n| {
+                    (0..working_closed.len()).any(|j| {
+                        j != i
+                            && signed_polys[j].1 > 0
+                            && point_in_polygon(n.point, &signed_polys[j].0)
+                    })
+                })
+    });
+    has_cross_hit || has_self_hit || has_contained_pos
+}
+
 /// Removes overlaps across closed contours in `contours` (`BooleanPathEngine::removeOverlapPaths:error:`),
 /// leaving open contours untouched.
 pub fn remove_overlap_in_contours(
@@ -247,43 +302,9 @@ pub fn remove_overlap_in_contours(
 
     let contour_segs: Vec<Vec<BoolSeg>> = working_closed
         .iter()
-        .map(|c| extract_bool_segs(c))
+        .map(|c| extract_bool_segs(c, true))
         .collect();
-    let has_cross_hit = (0..contour_segs.len()).any(|i| {
-        ((i + 1)..contour_segs.len()).any(|j| {
-            contour_segs[i].iter().any(|&sa| {
-                contour_segs[j]
-                    .iter()
-                    .any(|&sb| !intersect_pair(sa, sb).is_empty())
-            })
-        })
-    });
-    let has_self_hit = contour_segs.iter().any(|segs| {
-        (0..segs.len()).any(|a| {
-            ((a + 1)..segs.len()).any(|b| {
-                intersect_pair(segs[a], segs[b])
-                    .into_iter()
-                    .any(|(ta, tb)| {
-                        (ta > BOOL_PARAM_EPS && ta < 1.0 - BOOL_PARAM_EPS)
-                            || (tb > BOOL_PARAM_EPS && tb < 1.0 - BOOL_PARAM_EPS)
-                    })
-            })
-        })
-    });
-    let has_contained_pos = (0..working_closed.len()).any(|i| {
-        signed_polys[i].1 > 0
-            && working_closed[i]
-                .iter()
-                .find(|n| n.node_type != NodeType::OffCurve)
-                .is_some_and(|n| {
-                    (0..working_closed.len()).any(|j| {
-                        j != i
-                            && signed_polys[j].1 > 0
-                            && point_in_polygon(n.point, &signed_polys[j].0)
-                    })
-                })
-    });
-    if !has_cross_hit && !has_self_hit && !has_contained_pos {
+    if !has_overlap_or_containment(&contour_segs, &working_closed, &signed_polys) {
         return false;
     }
 
@@ -330,7 +351,7 @@ pub fn subtract_contours(
     let all_segs: Vec<BoolSeg> = subject
         .iter()
         .chain(clip.iter())
-        .flat_map(|c| extract_bool_segs(c))
+        .flat_map(|c| extract_bool_segs(c, true))
         .collect();
     execute_boolean_pipeline(
         &all_segs,
@@ -350,7 +371,7 @@ pub fn intersect_contours(
     let all_segs: Vec<BoolSeg> = subject
         .iter()
         .chain(clip.iter())
-        .flat_map(|c| extract_bool_segs(c))
+        .flat_map(|c| extract_bool_segs(c, true))
         .collect();
     execute_boolean_pipeline(
         &all_segs,

@@ -1,13 +1,16 @@
 //! Canvas state, tool modes, and coordinate management for `GrafiaCanvasWidget`.
 
-use crate::adapters::v020_tools::V020DragState;
-use crate::adapters::v030_guides::GuideDragState;
-use crate::adapters::v040_tools::V040ToolState;
-use crate::core::{
-    ClipboardContour, FontPoint, Node, NodeId, NodeType, ScreenPoint, SegmentHit,
-    TransformGridAnchor, TransformOriginSpec, ViewportTransform,
+use crate::adapters::bbox_selection_tools::BBoxDragState;
+pub use crate::adapters::document_scene_ops::{
+    DragSessionTransients, PenInteractionTransients, TextInteractionTransients,
 };
-use crate::interaction::{CommandHistory, GlyphSnapshot, Modifiers, PenToolState, SelectToolState};
+use crate::adapters::drawing_tool_state::DrawingToolState;
+use crate::core::{
+    CanvasColorSublayer, ClipboardContour, CustomReferenceFrame, FontPoint, GlyphContour, Node,
+    NodeId, PostScriptHint, ScreenPoint, SegmentHit, TransformGridAnchor, TransformOriginSpec,
+    TrueTypeVisualInstruction, ViewportTransform,
+};
+use crate::interaction::{CommandHistory, PenToolState, SelectToolState};
 use crate::snapping::{ActiveSnapper, GlyphMetrics, Guide, SelectedGuideRef};
 use crate::tokens::{GlyphArchetype, GrafiaTheme};
 use kurbo::BezPath;
@@ -15,7 +18,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT_CONTENT_GENERATION: AtomicU64 = AtomicU64::new(1);
 
-fn next_content_generation() -> u64 {
+pub(crate) fn next_content_generation() -> u64 {
     NEXT_CONTENT_GENERATION.fetch_add(1, Ordering::Relaxed)
 }
 
@@ -35,6 +38,8 @@ pub enum CanvasTool {
     Pencil,
     Pixel,
     Text,
+    TrueTypeInstructor,
+    Hoi,
 }
 
 #[allow(non_upper_case_globals)]
@@ -52,6 +57,8 @@ impl CanvasTool {
     pub const PencilTool: CanvasTool = CanvasTool::Pencil;
     pub const PixelTool: CanvasTool = CanvasTool::Pixel;
     pub const TextTool: CanvasTool = CanvasTool::Text;
+    pub const TrueTypeInstructorTool: CanvasTool = CanvasTool::TrueTypeInstructor;
+    pub const HoiTool: CanvasTool = CanvasTool::Hoi;
     #[must_use]
     pub const fn allows_path_segment_interaction(self) -> bool {
         matches!(self, Self::Select | Self::Pen)
@@ -94,37 +101,17 @@ pub struct GrafiaCanvasState {
     pub pen_state: PenToolState,
     pub history: CommandHistory,
     pub view_mode: CanvasViewMode,
-    pub prev_view_mode: Option<CanvasViewMode>,
     pub theme: GrafiaTheme,
     pub next_node_id: u64,
-    pub drag_start_font_positions: Vec<(NodeId, FontPoint)>,
-    pub drag_start_node_types: Vec<(NodeId, FontPoint, NodeType)>,
-    pub drag_start_contours: Vec<Vec<Node>>,
     pub active_contour_closed: bool,
-    pub last_click_time_pos: Option<(f64, ScreenPoint)>,
-    pub last_double_click_time_pos: Option<(f64, ScreenPoint)>,
-    pub pen_drag_last_pt: Option<FontPoint>,
-    pub pen_handle_delta: (f64, f64),
     pub hovered_segment_hit: Option<SegmentHit>,
     pub active_archetype: GlyphArchetype,
-    pub marquee_pre_selection: Vec<NodeId>,
-    pub marquee_modifiers: Modifiers,
-    pub alt_marquee_pending_start: Option<ScreenPoint>,
-    pub active_drag_before_snapshot: Option<GlyphSnapshot>,
     pub active_open_contour: Option<usize>,
     pub pending_pen_bcp_out: Option<(usize, FontPoint)>,
     pub pending_pen_first_bcp_in: Option<(usize, FontPoint)>,
     pub hovered_pen_close_target: Option<(usize, NodeId)>,
-    pub hovered_pen_close_node: Option<NodeId>,
     pub cursor_screen_pos: Option<ScreenPoint>,
-    pub pen_alt_frozen_bcp_in: Option<FontPoint>,
     pub last_pointer_screen_pos: Option<ScreenPoint>,
-    pub pending_segment_click: Option<(usize, crate::core::ContourSegment, Modifiers)>,
-    pub alt_duplicate_pending: bool,
-    pub pen_seg_has_explicit_h1: bool,
-    pub pen_resuming_corner_line_end: bool,
-    pub pen_join_b_had_out_handles: bool,
-    pub pen_join_b_was_smooth: bool,
     pub grid_step_upm: f64,
     pub show_bounding_box: bool,
     pub show_bounding_box_slanted: bool,
@@ -136,19 +123,14 @@ pub struct GrafiaCanvasState {
     pub transform_origin: FontPoint,
     pub transform_origin_custom: bool,
     pub clipboard_contours: Vec<ClipboardContour>,
-    pub v020_drag: V020DragState,
-    pub temp_tool_before_override: Option<CanvasTool>,
-    pub last_modifiers: Modifiers,
-    pub temp_zoom_via_key_space: bool,
+    pub bbox_drag: BBoxDragState,
     pub guides: Vec<Guide>,
     pub global_guides: Vec<Guide>,
     pub selected_guide: Option<SelectedGuideRef>,
     pub show_guides: bool,
     pub lock_guides: bool,
-    pub next_guide_id: u64,
     pub metrics: GlyphMetrics,
     pub active_snappers: Vec<ActiveSnapper>,
-    pub guide_drag: GuideDragState,
     pub show_metrics: bool,
     pub show_grid: bool,
     pub grid_subdivisions: u32,
@@ -156,54 +138,57 @@ pub struct GrafiaCanvasState {
     pub grid_slope_run: i32,
     pub appearance_mode: crate::tokens::AppearanceMode,
     pub system_dark_mode: bool,
-    pub v040: V040ToolState,
+    pub drawing_tool_state: DrawingToolState,
     pub text_stream: crate::core::CanvasTextStream,
     pub show_text_measurement_line: bool,
-    pub temp_show_text_measurement_line: bool,
     pub text_measurement_y_upm: f64,
-    pub text_mode_numbers_threshold: f64,
-    pub last_select_tool: CanvasTool,
-    pub text_drag_anchor_caret: Option<(usize, ScreenPoint)>,
     pub text_measurement_dragging: bool,
-    pub suppress_text_stream_sync: bool,
-    pub text_tool_activated_in_frame: bool,
     pub multi_selection_proportional: bool,
     pub show_rulers: bool,
-    pub ruler_drag_is_horizontal: Option<bool>,
     pub background_contours: Vec<crate::core::GlyphContour>,
     pub show_background: bool,
     pub editing_background_layer: bool,
-    pub editing_background: bool,
     pub anchors: Vec<crate::core::CanvasAnchor>,
-    pub next_anchor_id: u64,
-    pub center_in_width_count: u64,
-    pub preview_config: crate::render::PreviewRenderConfig,
     pub show_selection_info_hud: bool,
     pub ghost_paths: Vec<crate::core::GhostMarkPath>,
     pub show_mark_cloud: bool,
     pub components: Vec<crate::core::CanvasComponent>,
     pub host_requests: Vec<crate::core::CanvasHostRequest>,
-    pub fit_curve_config: crate::core::FitCurveConfig,
     pub contour_strokes:
         std::collections::BTreeMap<crate::core::ContourId, crate::core::ContourStrokeStyle>,
     pub companion_master_layers: Vec<crate::core::CompanionMasterLayer>,
     pub show_master_compatibility: bool,
     pub select_all_layers_mode: bool,
-    pub selected_companion_nodes: Vec<(u32, NodeId)>,
-    pub pre_all_layers_select_snapshot: Option<GlyphSnapshot>,
+    pub background_image: Option<crate::tokens::CanvasBackgroundImage>,
+    pub smart_handles: Vec<crate::tokens::CanvasSmartHandle>,
+    pub show_extra_nodes: bool,
+    pub selected_extra_node: Option<crate::tokens::ExtraNodeKey>,
+    pub show_nodes_oncurve: bool,
+    pub show_nodes_offcurve: bool,
+    pub show_node_coordinates: bool,
+    pub show_background_nodes: bool,
+    pub show_component_piece_frames: bool,
+    pub active_bbox_rotation_deg: Option<f64>,
+    pub preferences: crate::tokens::GrafiaPreferences,
+    pub color_sublayers: Vec<CanvasColorSublayer>,
+    pub custom_reference_frame: Option<CustomReferenceFrame>,
+    pub postscript_hints: Vec<PostScriptHint>,
+    pub selected_postscript_hint: Option<u64>,
+    pub truetype_instructions: Vec<TrueTypeVisualInstruction>,
+    pub selected_truetype_instruction: Option<u64>,
+    pub truetype_instructor_ppem: u16,
+    pub show_hoi_diamonds: bool,
+    pub show_pixel_preview_ppem: Option<u16>,
+    pub backdrop_ghost_contours: Vec<GlyphContour>,
     pub content_generation: u64,
+    pub pen_transients: PenInteractionTransients,
+    pub drag_transients: DragSessionTransients,
+    pub text_transients: TextInteractionTransients,
 }
 
-impl GrafiaCanvasState {
-    #[must_use]
-    pub fn new(theme: GrafiaTheme) -> Self {
-        let is_dark = theme.is_dark();
-        let appearance_mode = if is_dark {
-            crate::tokens::AppearanceMode::Dark
-        } else {
-            crate::tokens::AppearanceMode::Light
-        };
-        Self {
+macro_rules! construct_default_canvas_state {
+    ($theme:expr, $appearance_mode:expr, $is_dark:expr) => {
+        GrafiaCanvasState {
             viewport: ViewportTransform::new(1.0, ScreenPoint::new(0.0, 0.0), 1000),
             paths: Vec::new(),
             contours: Vec::new(),
@@ -214,37 +199,17 @@ impl GrafiaCanvasState {
             pen_state: PenToolState::Idle,
             history: CommandHistory::new(),
             view_mode: CanvasViewMode::EditWireframe,
-            prev_view_mode: None,
-            theme,
+            theme: $theme,
             next_node_id: 1,
-            drag_start_font_positions: Vec::new(),
-            drag_start_node_types: Vec::new(),
-            drag_start_contours: Vec::new(),
             active_contour_closed: false,
-            last_click_time_pos: None,
-            last_double_click_time_pos: None,
-            pen_drag_last_pt: None,
-            pen_handle_delta: (0.0, 0.0),
             hovered_segment_hit: None,
             active_archetype: GlyphArchetype::A,
-            marquee_pre_selection: Vec::new(),
-            marquee_modifiers: Modifiers::default(),
-            alt_marquee_pending_start: None,
-            active_drag_before_snapshot: None,
             active_open_contour: None,
             pending_pen_bcp_out: None,
             pending_pen_first_bcp_in: None,
             hovered_pen_close_target: None,
-            hovered_pen_close_node: None,
             cursor_screen_pos: None,
-            pen_alt_frozen_bcp_in: None,
             last_pointer_screen_pos: None,
-            pending_segment_click: None,
-            alt_duplicate_pending: false,
-            pen_seg_has_explicit_h1: false,
-            pen_resuming_corner_line_end: false,
-            pen_join_b_had_out_handles: false,
-            pen_join_b_was_smooth: false,
             grid_step_upm: crate::tokens::DEFAULT_GRID_STEP_UPM,
             show_bounding_box: false,
             show_bounding_box_slanted: false,
@@ -256,94 +221,86 @@ impl GrafiaCanvasState {
             transform_origin: FontPoint::new(0.0, 0.0),
             transform_origin_custom: false,
             clipboard_contours: Vec::new(),
-            v020_drag: V020DragState::Idle,
-            temp_tool_before_override: None,
-            last_modifiers: Modifiers::default(),
-            temp_zoom_via_key_space: false,
+            bbox_drag: BBoxDragState::Idle,
             guides: Vec::new(),
             global_guides: Vec::new(),
             selected_guide: None,
             show_guides: true,
             lock_guides: false,
-            next_guide_id: 1,
             metrics: GlyphMetrics::default(),
             active_snappers: Vec::new(),
-            guide_drag: GuideDragState::Idle,
             show_metrics: true,
             show_grid: true,
             grid_subdivisions: 1,
             grid_slope_rise: 0,
             grid_slope_run: 0,
-            appearance_mode,
-            system_dark_mode: is_dark,
-            v040: V040ToolState::default(),
+            appearance_mode: $appearance_mode,
+            system_dark_mode: $is_dark,
+            drawing_tool_state: DrawingToolState::default(),
             text_stream: crate::core::CanvasTextStream::new(),
             show_text_measurement_line: false,
-            temp_show_text_measurement_line: false,
             text_measurement_y_upm: crate::tokens::TEXT_MEASUREMENT_LINE_DEFAULT_Y_UPM,
-            text_mode_numbers_threshold: crate::tokens::TEXT_MODE_NUMBERS_THRESHOLD_DEFAULT,
-            last_select_tool: CanvasTool::Select,
-            text_drag_anchor_caret: None,
             text_measurement_dragging: false,
-            suppress_text_stream_sync: false,
-            text_tool_activated_in_frame: false,
             multi_selection_proportional: false,
             show_rulers: false,
-            ruler_drag_is_horizontal: None,
             background_contours: Vec::new(),
             show_background: true,
             editing_background_layer: false,
-            editing_background: false,
             anchors: Vec::new(),
-            next_anchor_id: 1,
-            center_in_width_count: 0,
-            preview_config: crate::render::PreviewRenderConfig::default(),
             show_selection_info_hud: true,
             ghost_paths: Vec::new(),
             show_mark_cloud: true,
             components: Vec::new(),
             host_requests: Vec::new(),
-            fit_curve_config: crate::core::FitCurveConfig::default(),
             contour_strokes: std::collections::BTreeMap::new(),
             companion_master_layers: Vec::new(),
             show_master_compatibility: false,
             select_all_layers_mode: false,
-            selected_companion_nodes: Vec::new(),
-            pre_all_layers_select_snapshot: None,
+            background_image: None,
+            smart_handles: Vec::new(),
+            show_extra_nodes: false,
+            selected_extra_node: None,
+            show_nodes_oncurve: true,
+            show_nodes_offcurve: true,
+            show_node_coordinates: false,
+            show_background_nodes: false,
+            show_component_piece_frames: false,
+            active_bbox_rotation_deg: None,
+            preferences: crate::tokens::GrafiaPreferences {
+                round_to_grid: false,
+                snap_radius_dp: crate::tokens::DEFAULT_SNAP_THRESHOLD_DP,
+                hit_test_radius_dp: crate::tokens::SELECT_NODE_HIT_RADIUS_DP,
+                scroll_wheel_zooms: false,
+                passive_neighbor_opacity: 1.0,
+                ..crate::tokens::GrafiaPreferences::default()
+            },
+            color_sublayers: Vec::new(),
+            custom_reference_frame: None,
+            postscript_hints: Vec::new(),
+            selected_postscript_hint: None,
+            truetype_instructions: Vec::new(),
+            selected_truetype_instruction: None,
+            truetype_instructor_ppem: crate::core::math_consts::TT_DEFAULT_PPEM,
+            show_hoi_diamonds: false,
+            show_pixel_preview_ppem: None,
+            backdrop_ghost_contours: Vec::new(),
             content_generation: next_content_generation(),
+            pen_transients: PenInteractionTransients::default(),
+            drag_transients: DragSessionTransients::default(),
+            text_transients: TextInteractionTransients::default(),
         }
-    }
+    };
+}
 
-    /// Returns the monotonic content revision counter incremented on any geometry, layer, text-stream,
-    /// anchor, component, stroke, or light/dark theme change.
+impl GrafiaCanvasState {
     #[must_use]
-    pub const fn content_generation(&self) -> u64 {
-        self.content_generation
-    }
-
-    /// Advances `content_generation` to a new monotonically increasing value.
-    pub fn bump_content_generation(&mut self) {
-        self.content_generation = next_content_generation();
-    }
-
-    pub fn set_appearance_mode(&mut self, mode: crate::tokens::AppearanceMode) {
-        self.set_appearance_with_system(mode, self.system_dark_mode);
-    }
-
-    pub fn set_system_dark_mode(&mut self, system_is_dark: bool) {
-        self.set_appearance_with_system(self.appearance_mode, system_is_dark);
-    }
-
-    pub fn set_appearance_with_system(
-        &mut self,
-        mode: crate::tokens::AppearanceMode,
-        system_is_dark: bool,
-    ) {
-        if self.appearance_mode != mode || self.system_dark_mode != system_is_dark {
-            self.appearance_mode = mode;
-            self.system_dark_mode = system_is_dark;
-            self.theme = GrafiaTheme::for_appearance(self.appearance_mode, self.system_dark_mode);
-            self.bump_content_generation();
-        }
+    pub fn new(theme: GrafiaTheme) -> Self {
+        let is_dark = theme.is_dark();
+        let appearance_mode = if is_dark {
+            crate::tokens::AppearanceMode::Dark
+        } else {
+            crate::tokens::AppearanceMode::Light
+        };
+        construct_default_canvas_state!(theme, appearance_mode, is_dark)
     }
 }

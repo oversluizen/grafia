@@ -17,14 +17,10 @@ impl<'a> CanvasPainter<'a> {
     pub(crate) fn pass_4_nodes(&self) {
         let vp = self.state.active_slot_viewport();
         crate::render::paint_duplicate_warnings_egui(self.painter, self.state, self.theme);
-        crate::render::paint_v030_alignment_badges_egui(self.painter, self.state);
-        let corner_color = self.theme.edit_canvas.corner_node_color32();
-        let smooth_color = self.theme.edit_canvas.smooth_node_color32();
-        let glow_color = self.theme.edit_canvas.selected_glow_color32();
+        crate::render::paint_alignment_badges_egui(self.painter, self.state);
         let arrow_color = self.theme.start_node_arrow_color32();
         let sw = self.theme.edit_canvas.contour_stroke_width_dp;
         let open_tick_stroke = Stroke::new(sw, self.theme.open_endpoint_color32());
-        let glow_stroke = Stroke::new(sw * 2.0, glow_color);
 
         for (c_idx, contour) in self.state.contours.iter().enumerate() {
             let is_closed = self.state.is_contour_closed(c_idx);
@@ -40,74 +36,26 @@ impl<'a> CanvasPainter<'a> {
                     .pending_pen_first_bcp_in
                     .is_none_or(|(c, _)| c != c_idx);
             for node in contour {
-                let is_sel = self.state.selected_nodes.contains(&node.id);
-                let proj = ProjectedNode::new(
-                    node.point,
-                    node.node_type,
-                    is_sel,
-                    &vp,
-                    &self.theme.edit_canvas,
-                );
-                let center = Pos2::new(proj.screen_pos.x.0, proj.screen_pos.y.0);
-                let half = self.theme.edit_canvas.node_size_dp * 0.5;
-                let node_rect = Rect::from_min_max(
-                    Pos2::new(center.x - half, center.y - half),
-                    Pos2::new(center.x + half, center.y + half),
-                );
-
-                if is_single_open_point {
-                    let single_stroke = Stroke::new(sw, corner_color);
-                    self.painter.line_segment(
-                        [node_rect.left_top(), node_rect.right_bottom()],
-                        single_stroke,
-                    );
-                    self.painter.line_segment(
-                        [node_rect.left_bottom(), node_rect.right_top()],
-                        single_stroke,
-                    );
-                } else {
-                    match node.node_type {
-                        NodeType::Corner => {
-                            self.painter.rect_filled(node_rect, 0.0, corner_color);
-                        }
-                        NodeType::Smooth => {
-                            self.painter.circle_filled(center, half, smooth_color);
-                        }
-                        NodeType::OffCurve => {
-                            let r = self.theme.edit_canvas.bcp_handle_size_dp * 0.5;
-                            self.painter.circle_filled(
-                                center,
-                                r,
-                                self.theme.edit_canvas.bcp_handle_color32(),
-                            );
-                        }
-                    }
-                }
-                if is_sel {
-                    let glow_rect = Rect::from_min_max(
-                        Pos2::new(node_rect.left() - sw, node_rect.top() - sw),
-                        Pos2::new(node_rect.right() + sw, node_rect.bottom() + sw),
-                    );
-                    self.painter
-                        .rect_stroke(glow_rect, 0.0, glow_stroke, StrokeKind::Middle);
-                }
+                self.paint_single_contour_node(node, is_single_open_point, &vp);
             }
 
-            if let Some([tip, left, right]) =
-                compute_start_node_arrow_triangle(contour, is_closed, &vp)
-            {
-                self.painter.add(Shape::convex_polygon(
-                    vec![
-                        Pos2::new(tip.x.0, tip.y.0),
-                        Pos2::new(left.x.0, left.y.0),
-                        Pos2::new(right.x.0, right.y.0),
-                    ],
-                    arrow_color,
-                    Stroke::new(
-                        START_NODE_ARROW_OUTLINE_WIDTH_DP,
-                        self.theme.canvas_background_color32(),
-                    ),
-                ));
+            if self.state.show_nodes_oncurve {
+                if let Some([tip, left, right]) =
+                    compute_start_node_arrow_triangle(contour, is_closed, &vp)
+                {
+                    self.painter.add(Shape::convex_polygon(
+                        vec![
+                            Pos2::new(tip.x.0, tip.y.0),
+                            Pos2::new(left.x.0, left.y.0),
+                            Pos2::new(right.x.0, right.y.0),
+                        ],
+                        arrow_color,
+                        Stroke::new(
+                            START_NODE_ARROW_OUTLINE_WIDTH_DP,
+                            self.theme.canvas_background_color32(),
+                        ),
+                    ));
+                }
             }
 
             if !is_closed {
@@ -128,11 +76,95 @@ impl<'a> CanvasPainter<'a> {
                 self.painter.circle_stroke(
                     ghost_pos,
                     half,
-                    Stroke::new(GHOST_NODE_STROKE_WIDTH_DP, glow_color),
+                    Stroke::new(
+                        GHOST_NODE_STROKE_WIDTH_DP,
+                        self.theme.edit_canvas.selected_glow_color32(),
+                    ),
                 );
-                self.painter
-                    .circle_filled(ghost_pos, half * 0.5, smooth_color);
+                self.painter.circle_filled(
+                    ghost_pos,
+                    half * 0.5,
+                    self.theme.edit_canvas.smooth_node_color32(),
+                );
             }
+        }
+    }
+
+    fn paint_single_contour_node(
+        &self,
+        node: &crate::core::Node,
+        is_single_open_point: bool,
+        vp: &crate::core::ViewportTransform,
+    ) {
+        if (node.node_type == NodeType::OffCurve && !self.state.show_nodes_offcurve)
+            || (node.node_type != NodeType::OffCurve && !self.state.show_nodes_oncurve)
+        {
+            return;
+        }
+        let corner_color = self.theme.edit_canvas.corner_node_color32();
+        let smooth_color = self.theme.edit_canvas.smooth_node_color32();
+        let sw = self.theme.edit_canvas.contour_stroke_width_dp;
+        let is_sel = self.state.selected_nodes.contains(&node.id);
+        let proj = ProjectedNode::new(
+            node.point,
+            node.node_type,
+            is_sel,
+            vp,
+            &self.theme.edit_canvas,
+        );
+        let center = Pos2::new(proj.screen_pos.x.0, proj.screen_pos.y.0);
+        let half = self.theme.edit_canvas.node_size_dp * 0.5;
+        let node_rect = Rect::from_min_max(
+            Pos2::new(center.x - half, center.y - half),
+            Pos2::new(center.x + half, center.y + half),
+        );
+
+        if is_single_open_point {
+            let single_stroke = Stroke::new(sw, corner_color);
+            self.painter.line_segment(
+                [node_rect.left_top(), node_rect.right_bottom()],
+                single_stroke,
+            );
+            self.painter.line_segment(
+                [node_rect.left_bottom(), node_rect.right_top()],
+                single_stroke,
+            );
+        } else {
+            match node.node_type {
+                NodeType::Corner => {
+                    self.painter.rect_filled(node_rect, 0.0, corner_color);
+                }
+                NodeType::Smooth => {
+                    self.painter.circle_filled(center, half, smooth_color);
+                }
+                NodeType::OffCurve => {
+                    let r = self.theme.edit_canvas.bcp_handle_size_dp * 0.5;
+                    crate::render::paint_offcurve_handle_egui(
+                        self.painter,
+                        center,
+                        r,
+                        self.theme.edit_canvas.handle_shape,
+                        self.theme.edit_canvas.bcp_handle_color32(),
+                    );
+                }
+                NodeType::HobbyStar { .. } | NodeType::EulerSpiro { .. } => {
+                    crate::render::paint_spline_node_marker_egui(
+                        self.painter,
+                        center,
+                        node.node_type,
+                        self.theme,
+                    );
+                }
+            }
+        }
+        if is_sel {
+            let glow_rect = Rect::from_min_max(
+                Pos2::new(node_rect.left() - sw, node_rect.top() - sw),
+                Pos2::new(node_rect.right() + sw, node_rect.bottom() + sw),
+            );
+            let glow_stroke = Stroke::new(sw * 2.0, self.theme.edit_canvas.selected_glow_color32());
+            self.painter
+                .rect_stroke(glow_rect, 0.0, glow_stroke, StrokeKind::Middle);
         }
     }
 
@@ -184,10 +216,11 @@ impl<'a> CanvasPainter<'a> {
     }
 
     pub(crate) fn paint_shape_thumbnails(&self) {
+        let scale = crate::core::math_consts::SHAPE_THUMBNAIL_CARD_SCALE;
         let pad = self.theme.shape_canvas.header_height_dp * 2.0;
         let mut row_y = self.canvas_rect.top() + pad + self.theme.shape_canvas.header_height_dp;
-        let card_w = self.theme.shape_canvas.thumbnail_width_dp * 2.0 * 2.0;
-        let card_h = self.theme.shape_canvas.thumbnail_height_dp * 2.0 * 2.0;
+        let card_w = self.theme.shape_canvas.thumbnail_width_dp * scale;
+        let card_h = self.theme.shape_canvas.thumbnail_height_dp * scale;
 
         for (idx, path) in self.state.paths.iter().enumerate() {
             let is_closed = self.state.is_contour_closed(idx);
@@ -195,8 +228,7 @@ impl<'a> CanvasPainter<'a> {
             let mut scaled_cfg = self.theme.shape_canvas.clone();
             scaled_cfg.thumbnail_width_dp = card_w;
             scaled_cfg.thumbnail_height_dp = card_h;
-            scaled_cfg.thumbnail_padding_dp =
-                self.theme.shape_canvas.thumbnail_padding_dp * 2.0 * 2.0;
+            scaled_cfg.thumbnail_padding_dp = self.theme.shape_canvas.thumbnail_padding_dp * scale;
             let proj = ShapeThumbnailProjection::compute(path, &scaled_cfg, node_count, true);
             let card_rect = Rect::from_min_size(
                 Pos2::new(self.canvas_rect.left() + pad, row_y),

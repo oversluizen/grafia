@@ -1,14 +1,9 @@
 //! `SPEC-007` (`grafia v0.6.0`) 5-mode contextual `SelectionInfo` data model,
 //! `GuideAlignment`, `CanvasAnchor`, and cubic handle/anchor geometry helpers.
 
-pub use crate::core::selection_info_ops::{
-    align_oncurve_nodes_to_background, collect_adjacent_offcurve_positions,
-    compute_radially_scaled_handle_pos, enforce_smooth_collinearity_around_oncurve,
-    find_first_offcurve_node_id, find_first_oncurve_with_adjacent_offcurve,
-    project_point_to_background_contours, resolve_tethered_oncurve_for_offcurve,
-    translate_oncurve_with_adjacent_handles, update_offcurve_with_smooth_constraint,
+use crate::core::canvas_entities::{
+    BackgroundImageInfo, BackgroundImageMutation, HobbyDirConstraint, HobbyNodeInfo,
 };
-
 use crate::core::{FontPoint, NodeId, NodeType, TransformGridAnchor};
 use crate::snapping::SelectedGuideRef;
 use serde::{Deserialize, Serialize};
@@ -114,7 +109,7 @@ pub struct GuideInfo {
     pub show_measurement: bool,
 }
 
-/// 5-mode contextual selection inspection contract (`SPEC-007 §2.2`).
+/// Contextual selection inspection contract (`SPEC-007 §2.2`, `SPEC-009 §2.1.3`).
 #[derive(Clone, Debug, PartialEq)]
 pub enum SelectionInfo {
     GlyphBase(GlyphBaseInfo),
@@ -122,9 +117,39 @@ pub enum SelectionInfo {
     SingleOffCurve(SingleOffCurveInfo),
     MultiNode(MultiNodeInfo),
     Guide(GuideInfo),
+    HobbyNode(HobbyNodeInfo),
+    BackgroundImage(BackgroundImageInfo),
+    GradientStop {
+        sublayer_index: usize,
+        stop_index: usize,
+        offset_pct: f64,
+        rgba: [u8; 4],
+    },
+    PostScriptHint {
+        hint_id: u64,
+        horizontal: bool,
+        origin_upm: f64,
+        width_upm: f64,
+        is_ghost: bool,
+        top_ghost: bool,
+    },
+    TrueTypeInstruction {
+        instruction_id: u64,
+        kind: crate::core::hinting_and_hoi::TrueTypeInstructionKind,
+        ppem: u16,
+        round_mode: crate::core::hinting_and_hoi::TrueTypeRoundingGrid,
+        stem_index: Option<u8>,
+        zone_index: Option<u8>,
+    },
+    HoiTiming {
+        c1_x: f64,
+        c1_y: f64,
+        c2_x: f64,
+        c2_y: f64,
+    },
 }
 
-/// Unified pure 2D VC controller-in command enum for the 5-mode Selection Info HUD (`SPEC-007 §2.2`).
+/// Unified pure 2D VC controller-in command enum for the Selection Info HUD (`SPEC-007 §2.2`, `SPEC-009 §2.1.3`, `SPEC-010`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum SelectionInfoAction {
     SetLsb(f64),
@@ -158,4 +183,41 @@ pub enum SelectionInfoAction {
     SetComponentLocked(bool),
     SetComponentAutoAlignment(bool),
     DecomposeComponents,
+    SetHobbyNode {
+        tension_in: f64,
+        tension_out: f64,
+        dir_constraint: HobbyDirConstraint,
+    },
+    MutateBackgroundImage(BackgroundImageMutation),
+    ResetBackgroundImageTransform,
+    MutateGradientStop {
+        offset_pct: f64,
+        rgba: [u8; 4],
+    },
+    MutatePostScriptHint {
+        origin_upm: f64,
+        width_upm: f64,
+        top_ghost: bool,
+    },
+    MutateTrueTypeInstruction {
+        kind: crate::core::hinting_and_hoi::TrueTypeInstructionKind,
+        ppem: u16,
+        round_mode: crate::core::hinting_and_hoi::TrueTypeRoundingGrid,
+        stem_index: Option<u8>,
+        zone_index: Option<u8>,
+    },
+    SetHoiTiming {
+        c1_x: f64,
+        c1_y: f64,
+        c2_x: f64,
+        c2_y: f64,
+    },
+    MutateHoiNode {
+        layer_index: usize,
+        contour_index: usize,
+        node_id: NodeId,
+        new_pos: FontPoint,
+        c1: FontPoint,
+        c2: FontPoint,
+    },
 }

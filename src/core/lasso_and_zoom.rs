@@ -3,12 +3,14 @@
 
 use crate::core::bezier_ops::{Node, NodeId, NodeType};
 use crate::core::coordinates::{FontPoint, ScreenPoint, ViewportTransform};
-use crate::core::transform_ops::TransformGridAnchor;
-use crate::tokens::{
-    EditCanvasTokens, DEG_TO_RAD_F64, MARQUEE_MAX_SLANT_TAN, SOLVER_DET_EPSILON,
-    ZOOM_MARQUEE_MIN_SUM_DP, ZOOM_STEPS, ZOOM_STEP_NEXT_THRESHOLD, ZOOM_STEP_PREV_THRESHOLD,
-    ZOOM_TOOL_MAX_SCALE, ZOOM_TOOL_MIN_SCALE,
+use crate::core::math_consts::{
+    DEG_TO_RAD_F64, MARQUEE_MAX_SLANT_TAN, RAD_TO_DEG_F64, SCALE_MIN_FACTOR,
+    SCALE_SHIFT_SIN_HORIZ_MAX, SCALE_SHIFT_SIN_VERT_MIN, SOLVER_DET_EPSILON,
+    TRANSFORM_MIN_PIVOT_DIST_UPM, TRANSFORM_ROTATE_SHIFT_STEP_DEG, ZOOM_MARQUEE_MIN_SUM_DP,
+    ZOOM_STEPS, ZOOM_STEP_NEXT_THRESHOLD, ZOOM_STEP_PREV_THRESHOLD, ZOOM_TOOL_MAX_SCALE,
+    ZOOM_TOOL_MIN_SCALE,
 };
+use crate::core::transform_ops::TransformGridAnchor;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[repr(u8)]
@@ -142,18 +144,16 @@ pub fn slanted_marquee_parallelogram_screen(
 }
 
 #[must_use]
-#[allow(clippy::too_many_arguments)]
 pub fn select_nodes_in_slanted_marquee(
     contours: &[Vec<Node>],
     viewport: &ViewportTransform,
-    _theme: &EditCanvasTokens,
     start: ScreenPoint,
     current: ScreenPoint,
     angle_deg: f64,
     initial_selected: &[NodeId],
-    is_shift: bool,
-    is_alt: bool,
+    is_shift_and_alt: (bool, bool),
 ) -> Vec<NodeId> {
+    let (is_shift, is_alt) = is_shift_and_alt;
     let quad_scr = slanted_marquee_parallelogram_screen(start, current, angle_deg);
     let quad_font: Vec<FontPoint> = quad_scr.iter().map(|&s| viewport.to_font(s)).collect();
     select_nodes_in_lasso_polygon(contours, &quad_font, initial_selected, is_shift, is_alt)
@@ -214,9 +214,6 @@ pub fn compute_rotate_tool_affine(
     curr_font: FontPoint,
     is_shift: bool,
 ) -> kurbo::Affine {
-    use crate::tokens::{
-        RAD_TO_DEG_F64, TRANSFORM_MIN_PIVOT_DIST_UPM, TRANSFORM_ROTATE_SHIFT_STEP_DEG,
-    };
     if start_font.distance_to(origin) <= TRANSFORM_MIN_PIVOT_DIST_UPM {
         return kurbo::Affine::IDENTITY;
     }
@@ -239,10 +236,6 @@ pub fn compute_scale_tool_affine(
     curr_font: FontPoint,
     is_shift: bool,
 ) -> kurbo::Affine {
-    use crate::tokens::{
-        SCALE_MIN_FACTOR, SCALE_SHIFT_SIN_HORIZ_MAX, SCALE_SHIFT_SIN_VERT_MIN,
-        TRANSFORM_MIN_PIVOT_DIST_UPM,
-    };
     let (ax, ay) = (start_font.x.0 - origin.x.0, start_font.y.0 - origin.y.0);
     if ax.abs() <= TRANSFORM_MIN_PIVOT_DIST_UPM || ay.abs() <= TRANSFORM_MIN_PIVOT_DIST_UPM {
         return kurbo::Affine::IDENTITY;
@@ -281,6 +274,79 @@ pub fn compute_scale_tool_affine(
         * kurbo::Affine::translate((-origin.x.0, -origin.y.0))
 }
 
+fn round_grid_coord(pt: FontPoint, grid_step_upm: f64) -> FontPoint {
+    if grid_step_upm > 0.0 {
+        FontPoint::new(
+            (pt.x.0 / grid_step_upm).round() * grid_step_upm,
+            (pt.y.0 / grid_step_upm).round() * grid_step_upm,
+        )
+    } else {
+        pt
+    }
+}
+
+fn propagate_unselected_offcurve_in_contour(
+    contour: &mut [Node],
+    shadow: &[Node],
+    closed: bool,
+    selected_nodes: &[NodeId],
+    grid_step_upm: f64,
+) {
+    let len = contour.len();
+    if len < 2 {
+        return;
+    }
+    let neighbor_idx = |idx: usize, step_prev: bool| -> Option<usize> {
+        if step_prev {
+            if idx > 0 {
+                Some(idx - 1)
+            } else if closed {
+                Some(len - 1)
+            } else {
+                None
+            }
+        } else if idx + 1 < len {
+            Some(idx + 1)
+        } else if closed {
+            Some(0)
+        } else {
+            None
+        }
+    };
+    for i in 0..len {
+        if contour[i].node_type != NodeType::OffCurve || selected_nodes.contains(&contour[i].id) {
+            continue;
+        }
+        let prev = neighbor_idx(i, true);
+        let next = neighbor_idx(i, false);
+        let anchor_idx = prev
+            .filter(|&p| contour[p].node_type != NodeType::OffCurve)
+            .or_else(|| next.filter(|&n| contour[n].node_type != NodeType::OffCurve));
+        let Some(a_idx) = anchor_idx else {
+            continue;
+        };
+        if selected_nodes.contains(&contour[a_idx].id) {
+            let da_x = contour[a_idx].point.x.0 - shadow[a_idx].point.x.0;
+            let da_y = contour[a_idx].point.y.0 - shadow[a_idx].point.y.0;
+            contour[i].point = round_grid_coord(
+                FontPoint::new(shadow[i].point.x.0 + da_x, shadow[i].point.y.0 + da_y),
+                grid_step_upm,
+            );
+        }
+        if contour[a_idx].node_type == NodeType::Smooth {
+            let opp_idx = neighbor_idx(a_idx, prev == Some(a_idx));
+            if let Some(b_idx) = opp_idx.filter(|&b| selected_nodes.contains(&contour[b].id)) {
+                let aligned = crate::core::align_collinear_opposite(
+                    contour[a_idx].point,
+                    contour[i].point,
+                    contour[b_idx].point,
+                );
+                contour[i].point = round_grid_coord(aligned, grid_step_upm);
+            }
+        }
+    }
+}
+
 pub fn apply_mode_nodes_transform(
     contours: &mut [Vec<Node>],
     shadow_contours: &[Vec<Node>],
@@ -290,16 +356,6 @@ pub fn apply_mode_nodes_transform(
     is_ctrl_alt: bool,
     grid_step_upm: f64,
 ) {
-    let round_pt = |pt: FontPoint| -> FontPoint {
-        if grid_step_upm > 0.0 {
-            FontPoint::new(
-                (pt.x.0 / grid_step_upm).round() * grid_step_upm,
-                (pt.y.0 / grid_step_upm).round() * grid_step_upm,
-            )
-        } else {
-            pt
-        }
-    };
     for (c_idx, contour) in contours.iter_mut().enumerate() {
         let Some(shadow) = shadow_contours.get(c_idx) else {
             continue;
@@ -308,7 +364,7 @@ pub fn apply_mode_nodes_transform(
             if selected_nodes.contains(&node.id) {
                 let sp = shadow[i].point;
                 let tp = affine * kurbo::Point::new(sp.x.0, sp.y.0);
-                node.point = round_pt(FontPoint::new(tp.x, tp.y));
+                node.point = round_grid_coord(FontPoint::new(tp.x, tp.y), grid_step_upm);
             } else {
                 node.point = shadow[i].point;
             }
@@ -329,69 +385,13 @@ pub fn apply_mode_nodes_transform(
         let Some(shadow) = shadow_contours.get(c_idx) else {
             continue;
         };
-        let len = contour.len();
-        if len < 2 {
-            continue;
-        }
         let closed = closed_flags.get(c_idx).copied().unwrap_or(true);
-        for i in 0..len {
-            if contour[i].node_type != NodeType::OffCurve || selected_nodes.contains(&contour[i].id)
-            {
-                continue;
-            }
-            let prev = if i > 0 {
-                Some(i - 1)
-            } else if closed {
-                Some(len - 1)
-            } else {
-                None
-            };
-            let next = if i + 1 < len {
-                Some(i + 1)
-            } else if closed {
-                Some(0)
-            } else {
-                None
-            };
-            let anchor_idx = prev
-                .filter(|&p| contour[p].node_type != NodeType::OffCurve)
-                .or_else(|| next.filter(|&n| contour[n].node_type != NodeType::OffCurve));
-            let Some(a_idx) = anchor_idx else {
-                continue;
-            };
-            if selected_nodes.contains(&contour[a_idx].id) {
-                let da_x = contour[a_idx].point.x.0 - shadow[a_idx].point.x.0;
-                let da_y = contour[a_idx].point.y.0 - shadow[a_idx].point.y.0;
-                contour[i].point = round_pt(FontPoint::new(
-                    shadow[i].point.x.0 + da_x,
-                    shadow[i].point.y.0 + da_y,
-                ));
-            }
-            if contour[a_idx].node_type == NodeType::Smooth {
-                let opp_idx = if prev == Some(a_idx) {
-                    if a_idx > 0 {
-                        Some(a_idx - 1)
-                    } else if closed {
-                        Some(len - 1)
-                    } else {
-                        None
-                    }
-                } else if a_idx + 1 < len {
-                    Some(a_idx + 1)
-                } else if closed {
-                    Some(0)
-                } else {
-                    None
-                };
-                if let Some(b_idx) = opp_idx.filter(|&b| selected_nodes.contains(&contour[b].id)) {
-                    let aligned = crate::core::align_collinear_opposite(
-                        contour[a_idx].point,
-                        contour[i].point,
-                        contour[b_idx].point,
-                    );
-                    contour[i].point = round_pt(aligned);
-                }
-            }
-        }
+        propagate_unselected_offcurve_in_contour(
+            contour,
+            shadow,
+            closed,
+            selected_nodes,
+            grid_step_upm,
+        );
     }
 }

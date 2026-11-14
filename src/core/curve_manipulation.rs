@@ -5,7 +5,7 @@
 use crate::core::bezier_ops::{Node, NodeId, NodeType};
 use crate::core::coordinates::FontPoint;
 use crate::core::handle_constraints::fit_cubic_to_segment_chain;
-use crate::tokens::{CURVE_SOLVE_ACCURACY, PARAM_CLAMP_MAX, PARAM_CLAMP_MIN};
+use crate::core::math_consts::{CURVE_SOLVE_ACCURACY, PARAM_CLAMP_MAX, PARAM_CLAMP_MIN};
 use kurbo::{CubicBez, Line, ParamCurve, ParamCurveNearest, Point};
 
 /// A geometric segment extracted from a glyph contour.
@@ -234,6 +234,79 @@ fn sanitize_contour_handles(contour: &mut Vec<Node>, closed: bool) {
     }
 }
 
+fn heal_delete_single_on_curve(
+    contour: &mut Vec<Node>,
+    closed: bool,
+    del_idx: usize,
+    to_delete: &[NodeId],
+    next_node_id: &mut u64,
+) -> bool {
+    let n = contour.len();
+    let prev_on = (1..n)
+        .take_while(|&offset| closed || offset <= del_idx)
+        .map(|offset| (del_idx + n - offset) % n)
+        .find(|&idx| {
+            contour[idx].node_type != NodeType::OffCurve && !to_delete.contains(&contour[idx].id)
+        });
+    let next_on = (1..n)
+        .take_while(|&offset| closed || del_idx + offset < n)
+        .map(|offset| (del_idx + offset) % n)
+        .find(|&idx| {
+            contour[idx].node_type != NodeType::OffCurve && !to_delete.contains(&contour[idx].id)
+        });
+
+    let (Some(p_idx), Some(n_idx)) = (prev_on, next_on) else {
+        return false;
+    };
+    if p_idx == n_idx {
+        return false;
+    }
+
+    let mut sub_nodes = vec![contour[p_idx].clone()];
+    let mut indices_to_remove = Vec::new();
+    let mut curr = (p_idx + 1) % n;
+    while curr != n_idx {
+        sub_nodes.push(contour[curr].clone());
+        indices_to_remove.push(curr);
+        curr = (curr + 1) % n;
+    }
+    sub_nodes.push(contour[n_idx].clone());
+
+    let has_curve_in_chain = sub_nodes[1..sub_nodes.len() - 1]
+        .iter()
+        .any(|nd| nd.node_type == NodeType::OffCurve);
+
+    if !has_curve_in_chain {
+        indices_to_remove.sort_by(|a, b| b.cmp(a));
+        for r_idx in &indices_to_remove {
+            contour.remove(*r_idx);
+        }
+        return true;
+    }
+
+    let p_id = contour[p_idx].id;
+    let sub_segments = extract_segments(&sub_nodes, false);
+    let (h1_pt, h2_pt) = fit_cubic_to_segment_chain(&sub_segments);
+
+    let h1_id = NodeId(*next_node_id);
+    *next_node_id += 1;
+    let h2_id = NodeId(*next_node_id);
+    *next_node_id += 1;
+
+    let h1 = Node::new(h1_id, h1_pt.x.0, h1_pt.y.0, NodeType::OffCurve);
+    let h2 = Node::new(h2_id, h2_pt.x.0, h2_pt.y.0, NodeType::OffCurve);
+
+    indices_to_remove.sort_by(|a, b| b.cmp(a));
+    for r_idx in &indices_to_remove {
+        contour.remove(*r_idx);
+    }
+
+    let updated_p_idx = contour.iter().position(|node| node.id == p_id).unwrap_or(0);
+    contour.insert(updated_p_idx + 1, h1);
+    contour.insert(updated_p_idx + 2, h2);
+    true
+}
+
 /// Deletes selected nodes with context-aware curve healing (SPEC-002 §3.1, DEF-GRAFIA-003, TC-1244).
 pub fn heal_delete_nodes(
     contour: &mut Vec<Node>,
@@ -257,87 +330,9 @@ pub fn heal_delete_nodes(
             if contour[del_idx].node_type == NodeType::OffCurve {
                 continue;
             }
-
-            let n = contour.len();
-
-            let mut prev_on = None;
-            for offset in 1..n {
-                if !closed && offset > del_idx {
-                    break;
-                }
-                let idx = (del_idx + n - offset) % n;
-                if contour[idx].node_type != NodeType::OffCurve
-                    && !to_delete.contains(&contour[idx].id)
-                {
-                    prev_on = Some(idx);
-                    break;
-                }
+            if heal_delete_single_on_curve(contour, closed, del_idx, to_delete, next_node_id) {
+                continue;
             }
-
-            let mut next_on = None;
-            for offset in 1..n {
-                if !closed && del_idx + offset >= n {
-                    break;
-                }
-                let idx = (del_idx + offset) % n;
-                if contour[idx].node_type != NodeType::OffCurve
-                    && !to_delete.contains(&contour[idx].id)
-                {
-                    next_on = Some(idx);
-                    break;
-                }
-            }
-
-            if let (Some(p_idx), Some(n_idx)) = (prev_on, next_on) {
-                if p_idx != n_idx {
-                    let mut sub_nodes = vec![contour[p_idx].clone()];
-                    let mut indices_to_remove = Vec::new();
-                    let mut curr = (p_idx + 1) % n;
-                    while curr != n_idx {
-                        sub_nodes.push(contour[curr].clone());
-                        indices_to_remove.push(curr);
-                        curr = (curr + 1) % n;
-                    }
-                    sub_nodes.push(contour[n_idx].clone());
-
-                    let has_curve_in_chain = sub_nodes[1..sub_nodes.len() - 1]
-                        .iter()
-                        .any(|nd| nd.node_type == NodeType::OffCurve);
-
-                    // DEF-GRAFIA-003: When all segments in the deleted chain are straight lines, keep a straight line (0 OffCurve dots)
-                    if !has_curve_in_chain {
-                        indices_to_remove.sort_by(|a, b| b.cmp(a));
-                        for r_idx in &indices_to_remove {
-                            contour.remove(*r_idx);
-                        }
-                        continue;
-                    }
-
-                    let p_id = contour[p_idx].id;
-                    let sub_segments = extract_segments(&sub_nodes, false);
-                    let (h1_pt, h2_pt) = fit_cubic_to_segment_chain(&sub_segments);
-
-                    let h1_id = NodeId(*next_node_id);
-                    *next_node_id += 1;
-                    let h2_id = NodeId(*next_node_id);
-                    *next_node_id += 1;
-
-                    let h1 = Node::new(h1_id, h1_pt.x.0, h1_pt.y.0, NodeType::OffCurve);
-                    let h2 = Node::new(h2_id, h2_pt.x.0, h2_pt.y.0, NodeType::OffCurve);
-
-                    indices_to_remove.sort_by(|a, b| b.cmp(a));
-                    for r_idx in &indices_to_remove {
-                        contour.remove(*r_idx);
-                    }
-
-                    let updated_p_idx =
-                        contour.iter().position(|node| node.id == p_id).unwrap_or(0);
-                    contour.insert(updated_p_idx + 1, h1);
-                    contour.insert(updated_p_idx + 2, h2);
-                    continue;
-                }
-            }
-
             contour.retain(|node| node.id != id);
             sanitize_contour_handles(contour, closed);
         }

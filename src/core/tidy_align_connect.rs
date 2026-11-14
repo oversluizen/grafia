@@ -1,20 +1,16 @@
 //! `SPEC-003 §2.6.5–§2.6.7` `tidy_up_contours`, `checkConnections`, duplicate-node warning circles,
 //! `align_selected_nodes` (`_GSAlignedPointForBounds` + `_alignOtherNodes:`), and `connect_selected_open_endpoints`.
 
-pub use crate::core::align_and_connect::{
-    align_selected_nodes, close_open_contours_in_layer, connect_selected_open_endpoints_in_contours,
-};
-
 use crate::core::bezier_ops::{Node, NodeId, NodeType};
 use crate::core::coordinates::FontPoint;
 use crate::core::curve_manipulation::{extract_segments, ContourSegment};
-use crate::core::path_ops::round_grid_pt;
-use crate::tokens::{
+use crate::core::math_consts::{
     COLLINEAR_MIN_LEN_EPSILON, CONNECT_MERGE_DIST_UPM, GS_COLINEAR_PERP_FACTOR, PATH_COORD_EPS_UPM,
     TIDY_COLLINEAR_SLOPE_EPS, TIDY_FINE_GRID_THRESHOLD, TIDY_MERGE_ONCURVE_COARSE_UPM,
     TIDY_MERGE_ONCURVE_FINE_UPM, TIDY_MINI_CONTOUR_COARSE_UPM, TIDY_MINI_CONTOUR_FINE_UPM,
     TIDY_ZERO_HANDLE_EPS_UPM, WARNING_OFFCURVE_DIST_UPM,
 };
+use crate::core::path_ops::round_grid_pt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DuplicateWarningKind {
@@ -76,6 +72,165 @@ fn gs_colinear_lines(a: FontPoint, b: FontPoint, c: FontPoint) -> bool {
     (cross / l_ac) < GS_COLINEAR_PERP_FACTOR * l1.min(l2).sqrt()
 }
 
+fn retract_degenerate_cubic_handles(contour: &mut Vec<Node>, closed: bool) {
+    let segs = extract_segments(contour, closed);
+    let mut remove_ids = Vec::new();
+    for seg in &segs {
+        if let ContourSegment::Cubic {
+            start_idx,
+            h1_idx,
+            h2_idx,
+            end_idx,
+            ..
+        } = *seg
+        {
+            let p0 = contour[start_idx].point;
+            let h1 = contour[h1_idx].point;
+            let h2 = contour[h2_idx].point;
+            let p3 = contour[end_idx].point;
+            let zero_handles = p0.distance_to(h1) < TIDY_ZERO_HANDLE_EPS_UPM
+                && p3.distance_to(h2) < TIDY_ZERO_HANDLE_EPS_UPM;
+            let col_handles = gs_colinear_lines(p0, h1, p3) && gs_colinear_lines(p0, h2, p3);
+            if zero_handles || col_handles {
+                remove_ids.push(contour[h1_idx].id);
+                remove_ids.push(contour[h2_idx].id);
+            }
+        }
+    }
+    if !remove_ids.is_empty() {
+        contour.retain(|n| !remove_ids.contains(&n.id));
+    }
+}
+
+fn merge_coincident_oncurve_line_nodes(contour: &mut Vec<Node>, closed: bool, eps_on: f64) {
+    let mut i = 0;
+    while i < contour.len() {
+        let on_c = contour
+            .iter()
+            .filter(|n| n.node_type != NodeType::OffCurve)
+            .count();
+        if on_c <= 2 {
+            break;
+        }
+        let next_i = if i + 1 < contour.len() {
+            Some(i + 1)
+        } else if closed && contour.len() >= 2 {
+            Some(0)
+        } else {
+            None
+        };
+        let Some(ni) = next_i else {
+            break;
+        };
+        if ni != i
+            && contour[i].node_type != NodeType::OffCurve
+            && contour[ni].node_type != NodeType::OffCurve
+            && contour[i].point.distance_to(contour[ni].point) < eps_on
+        {
+            let rem_idx = if ni == 0 { i } else { ni };
+            contour.remove(rem_idx);
+            if rem_idx <= i && i > 0 {
+                i -= 1;
+            }
+        } else {
+            i += 1;
+        }
+    }
+}
+
+fn remove_collinear_interior_line_nodes(contour: &mut Vec<Node>, closed: bool) {
+    let mut idx = 0;
+    while idx < contour.len() && contour.len() >= 3 {
+        if !closed && (idx == 0 || idx + 1 >= contour.len()) {
+            idx += 1;
+            continue;
+        }
+        let prev_i = if idx > 0 { idx - 1 } else { contour.len() - 1 };
+        let next_i = (idx + 1) % contour.len();
+        if contour[prev_i].node_type != NodeType::OffCurve
+            && contour[idx].node_type != NodeType::OffCurve
+            && contour[next_i].node_type != NodeType::OffCurve
+        {
+            let (a, b, c) = (
+                contour[prev_i].point,
+                contour[idx].point,
+                contour[next_i].point,
+            );
+            let (dx1, dy1) = (b.x.0 - a.x.0, b.y.0 - a.y.0);
+            let (dx2, dy2) = (c.x.0 - b.x.0, c.y.0 - b.y.0);
+            let forward = dx1 * dx2 + dy1 * dy2 > 0.0;
+            let same_x = dx1.abs() < PATH_COORD_EPS_UPM && dx2.abs() < PATH_COORD_EPS_UPM;
+            let same_y = dy1.abs() < PATH_COORD_EPS_UPM && dy2.abs() < PATH_COORD_EPS_UPM;
+            let same_slope = dx1.abs() >= PATH_COORD_EPS_UPM
+                && dx2.abs() >= PATH_COORD_EPS_UPM
+                && ((dy1 / dx1) - (dy2 / dx2)).abs() < TIDY_COLLINEAR_SLOPE_EPS;
+            if forward && (same_x || same_y || same_slope) {
+                contour.remove(idx);
+                continue;
+            }
+        }
+        idx += 1;
+    }
+}
+
+fn update_collinear_smooth_connections(contour: &mut [Node], closed: bool, grid_step_upm: f64) {
+    let len = contour.len();
+    if len < 3 {
+        return;
+    }
+    let mut next_types: Vec<NodeType> = contour.iter().map(|n| n.node_type).collect();
+    for k in 0..len {
+        if contour[k].node_type == NodeType::OffCurve {
+            continue;
+        }
+        if !closed && (k == 0 || k + 1 == len) {
+            next_types[k] = NodeType::Corner;
+            continue;
+        }
+        let prev_k = if k > 0 { k - 1 } else { len - 1 };
+        let next_k = (k + 1) % len;
+        let has_off = contour[prev_k].node_type == NodeType::OffCurve
+            || contour[next_k].node_type == NodeType::OffCurve;
+        if has_off
+            && gs_colinear_lines(
+                contour[prev_k].point,
+                contour[k].point,
+                contour[next_k].point,
+            )
+        {
+            next_types[k] = NodeType::Smooth;
+            if contour[prev_k].node_type == NodeType::OffCurve
+                && contour[next_k].node_type != NodeType::OffCurve
+            {
+                contour[prev_k].point = round_grid_pt(
+                    crate::core::align_collinear_opposite(
+                        contour[k].point,
+                        contour[prev_k].point,
+                        contour[next_k].point,
+                    ),
+                    grid_step_upm,
+                );
+            } else if contour[next_k].node_type == NodeType::OffCurve
+                && contour[prev_k].node_type != NodeType::OffCurve
+            {
+                contour[next_k].point = round_grid_pt(
+                    crate::core::align_collinear_opposite(
+                        contour[k].point,
+                        contour[next_k].point,
+                        contour[prev_k].point,
+                    ),
+                    grid_step_upm,
+                );
+            }
+        } else {
+            next_types[k] = NodeType::Corner;
+        }
+    }
+    for (k, nt) in next_types.into_iter().enumerate() {
+        contour[k].node_type = nt;
+    }
+}
+
 pub fn tidy_up_contours(
     contours: &mut Vec<Vec<Node>>,
     closed_flags: &mut Vec<bool>,
@@ -130,105 +285,10 @@ pub fn tidy_up_contours(
             continue;
         }
 
-        // Retract zero-length or collinear cubic handles -> straight Line
-        let segs = extract_segments(&contour, closed);
-        let mut remove_ids = Vec::new();
-        for seg in &segs {
-            if let ContourSegment::Cubic {
-                start_idx,
-                h1_idx,
-                h2_idx,
-                end_idx,
-                ..
-            } = *seg
-            {
-                let p0 = contour[start_idx].point;
-                let h1 = contour[h1_idx].point;
-                let h2 = contour[h2_idx].point;
-                let p3 = contour[end_idx].point;
-                let zero_handles = p0.distance_to(h1) < TIDY_ZERO_HANDLE_EPS_UPM
-                    && p3.distance_to(h2) < TIDY_ZERO_HANDLE_EPS_UPM;
-                let col_handles = gs_colinear_lines(p0, h1, p3) && gs_colinear_lines(p0, h2, p3);
-                if zero_handles || col_handles {
-                    remove_ids.push(contour[h1_idx].id);
-                    remove_ids.push(contour[h2_idx].id);
-                }
-            }
-        }
-        if !remove_ids.is_empty() {
-            contour.retain(|n| !remove_ids.contains(&n.id));
-        }
+        retract_degenerate_cubic_handles(&mut contour, closed);
+        merge_coincident_oncurve_line_nodes(&mut contour, closed, eps_on);
+        remove_collinear_interior_line_nodes(&mut contour, closed);
 
-        // Merge coincident consecutive OnCurve nodes connected by straight Line
-        let mut i = 0;
-        while i < contour.len() {
-            let on_c = contour
-                .iter()
-                .filter(|n| n.node_type != NodeType::OffCurve)
-                .count();
-            if on_c <= 2 {
-                break;
-            }
-            let next_i = if i + 1 < contour.len() {
-                Some(i + 1)
-            } else if closed && contour.len() >= 2 {
-                Some(0)
-            } else {
-                None
-            };
-            let Some(ni) = next_i else {
-                break;
-            };
-            if ni != i
-                && contour[i].node_type != NodeType::OffCurve
-                && contour[ni].node_type != NodeType::OffCurve
-                && contour[i].point.distance_to(contour[ni].point) < eps_on
-            {
-                let rem_idx = if ni == 0 { i } else { ni };
-                contour.remove(rem_idx);
-                if rem_idx <= i && i > 0 {
-                    i -= 1;
-                }
-            } else {
-                i += 1;
-            }
-        }
-
-        // Collinear interior Line node removal
-        let mut idx = 0;
-        while idx < contour.len() && contour.len() >= 3 {
-            if !closed && (idx == 0 || idx + 1 >= contour.len()) {
-                idx += 1;
-                continue;
-            }
-            let prev_i = if idx > 0 { idx - 1 } else { contour.len() - 1 };
-            let next_i = (idx + 1) % contour.len();
-            if contour[prev_i].node_type != NodeType::OffCurve
-                && contour[idx].node_type != NodeType::OffCurve
-                && contour[next_i].node_type != NodeType::OffCurve
-            {
-                let a = contour[prev_i].point;
-                let b = contour[idx].point;
-                let c = contour[next_i].point;
-                let dx1 = b.x.0 - a.x.0;
-                let dy1 = b.y.0 - a.y.0;
-                let dx2 = c.x.0 - b.x.0;
-                let dy2 = c.y.0 - b.y.0;
-                let forward = dx1 * dx2 + dy1 * dy2 > 0.0;
-                let same_x = dx1.abs() < PATH_COORD_EPS_UPM && dx2.abs() < PATH_COORD_EPS_UPM;
-                let same_y = dy1.abs() < PATH_COORD_EPS_UPM && dy2.abs() < PATH_COORD_EPS_UPM;
-                let same_slope = dx1.abs() >= PATH_COORD_EPS_UPM
-                    && dx2.abs() >= PATH_COORD_EPS_UPM
-                    && ((dy1 / dx1) - (dy2 / dx2)).abs() < TIDY_COLLINEAR_SLOPE_EPS;
-                if forward && (same_x || same_y || same_slope) {
-                    contour.remove(idx);
-                    continue;
-                }
-            }
-            idx += 1;
-        }
-
-        // Open-contour auto-close (< 1.0 UPM)
         let rem_on = contour
             .iter()
             .filter(|n| n.node_type != NodeType::OffCurve)
@@ -237,70 +297,15 @@ pub fn tidy_up_contours(
             continue;
         }
         if !closed && rem_on >= 3 {
-            let p_first = contour.first().unwrap().point;
-            let p_last = contour.last().unwrap().point;
-            if p_first.distance_to(p_last) < CONNECT_MERGE_DIST_UPM {
-                contour.pop();
-                closed = true;
+            if let (Some(first), Some(last)) = (contour.first(), contour.last()) {
+                if first.point.distance_to(last.point) < CONNECT_MERGE_DIST_UPM {
+                    contour.pop();
+                    closed = true;
+                }
             }
         }
 
-        // checkConnections (collinear_lines)
-        let len = contour.len();
-        if len >= 3 {
-            let mut next_types: Vec<NodeType> = contour.iter().map(|n| n.node_type).collect();
-            for k in 0..len {
-                if contour[k].node_type == NodeType::OffCurve {
-                    continue;
-                }
-                if !closed && (k == 0 || k + 1 == len) {
-                    next_types[k] = NodeType::Corner;
-                    continue;
-                }
-                let prev_k = if k > 0 { k - 1 } else { len - 1 };
-                let next_k = (k + 1) % len;
-                let has_off = contour[prev_k].node_type == NodeType::OffCurve
-                    || contour[next_k].node_type == NodeType::OffCurve;
-                if has_off
-                    && gs_colinear_lines(
-                        contour[prev_k].point,
-                        contour[k].point,
-                        contour[next_k].point,
-                    )
-                {
-                    next_types[k] = NodeType::Smooth;
-                    if contour[prev_k].node_type == NodeType::OffCurve
-                        && contour[next_k].node_type != NodeType::OffCurve
-                    {
-                        contour[prev_k].point = round_grid_pt(
-                            crate::core::align_collinear_opposite(
-                                contour[k].point,
-                                contour[prev_k].point,
-                                contour[next_k].point,
-                            ),
-                            grid_step_upm,
-                        );
-                    } else if contour[next_k].node_type == NodeType::OffCurve
-                        && contour[prev_k].node_type != NodeType::OffCurve
-                    {
-                        contour[next_k].point = round_grid_pt(
-                            crate::core::align_collinear_opposite(
-                                contour[k].point,
-                                contour[next_k].point,
-                                contour[prev_k].point,
-                            ),
-                            grid_step_upm,
-                        );
-                    }
-                } else {
-                    next_types[k] = NodeType::Corner;
-                }
-            }
-            for (k, nt) in next_types.into_iter().enumerate() {
-                contour[k].node_type = nt;
-            }
-        }
-
+        update_collinear_smooth_connections(&mut contour, closed, grid_step_upm);
         kept_c.push(contour);
         kept_f.push(closed);
     }

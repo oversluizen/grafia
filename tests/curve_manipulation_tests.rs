@@ -1,3 +1,12 @@
+#![allow(
+    clippy::too_many_lines,
+    clippy::cognitive_complexity,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::too_many_arguments,
+    clippy::iter_over_hash_type
+)]
 //! Conformance test suite for Curve Manipulation and Node Editing (TC-1237, TC-1238, TC-1241, TC-1244, TC-1245).
 //!
 //! Normative: SPEC-002 Deel I §4 & Deel II (Oracle Matrix).

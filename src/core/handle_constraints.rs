@@ -1,14 +1,14 @@
 //! Attached BCP handle translation, Smooth $G^1$ collinearity enforcement, and Line-to-Cubic conversion (`SPEC-002 §2.1`).
 
+use crate::core::auto_trace_bezier::{reparameterize_newton, solve_schneider_cubic_lsq};
 use crate::core::bezier_ops::{align_collinear_opposite, Node, NodeId, NodeType};
 use crate::core::coordinates::FontPoint;
 use crate::core::curve_manipulation::ContourSegment;
-use crate::tokens::{
-    BERNSTEIN_CUBIC_COEFF, BERNSTEIN_SECOND_DERIV_COEFF, COLLINEAR_MIN_LEN_EPSILON,
-    CUBIC_ONE_THIRD, CUBIC_TWO_THIRDS, FIT_SAMPLES_PER_SEGMENT, NEWTON_REPARAM_ITERATIONS,
-    PARAM_CLAMP_MAX, PARAM_CLAMP_MIN, SOLVER_DET_EPSILON, SPLIT_RATIO_MIN,
+use crate::core::math_consts::{
+    COLLINEAR_MIN_LEN_EPSILON, CUBIC_ONE_THIRD, CUBIC_TWO_THIRDS, FIT_SAMPLES_PER_SEGMENT,
+    NEWTON_REPARAM_ITERATIONS, PARAM_CLAMP_MAX, PARAM_CLAMP_MIN, SPLIT_RATIO_MIN,
 };
-use kurbo::{CubicBez, ParamCurve, Point, Vec2};
+use kurbo::{ParamCurve, Point, Vec2};
 
 /// Expands `selected` node IDs to include directly attached `OffCurve` BCP handles of any
 /// selected `OnCurve` node (unless `include_attached` is `false`, e.g. when `Alt` is held).
@@ -236,7 +236,9 @@ pub fn toggle_selected_on_curve_smooth(
             }
             contour[i].node_type = match contour[i].node_type {
                 NodeType::Corner => NodeType::Smooth,
-                NodeType::Smooth => NodeType::Corner,
+                NodeType::Smooth | NodeType::HobbyStar { .. } | NodeType::EulerSpiro { .. } => {
+                    NodeType::Corner
+                }
                 NodeType::OffCurve => NodeType::OffCurve,
             };
             changed = true;
@@ -280,25 +282,7 @@ fn seg_endpoints_and_tangents(seg: &ContourSegment) -> (Point, Point, Vec2, Vec2
     }
 }
 
-/// Fits a single cubic Bézier `(h1, h2)` along the endpoint tangents of a chain of segments
-/// using inverse De Casteljau handle-ratio initialization and Schneider's Newton-Raphson
-/// least-squares solver (`SPEC-002 §3.1`, Reference `removeNodeCheckKeepShape:` parity).
-#[must_use]
-pub fn fit_cubic_to_segment_chain(segments: &[ContourSegment]) -> (FontPoint, FontPoint) {
-    let (p0, _, v1_raw, _) = seg_endpoints_and_tangents(&segments[0]);
-    let (_, p3, _, v2_raw) = seg_endpoints_and_tangents(&segments[segments.len() - 1]);
-    let chord = (p3 - p0).hypot().max(1.0);
-    let t1 = if v1_raw.hypot() > COLLINEAR_MIN_LEN_EPSILON {
-        v1_raw / v1_raw.hypot()
-    } else {
-        (p3 - p0) / chord
-    };
-    let t2 = if v2_raw.hypot() > COLLINEAR_MIN_LEN_EPSILON {
-        v2_raw / v2_raw.hypot()
-    } else {
-        (p0 - p3) / chord
-    };
-
+fn sample_segment_chain_for_fit(segments: &[ContourSegment]) -> (Vec<Point>, Vec<f64>) {
     let mut weights = vec![1.0_f64; segments.len()];
     for idx in 0..segments.len().saturating_sub(1) {
         let d_in = match segments[idx] {
@@ -318,7 +302,8 @@ pub fn fit_cubic_to_segment_chain(segments: &[ContourSegment]) -> (FontPoint, Fo
     }
 
     let weight_sum: f64 = weights.iter().sum::<f64>().max(COLLINEAR_MIN_LEN_EPSILON);
-    let mut samples: Vec<(Point, f64)> = Vec::new();
+    let mut pts: Vec<Point> = Vec::new();
+    let mut params: Vec<f64> = Vec::new();
     let mut u_acc = 0.0;
     for (seg, &w) in segments.iter().zip(&weights) {
         let span = w / weight_sum;
@@ -332,7 +317,8 @@ pub fn fit_cubic_to_segment_chain(segments: &[ContourSegment]) -> (FontPoint, Fo
                 ContourSegment::Line { line, .. } => line.eval(local_t),
                 ContourSegment::Cubic { cubic, .. } => cubic.eval(local_t),
             };
-            samples.push((pt, u));
+            pts.push(pt);
+            params.push(u);
         }
         if (u_acc..=u_acc + span).contains(&0.5) {
             let lt = ((0.5 - u_acc) / span).clamp(0.0, 1.0);
@@ -340,16 +326,41 @@ pub fn fit_cubic_to_segment_chain(segments: &[ContourSegment]) -> (FontPoint, Fo
                 ContourSegment::Line { line, .. } => line.eval(lt),
                 ContourSegment::Cubic { cubic, .. } => cubic.eval(lt),
             };
-            samples.push((pt, 0.5));
+            pts.push(pt);
+            params.push(0.5);
         }
         u_acc += span;
     }
+    (pts, params)
+}
+
+/// Fits a single cubic Bézier `(h1, h2)` along the endpoint tangents of a chain of segments
+/// using inverse De Casteljau handle-ratio initialization and Schneider's Newton-Raphson
+/// least-squares solver (`SPEC-002 §3.1`, Reference `removeNodeCheckKeepShape:` parity).
+#[must_use]
+pub fn fit_cubic_to_segment_chain(segments: &[ContourSegment]) -> (FontPoint, FontPoint) {
+    debug_assert!(!segments.is_empty());
+    let (p0, _, v1_raw, _) = seg_endpoints_and_tangents(&segments[0]);
+    let (_, p3, _, v2_raw) = seg_endpoints_and_tangents(&segments[segments.len() - 1]);
+    let chord = (p3 - p0).hypot().max(1.0);
+    let t1 = if v1_raw.hypot() > COLLINEAR_MIN_LEN_EPSILON {
+        v1_raw / v1_raw.hypot()
+    } else {
+        (p3 - p0) / chord
+    };
+    let t2 = if v2_raw.hypot() > COLLINEAR_MIN_LEN_EPSILON {
+        v2_raw / v2_raw.hypot()
+    } else {
+        (p0 - p3) / chord
+    };
+
+    let (pts, mut params) = sample_segment_chain_for_fit(segments);
 
     if segments.len() >= 2 && t1.cross(t2).abs() <= COLLINEAR_MIN_LEN_EPSILON && t1.dot(t2) > 0.0 {
         let mid_chord = p0 + (p3 - p0) * 0.5;
-        let arch_h = samples
+        let arch_h = pts
             .iter()
-            .map(|&(pt, _)| (pt - mid_chord).dot(t1))
+            .map(|&pt| (pt - mid_chord).dot(t1))
             .fold(0.0_f64, f64::max);
         if arch_h > COLLINEAR_MIN_LEN_EPSILON {
             let alpha_arch = 2.0 * CUBIC_TWO_THIRDS * arch_h;
@@ -364,59 +375,28 @@ pub fn fit_cubic_to_segment_chain(segments: &[ContourSegment]) -> (FontPoint, Fo
 
     let mut alpha1 = chord * CUBIC_ONE_THIRD;
     let mut alpha2 = chord * CUBIC_ONE_THIRD;
+    let tan_l = (t1.x, t1.y);
+    let tan_r = (t2.x, t2.y);
 
     for _ in 0..=NEWTON_REPARAM_ITERATIONS {
-        let mut c11 = 0.0;
-        let mut c12 = 0.0;
-        let mut c22 = 0.0;
-        let mut x1 = 0.0;
-        let mut x2 = 0.0;
-
-        for &(d_pt, u) in &samples {
-            let om = 1.0 - u;
-            let b0 = om * om * om;
-            let b1 = BERNSTEIN_CUBIC_COEFF * om * om * u;
-            let b2 = BERNSTEIN_CUBIC_COEFF * om * u * u;
-            let b3 = u * u * u;
-            let a1 = t1 * b1;
-            let a2 = t2 * b2;
-            c11 += a1.dot(a1);
-            c12 += a1.dot(a2);
-            c22 += a2.dot(a2);
-
-            let base_x = (b0 + b1) * p0.x + (b2 + b3) * p3.x;
-            let base_y = (b0 + b1) * p0.y + (b2 + b3) * p3.y;
-            let rhs = Vec2::new(d_pt.x - base_x, d_pt.y - base_y);
-            x1 += a1.dot(rhs);
-            x2 += a2.dot(rhs);
-        }
-
-        let det = c11 * c22 - c12 * c12;
-        if det.abs() > SOLVER_DET_EPSILON {
-            let a1_sol = (c22 * x1 - c12 * x2) / det;
-            let a2_sol = (c11 * x2 - c12 * x1) / det;
-            if a1_sol > COLLINEAR_MIN_LEN_EPSILON && a2_sol > COLLINEAR_MIN_LEN_EPSILON {
-                alpha1 = a1_sol;
-                alpha2 = a2_sol;
-            }
-        }
-
-        let h1_pt = p0 + t1 * alpha1;
-        let h2_pt = p3 + t2 * alpha2;
-        let cand = CubicBez::new(p0, h1_pt, h2_pt, p3);
-        for (d_pt, u) in &mut samples {
-            let om = 1.0 - *u;
-            let q = cand.eval(*u) - *d_pt;
-            let d1 = (h1_pt - p0) * (BERNSTEIN_CUBIC_COEFF * om * om)
-                + (h2_pt - h1_pt) * (BERNSTEIN_SECOND_DERIV_COEFF * om * *u)
-                + (p3 - h2_pt) * (BERNSTEIN_CUBIC_COEFF * *u * *u);
-            let d2 = ((h2_pt - h1_pt) - (h1_pt - p0)) * (BERNSTEIN_SECOND_DERIV_COEFF * om)
-                + ((p3 - h2_pt) - (h2_pt - h1_pt)) * (BERNSTEIN_SECOND_DERIV_COEFF * *u);
-            let denom = d1.dot(d1) + q.dot(d2);
-            if denom.abs() > SOLVER_DET_EPSILON {
-                *u = (*u - q.dot(d1) / denom).clamp(PARAM_CLAMP_MIN, PARAM_CLAMP_MAX);
-            }
-        }
+        let (a1, a2, cand) = solve_schneider_cubic_lsq(
+            (p0, p3),
+            &pts,
+            &params,
+            tan_l,
+            tan_r,
+            COLLINEAR_MIN_LEN_EPSILON,
+            (alpha1, alpha2),
+        );
+        alpha1 = a1;
+        alpha2 = a2;
+        reparameterize_newton(
+            cand,
+            &pts,
+            &mut params,
+            false,
+            (PARAM_CLAMP_MIN, PARAM_CLAMP_MAX),
+        );
     }
 
     let h1_final = p0 + t1 * alpha1;

@@ -164,7 +164,7 @@ pub fn build_native_options() -> eframe::NativeOptions {
     }
 }
 
-fn main() -> eframe::Result<()> {
+pub fn main() -> eframe::Result<()> {
     install_crash_logger();
     eframe::run_native(
         APP_TITLE,

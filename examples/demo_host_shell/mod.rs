@@ -1,8 +1,11 @@
 //! Interactive Host-Port ("Stekkers") Testbank & Mock Font Host for `vector_canvas_demo`.
 
+pub mod color_and_hinting_presets;
 pub mod demo_panels;
+pub mod host_ports;
 pub mod inspector_ui;
 pub mod presets;
+pub mod spline_and_trace_presets;
 pub mod toolbar_specs;
 
 pub use presets::DemoPreset;
@@ -40,6 +43,36 @@ impl Default for MockFontHost {
 impl MockFontHost {
     #[must_use]
     pub fn new() -> Self {
+        let glyph_library = Self::build_default_glyph_library();
+        let mut kerning_pairs = BTreeMap::new();
+        for ((l, r), v) in [
+            (("A", "O"), -35),
+            (("O", "A"), -35),
+            (("A", "S"), -20),
+            (("A", "V"), -70),
+            (("V", "A"), -70),
+        ] {
+            kerning_pairs.insert((l.to_owned(), r.to_owned()), v);
+        }
+        let mut host = Self {
+            glyph_library,
+            kerning_pairs,
+            text_buffer: "AOVA".to_owned(),
+            fit_curve_col: 0,
+            preview_cfg: PreviewRenderConfig::default_for_size(
+                PREVIEW_TEX_WIDTH_PX,
+                PREVIEW_TEX_HEIGHT_PX,
+            ),
+            preview_cache: PreviewStripCache::new(),
+            event_log: VecDeque::new(),
+        };
+        host.push_log(
+            "HostPort Ready: Cmd+U, Text Tool (T), Components, Spacing/Kerning connected",
+        );
+        host
+    }
+
+    fn build_default_glyph_library() -> BTreeMap<String, Glyph> {
         let mut glyph_library = BTreeMap::new();
         let archetypes = [
             ("A", GlyphArchetype::A),
@@ -92,33 +125,7 @@ impl MockFontHost {
                 vec![Self::make_rect_contour(1, 50, -20.0, -140.0, 25.0, 0.0)],
             ),
         );
-
-        let mut kerning_pairs = BTreeMap::new();
-        for ((l, r), v) in [
-            (("A", "O"), -35),
-            (("O", "A"), -35),
-            (("A", "S"), -20),
-            (("A", "V"), -70),
-            (("V", "A"), -70),
-        ] {
-            kerning_pairs.insert((l.to_owned(), r.to_owned()), v);
-        }
-        let mut host = Self {
-            glyph_library,
-            kerning_pairs,
-            text_buffer: "AOVA".to_owned(),
-            fit_curve_col: 0,
-            preview_cfg: PreviewRenderConfig::default_for_size(
-                PREVIEW_TEX_WIDTH_PX,
-                PREVIEW_TEX_HEIGHT_PX,
-            ),
-            preview_cache: PreviewStripCache::new(),
-            event_log: VecDeque::new(),
-        };
-        host.push_log(
-            "HostPort Ready: Cmd+U, Text Tool (T), Components, Spacing/Kerning connected",
-        );
-        host
+        glyph_library
     }
 
     fn make_rect_contour(

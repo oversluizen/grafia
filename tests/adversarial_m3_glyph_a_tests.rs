@@ -1,3 +1,12 @@
+#![allow(
+    clippy::too_many_lines,
+    clippy::cognitive_complexity,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::too_many_arguments,
+    clippy::iter_over_hash_type
+)]
 //! Adversarial Challenge Test Suite for Milestone 3: Glyph /A State & Reset Parity.
 //!
 //! Normative Golden Master Verification:
@@ -21,8 +30,7 @@ use grafia::tokens::{GlyphAGoldenMaster, GrafiaTheme};
 use kurbo::PathEl;
 
 #[path = "../examples/vector_canvas_demo.rs"]
-#[allow(dead_code)]
-mod vector_canvas_demo;
+pub mod vector_canvas_demo;
 
 use vector_canvas_demo::GrafiaVectorCanvasDemo;
 

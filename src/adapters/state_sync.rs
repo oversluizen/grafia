@@ -7,7 +7,7 @@ use crate::tokens::{
     load_archetype_preset, GlyphAGoldenMaster, GlyphArchetype, GrafiaTheme, AUTOFIT_MARGIN_RATIO,
     DEFAULT_CANVAS_HEIGHT_DP, DEFAULT_CANVAS_WIDTH_DP,
 };
-use kurbo::{BezPath, Point};
+use kurbo::BezPath;
 
 impl GrafiaCanvasState {
     #[must_use]
@@ -53,6 +53,11 @@ impl GrafiaCanvasState {
             annotations: Vec::new(),
             background_contours: Vec::new(),
             anchors: Vec::new(),
+            postscript_hints: Vec::new(),
+            truetype_instructions: Vec::new(),
+            hoi_layer_sets: Vec::new(),
+            hoi_sibling_contours: None,
+            backdrop_ghost_contours: Vec::new(),
         };
         state.active_contour_closed = true;
         state.sync_paths_from_contours();
@@ -84,7 +89,6 @@ impl GrafiaCanvasState {
         self.pending_pen_bcp_out = None;
         self.pending_pen_first_bcp_in = None;
         self.hovered_pen_close_target = None;
-        self.hovered_pen_close_node = None;
         if archetype == GlyphArchetype::A {
             let (theme, mode, sys_dark) = (
                 self.theme.clone(),
@@ -128,11 +132,15 @@ impl GrafiaCanvasState {
             annotations: Vec::new(),
             background_contours: Vec::new(),
             anchors: Vec::new(),
+            postscript_hints: Vec::new(),
+            truetype_instructions: Vec::new(),
+            hoi_layer_sets: Vec::new(),
+            hoi_sibling_contours: None,
+            backdrop_ghost_contours: Vec::new(),
         };
         self.background_contours.clear();
         self.anchors.clear();
         self.editing_background_layer = false;
-        self.editing_background = false;
         self.active_contour_closed = true;
         self.sync_paths_from_contours();
         self.assert_invariants();
@@ -193,53 +201,25 @@ impl GrafiaCanvasState {
 
     pub fn sync_paths_from_contours(&mut self) {
         self.paths.clear();
-        let pt_of = |n: &Node| Point::new(n.point.x.0, n.point.y.0);
+        let metrics_y = [
+            crate::tokens::DEFAULT_BASELINE_UPM,
+            crate::tokens::DEFAULT_X_HEIGHT_UPM,
+            crate::tokens::DEFAULT_CAP_HEIGHT_UPM,
+            crate::tokens::DEFAULT_ASCENDER_UPM,
+            crate::tokens::DEFAULT_DESCENDER_UPM,
+        ];
         for (c_idx, contour) in self.contours.iter().enumerate() {
             if contour.is_empty() {
                 self.paths.push(BezPath::new());
                 continue;
             }
             let is_closed = self.is_contour_closed(c_idx);
-            let mut path = BezPath::new();
-            path.move_to(pt_of(&contour[0]));
-            let mut i = 1;
-            while i < contour.len() {
-                if contour[i].node_type == NodeType::OffCurve {
-                    if i + 2 < contour.len() && contour[i + 1].node_type == NodeType::OffCurve {
-                        path.curve_to(
-                            pt_of(&contour[i]),
-                            pt_of(&contour[i + 1]),
-                            pt_of(&contour[i + 2]),
-                        );
-                        i += 3;
-                    } else if is_closed
-                        && i + 1 == contour.len() - 1
-                        && contour[i + 1].node_type == NodeType::OffCurve
-                    {
-                        path.curve_to(
-                            pt_of(&contour[i]),
-                            pt_of(&contour[i + 1]),
-                            pt_of(&contour[0]),
-                        );
-                        i += 2;
-                    } else if i + 1 < contour.len() {
-                        path.quad_to(pt_of(&contour[i]), pt_of(&contour[i + 1]));
-                        i += 2;
-                    } else if is_closed && i == contour.len() - 1 {
-                        path.quad_to(pt_of(&contour[i]), pt_of(&contour[0]));
-                        i += 1;
-                    } else {
-                        path.line_to(pt_of(&contour[i]));
-                        i += 1;
-                    }
-                } else {
-                    path.line_to(pt_of(&contour[i]));
-                    i += 1;
-                }
-            }
-            if is_closed {
-                path.close_path();
-            }
+            let path = crate::core::contour_to_bezpath_with_splines(
+                contour,
+                is_closed,
+                self.italic_angle_deg,
+                &metrics_y,
+            );
             self.paths.push(path);
         }
         let old_closed: Vec<bool> = (0..self.contours.len())
@@ -269,6 +249,14 @@ impl GrafiaCanvasState {
                 gc
             })
             .collect();
+        self.prune_stale_node_and_contour_refs();
+        self.glyph.background_contours = self.background_contours.clone();
+        self.glyph.anchors = self.anchors.clone();
+        self.sync_active_glyph_to_text_stream();
+        self.bump_content_generation();
+    }
+
+    fn prune_stale_node_and_contour_refs(&mut self) {
         let mut valid_ids = std::collections::HashSet::new();
         for contour in &self.contours {
             for n in contour {
@@ -307,23 +295,12 @@ impl GrafiaCanvasState {
             self.hovered_pen_close_target = None;
         }
         if self
-            .hovered_pen_close_node
-            .is_some_and(|id| !valid_ids.contains(&id))
-        {
-            self.hovered_pen_close_node = None;
-        }
-        if self
             .hovered_segment_hit
             .as_ref()
             .is_some_and(|h| h.contour_idx >= c_len)
         {
             self.hovered_segment_hit = None;
         }
-        self.glyph.background_contours = self.background_contours.clone();
-        self.glyph.anchors = self.anchors.clone();
-        self.editing_background = self.editing_background_layer;
-        self.sync_active_glyph_to_text_stream();
-        self.bump_content_generation();
     }
 
     #[must_use]
@@ -339,5 +316,45 @@ impl GrafiaCanvasState {
             .iter_mut()
             .flat_map(|c| c.iter_mut())
             .find(|n| n.id == id)
+    }
+
+    #[must_use]
+    pub const fn content_generation(&self) -> u64 {
+        self.content_generation
+    }
+
+    pub fn bump_content_generation(&mut self) {
+        self.content_generation = crate::adapters::state::next_content_generation();
+    }
+
+    pub fn set_appearance_mode(&mut self, mode: crate::tokens::AppearanceMode) {
+        self.set_appearance_with_system(mode, self.system_dark_mode);
+    }
+
+    pub fn set_system_dark_mode(&mut self, system_is_dark: bool) {
+        self.set_appearance_with_system(self.appearance_mode, system_is_dark);
+    }
+
+    pub fn set_appearance_with_system(
+        &mut self,
+        mode: crate::tokens::AppearanceMode,
+        system_is_dark: bool,
+    ) {
+        if self.appearance_mode != mode || self.system_dark_mode != system_is_dark {
+            let prev_guide_w = self.theme.edit_canvas.guide_stroke_width_dp;
+            let prev_metric_w = self.theme.edit_canvas.metric_line_width_dp;
+            let prev_shape = self.theme.edit_canvas.handle_shape;
+            let prev_crosshair = self.theme.edit_canvas.full_crosshair_cursor;
+            self.appearance_mode = mode;
+            self.system_dark_mode = system_is_dark;
+            let mut next_theme =
+                GrafiaTheme::for_appearance(self.appearance_mode, self.system_dark_mode);
+            next_theme.edit_canvas.guide_stroke_width_dp = prev_guide_w;
+            next_theme.edit_canvas.metric_line_width_dp = prev_metric_w;
+            next_theme.edit_canvas.handle_shape = prev_shape;
+            next_theme.edit_canvas.full_crosshair_cursor = prev_crosshair;
+            self.theme = next_theme;
+            self.bump_content_generation();
+        }
     }
 }

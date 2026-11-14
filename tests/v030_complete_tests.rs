@@ -1,3 +1,12 @@
+#![allow(
+    clippy::too_many_lines,
+    clippy::cognitive_complexity,
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::too_many_arguments,
+    clippy::iter_over_hash_type
+)]
 //! Normative COTS Verification Suite for `SPEC-004` (`grafia v0.3.0`):
 //! Local & Global Guides (`CanvasGuide`), Magnetic `SnapEngine` (`SnapEngine`), & Alignment Zone Badges
 //! (`TC-V030-001` .. `TC-V030-007`).
@@ -909,12 +918,14 @@ fn test_tc_v030_007_headless_rasterization_and_undo_redo_bit_exactness() {
                 to: FontPoint::new(70.0, 500.0),
                 angle_deg: Some(90.0),
                 is_point_target: false,
+                target_kind: None,
             },
             grafia::ActiveSnapper {
                 from: FontPoint::new(0.0, 500.0),
                 to: FontPoint::new(490.0, 500.0),
                 angle_deg: Some(0.0),
                 is_point_target: false,
+                target_kind: None,
             },
         ];
         let pixmap45 = rasterize_canvas_subregion(&state45, &state45.theme, 800, 600);

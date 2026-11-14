@@ -31,22 +31,13 @@ pub fn join_open_contours_in_pen(
     is_b_start: bool,
     font_pt: FontPoint,
 ) {
-    let a_out = state
-        .pending_pen_bcp_out
-        .filter(|&(c, _)| c == a_idx)
-        .map(|(_, pt)| pt);
-    let a_first_in = state
-        .pending_pen_first_bcp_in
-        .filter(|&(c, _)| c == a_idx)
-        .map(|(_, pt)| pt);
-    let b_out = state
-        .pending_pen_bcp_out
-        .filter(|&(c, _)| c == b_idx)
-        .map(|(_, pt)| pt);
-    let b_first_in = state
-        .pending_pen_first_bcp_in
-        .filter(|&(c, _)| c == b_idx)
-        .map(|(_, pt)| pt);
+    let take_pending = |slot: &mut Option<(usize, FontPoint)>, idx: usize| {
+        slot.filter(|&(c, _)| c == idx).map(|(_, pt)| pt)
+    };
+    let a_out = take_pending(&mut state.pending_pen_bcp_out, a_idx);
+    let a_first_in = take_pending(&mut state.pending_pen_first_bcp_in, a_idx);
+    let b_out = take_pending(&mut state.pending_pen_bcp_out, b_idx);
+    let b_first_in = take_pending(&mut state.pending_pen_first_bcp_in, b_idx);
     state.pending_pen_bcp_out = None;
     state.pending_pen_first_bcp_in = None;
 
@@ -67,15 +58,15 @@ pub fn join_open_contours_in_pen(
     let a_last = state.contours[a_idx]
         .last()
         .map_or(target_node.point, |n| n.point);
-    state.pen_seg_has_explicit_h1 = a_out.is_some();
+    state.pen_transients.seg_has_explicit_h1 = a_out.is_some();
 
     if a_out.is_some() || b_join_in.is_some() {
-        let h1_pt = a_out.unwrap_or_else(|| lerp_one_third(a_last, b_join_in.unwrap()));
-        let h2_pt = b_join_in.unwrap_or_else(|| lerp_one_third(target_node.point, a_out.unwrap()));
-        let h1 = alloc_off_curve(state, h1_pt);
-        let h2 = alloc_off_curve(state, h2_pt);
-        state.contours[a_idx].push(h1);
-        state.contours[a_idx].push(h2);
+        let h1_pt = a_out.unwrap_or_else(|| lerp_one_third(a_last, b_join_in.unwrap_or(a_last)));
+        let h2_pt = b_join_in.unwrap_or_else(|| {
+            lerp_one_third(target_node.point, a_out.unwrap_or(target_node.point))
+        });
+        let (h1, h2) = (alloc_off_curve(state, h1_pt), alloc_off_curve(state, h2_pt));
+        state.contours[a_idx].extend([h1, h2]);
         if !b_had_out_handles && state.contours[b_idx].len() > 1 {
             if let Some(first_b) = state.contours[b_idx].first_mut() {
                 first_b.node_type = NodeType::Corner;
@@ -85,9 +76,8 @@ pub fn join_open_contours_in_pen(
         first_b.node_type = NodeType::Corner;
     }
 
-    let b_nodes = state.contours[b_idx].clone();
-    state.contours[a_idx].extend(b_nodes);
-    state.contours.remove(b_idx);
+    let b_nodes = state.contours.remove(b_idx);
+    state.contours[if b_idx < a_idx { a_idx - 1 } else { a_idx }].extend(b_nodes);
     if b_idx < state.glyph.contours.len() {
         state.glyph.contours.remove(b_idx);
     }
@@ -101,14 +91,71 @@ pub fn join_open_contours_in_pen(
     state.pen_state = PenToolState::PlacingAnchor {
         anchor: target_node.point,
     };
-    state.pen_drag_last_pt = Some(font_pt);
-    state.pen_handle_delta = (0.0, 0.0);
-    state.pen_alt_frozen_bcp_in = b_join_in.or(Some(target_node.point));
-    state.pen_resuming_corner_line_end = false;
-    state.pen_join_b_had_out_handles = b_had_out_handles;
-    state.pen_join_b_was_smooth = b_was_smooth;
+    state.pen_transients.drag_last_pt = Some(font_pt);
+    state.pen_transients.handle_delta = (0.0, 0.0);
+    state.pen_transients.alt_frozen_bcp_in = b_join_in.or(Some(target_node.point));
+    state.pen_transients.resuming_corner_line_end = false;
+    state.pen_transients.join_b_had_out_handles = b_had_out_handles;
+    state.pen_transients.join_b_was_smooth = b_was_smooth;
     state.sync_paths_from_contours();
     state.assert_invariants();
+}
+
+fn sync_closing_first_node_handles(
+    state: &mut GrafiaCanvasState,
+    c_idx: usize,
+    bcp_in: FontPoint,
+    bcp_out: FontPoint,
+) {
+    let len = state.contours[c_idx].len();
+    if len >= 3
+        && state.contours[c_idx][len - 1].node_type == NodeType::OffCurve
+        && state.contours[c_idx][len - 2].node_type == NodeType::OffCurve
+    {
+        state.contours[c_idx][len - 1].point = bcp_in;
+        if !state.pen_transients.seg_has_explicit_h1 && len >= 4 {
+            let prev_on = state.contours[c_idx][len - 3].point;
+            state.contours[c_idx][len - 2].point = lerp_one_third(prev_on, bcp_in);
+        }
+    } else if len >= 2 {
+        let prev_on = state.contours[c_idx][len - 1].point;
+        let h1 = alloc_off_curve(state, lerp_one_third(prev_on, bcp_in));
+        let h2 = alloc_off_curve(state, bcp_in);
+        state.contours[c_idx].push(h1);
+        state.contours[c_idx].push(h2);
+    }
+
+    let (seg0_had_handles, start_was_smooth) = state
+        .drag_transients
+        .active_drag_before_snapshot
+        .as_ref()
+        .and_then(|s| s.contours.get(c_idx))
+        .map_or((false, false), |c| {
+            (
+                c.get(1).is_some_and(|n| n.node_type == NodeType::OffCurve),
+                c.first().is_some_and(|n| n.node_type == NodeType::Smooth),
+            )
+        });
+    if state.contours[c_idx].len() >= 4
+        && state.contours[c_idx][1].node_type == NodeType::OffCurve
+        && state.contours[c_idx][2].node_type == NodeType::OffCurve
+    {
+        if !start_was_smooth {
+            state.contours[c_idx][1].point = bcp_out;
+            if !seg0_had_handles {
+                let next_on = state.contours[c_idx][3].point;
+                state.contours[c_idx][2].point = lerp_one_third(next_on, bcp_out);
+            }
+        }
+    } else if state.contours[c_idx].len() >= 2
+        && state.contours[c_idx][1].node_type != NodeType::OffCurve
+    {
+        let next_on = state.contours[c_idx][1].point;
+        let h1 = alloc_off_curve(state, bcp_out);
+        let h2 = alloc_off_curve(state, lerp_one_third(next_on, bcp_out));
+        state.contours[c_idx].insert(1, h1);
+        state.contours[c_idx].insert(2, h2);
+    }
 }
 
 /// Synchronizes dragged `PenTool` handles `(bcp_in, bcp_out)` into contour `c_idx`.
@@ -133,54 +180,7 @@ pub fn sync_pen_drag_handles_into_contour(
     state.contours[c_idx][node_idx].node_type = target_type;
 
     if is_closing && node_idx == 0 {
-        let len = state.contours[c_idx].len();
-        if len >= 3
-            && state.contours[c_idx][len - 1].node_type == NodeType::OffCurve
-            && state.contours[c_idx][len - 2].node_type == NodeType::OffCurve
-        {
-            state.contours[c_idx][len - 1].point = bcp_in;
-            if !state.pen_seg_has_explicit_h1 && len >= 4 {
-                let prev_on = state.contours[c_idx][len - 3].point;
-                state.contours[c_idx][len - 2].point = lerp_one_third(prev_on, bcp_in);
-            }
-        } else if len >= 2 {
-            let prev_on = state.contours[c_idx][len - 1].point;
-            let h1 = alloc_off_curve(state, lerp_one_third(prev_on, bcp_in));
-            let h2 = alloc_off_curve(state, bcp_in);
-            state.contours[c_idx].push(h1);
-            state.contours[c_idx].push(h2);
-        }
-
-        let (seg0_had_handles, start_was_smooth) = state
-            .active_drag_before_snapshot
-            .as_ref()
-            .and_then(|s| s.contours.get(c_idx))
-            .map_or((false, false), |c| {
-                (
-                    c.get(1).is_some_and(|n| n.node_type == NodeType::OffCurve),
-                    c.first().is_some_and(|n| n.node_type == NodeType::Smooth),
-                )
-            });
-        if state.contours[c_idx].len() >= 4
-            && state.contours[c_idx][1].node_type == NodeType::OffCurve
-            && state.contours[c_idx][2].node_type == NodeType::OffCurve
-        {
-            if !start_was_smooth {
-                state.contours[c_idx][1].point = bcp_out;
-                if !seg0_had_handles {
-                    let next_on = state.contours[c_idx][3].point;
-                    state.contours[c_idx][2].point = lerp_one_third(next_on, bcp_out);
-                }
-            }
-        } else if state.contours[c_idx].len() >= 2
-            && state.contours[c_idx][1].node_type != NodeType::OffCurve
-        {
-            let next_on = state.contours[c_idx][1].point;
-            let h1 = alloc_off_curve(state, bcp_out);
-            let h2 = alloc_off_curve(state, lerp_one_third(next_on, bcp_out));
-            state.contours[c_idx].insert(1, h1);
-            state.contours[c_idx].insert(2, h2);
-        }
+        sync_closing_first_node_handles(state, c_idx, bcp_in, bcp_out);
         return;
     }
 
@@ -193,7 +193,7 @@ pub fn sync_pen_drag_handles_into_contour(
             && state.contours[c_idx][node_idx - 2].node_type == NodeType::OffCurve
         {
             state.contours[c_idx][node_idx - 1].point = bcp_in;
-            if !state.pen_seg_has_explicit_h1 && node_idx >= 3 {
+            if !state.pen_transients.seg_has_explicit_h1 && node_idx >= 3 {
                 let prev_on = state.contours[c_idx][node_idx - 3].point;
                 state.contours[c_idx][node_idx - 2].point = lerp_one_third(prev_on, bcp_in);
             }
@@ -213,9 +213,9 @@ pub fn sync_pen_drag_handles_into_contour(
                 && state.contours[c_idx][node_idx + 1].node_type == NodeType::OffCurve
                 && state.contours[c_idx][node_idx + 2].node_type == NodeType::OffCurve
             {
-                if !state.pen_join_b_was_smooth {
+                if !state.pen_transients.join_b_was_smooth {
                     state.contours[c_idx][node_idx + 1].point = bcp_out;
-                    if !state.pen_join_b_had_out_handles {
+                    if !state.pen_transients.join_b_had_out_handles {
                         let next_on = state.contours[c_idx][node_idx + 3].point;
                         state.contours[c_idx][node_idx + 2].point =
                             lerp_one_third(next_on, bcp_out);
@@ -245,13 +245,7 @@ struct EndpointSnapMatch {
     dist: f32,
 }
 
-/// When an open-contour endpoint (`P0` or `P_last`) is dragged and released within
-/// `SELECT_NODE_HIT_RADIUS_DP` of another open-contour endpoint in `SelectTool`:
-/// - On the **same** open contour (with `>= 3` `OnCurve` points before merge): merges the two
-///   endpoints into one `OnCurve` node and closes the contour (`closed = true`).
-/// - On **another** open contour (`b_idx != a_idx`): merges the two endpoints at the target
-///   position and joins both open contours into a single open contour (`closed = false`).
-pub fn try_join_or_close_open_contours_on_select_release(state: &mut GrafiaCanvasState) -> bool {
+fn find_best_endpoint_snap_match(state: &GrafiaCanvasState) -> Option<EndpointSnapMatch> {
     let mut best_match: Option<EndpointSnapMatch> = None;
 
     for a_idx in 0..state.contours.len() {
@@ -278,14 +272,14 @@ pub fn try_join_or_close_open_contours_on_select_release(state: &mut GrafiaCanva
                 if state.is_contour_closed(b_idx) || state.contours[b_idx].is_empty() {
                     continue;
                 }
-                if a_idx == b_idx {
-                    let on_count = state.contours[a_idx]
+                if a_idx == b_idx
+                    && state.contours[a_idx]
                         .iter()
                         .filter(|n| n.node_type != NodeType::OffCurve)
-                        .count();
-                    if on_count < 3 {
-                        continue;
-                    }
+                        .count()
+                        < 3
+                {
+                    continue;
                 }
                 let b_contour = &state.contours[b_idx];
                 let b_first = &b_contour[0];
@@ -318,71 +312,17 @@ pub fn try_join_or_close_open_contours_on_select_release(state: &mut GrafiaCanva
             }
         }
     }
+    best_match
+}
 
-    let Some(EndpointSnapMatch {
-        a_idx,
-        dragged_is_start,
-        dragged_pt,
-        b_idx,
-        target_is_start,
-        target_id,
-        target_pt,
-        ..
-    }) = best_match
-    else {
-        return false;
-    };
-
-    let snap_dx = target_pt.x.0 - dragged_pt.x.0;
-    let snap_dy = target_pt.y.0 - dragged_pt.y.0;
-    if dragged_is_start {
-        state.contours[a_idx][0].point = target_pt;
-        if state.contours[a_idx].get(1).is_some_and(|n| {
-            n.node_type == NodeType::OffCurve && !state.selected_nodes.contains(&n.id)
-        }) {
-            state.contours[a_idx][1].point.x.0 += snap_dx;
-            state.contours[a_idx][1].point.y.0 += snap_dy;
-        }
-    } else {
-        let a_len = state.contours[a_idx].len();
-        state.contours[a_idx][a_len - 1].point = target_pt;
-        if a_len >= 2
-            && state.contours[a_idx][a_len - 2].node_type == NodeType::OffCurve
-            && !state
-                .selected_nodes
-                .contains(&state.contours[a_idx][a_len - 2].id)
-        {
-            state.contours[a_idx][a_len - 2].point.x.0 += snap_dx;
-            state.contours[a_idx][a_len - 2].point.y.0 += snap_dy;
-        }
-    }
-
-    if a_idx == b_idx {
-        state.contours[a_idx].pop();
-        let has_out = state.contours[a_idx]
-            .get(1)
-            .is_some_and(|n| n.node_type == NodeType::OffCurve);
-        let has_in = state.contours[a_idx]
-            .last()
-            .is_some_and(|n| n.node_type == NodeType::OffCurve);
-        if !has_out || !has_in {
-            state.contours[a_idx][0].node_type = NodeType::Corner;
-        }
-        let surviving_id = state.contours[a_idx][0].id;
-        state.set_contour_closed(a_idx, true);
-        if state.active_open_contour == Some(a_idx) {
-            state.active_open_contour = None;
-        }
-        state.pending_pen_bcp_out = None;
-        state.pending_pen_first_bcp_in = None;
-        state.hovered_pen_close_target = None;
-        state.hovered_pen_close_node = None;
-        state.selected_nodes = vec![surviving_id];
-        state.sync_paths_from_contours();
-        state.assert_invariants();
-        return true;
-    }
-
+fn merge_two_open_contours_at_endpoint(
+    state: &mut GrafiaCanvasState,
+    a_idx: usize,
+    b_idx: usize,
+    dragged_is_start: bool,
+    target_is_start: bool,
+    target_id: NodeId,
+) -> bool {
     if dragged_is_start {
         state.contours[a_idx].reverse();
     }
@@ -415,9 +355,73 @@ pub fn try_join_or_close_open_contours_on_select_release(state: &mut GrafiaCanva
     state.pending_pen_bcp_out = None;
     state.pending_pen_first_bcp_in = None;
     state.hovered_pen_close_target = None;
-    state.hovered_pen_close_node = None;
     state.selected_nodes = vec![target_id];
     state.sync_paths_from_contours();
     state.assert_invariants();
     true
+}
+
+pub fn try_join_or_close_open_contours_on_select_release(state: &mut GrafiaCanvasState) -> bool {
+    let Some(m) = find_best_endpoint_snap_match(state) else {
+        return false;
+    };
+    let (snap_dx, snap_dy) = (
+        m.target_pt.x.0 - m.dragged_pt.x.0,
+        m.target_pt.y.0 - m.dragged_pt.y.0,
+    );
+    if m.dragged_is_start {
+        state.contours[m.a_idx][0].point = m.target_pt;
+        if state.contours[m.a_idx].get(1).is_some_and(|n| {
+            n.node_type == NodeType::OffCurve && !state.selected_nodes.contains(&n.id)
+        }) {
+            state.contours[m.a_idx][1].point.x.0 += snap_dx;
+            state.contours[m.a_idx][1].point.y.0 += snap_dy;
+        }
+    } else {
+        let a_len = state.contours[m.a_idx].len();
+        state.contours[m.a_idx][a_len - 1].point = m.target_pt;
+        if a_len >= 2
+            && state.contours[m.a_idx][a_len - 2].node_type == NodeType::OffCurve
+            && !state
+                .selected_nodes
+                .contains(&state.contours[m.a_idx][a_len - 2].id)
+        {
+            state.contours[m.a_idx][a_len - 2].point.x.0 += snap_dx;
+            state.contours[m.a_idx][a_len - 2].point.y.0 += snap_dy;
+        }
+    }
+
+    if m.a_idx == m.b_idx {
+        state.contours[m.a_idx].pop();
+        let has_out = state.contours[m.a_idx]
+            .get(1)
+            .is_some_and(|n| n.node_type == NodeType::OffCurve);
+        let has_in = state.contours[m.a_idx]
+            .last()
+            .is_some_and(|n| n.node_type == NodeType::OffCurve);
+        if !has_out || !has_in {
+            state.contours[m.a_idx][0].node_type = NodeType::Corner;
+        }
+        let surviving_id = state.contours[m.a_idx][0].id;
+        state.set_contour_closed(m.a_idx, true);
+        if state.active_open_contour == Some(m.a_idx) {
+            state.active_open_contour = None;
+        }
+        state.pending_pen_bcp_out = None;
+        state.pending_pen_first_bcp_in = None;
+        state.hovered_pen_close_target = None;
+        state.selected_nodes = vec![surviving_id];
+        state.sync_paths_from_contours();
+        state.assert_invariants();
+        return true;
+    }
+
+    merge_two_open_contours_at_endpoint(
+        state,
+        m.a_idx,
+        m.b_idx,
+        m.dragged_is_start,
+        m.target_is_start,
+        m.target_id,
+    )
 }

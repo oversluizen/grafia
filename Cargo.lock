@@ -1069,9 +1069,9 @@ dependencies = [
 
 [[package]]
 name = "egui-macview"
-version = "0.6.3"
+version = "0.6.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "43590f19df1fda9f63355a3dd3a3898768eee0c76779de4e99981fa6a28c780a"
+checksum = "f75ca75b8a1198e52acd070cff407ed55151eb9fc8496da54a1897e2191b70f6"
 dependencies = [
  "egui",
  "serde",
@@ -1688,7 +1688,7 @@ dependencies = [
 
 [[package]]
 name = "grafia"
-version = "0.7.0"
+version = "0.9.0"
 dependencies = [
  "approx",
  "arbtest",

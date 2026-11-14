@@ -3,11 +3,7 @@
 
 use crate::core::bezier_ops::{Node, NodeId};
 use crate::core::coordinates::{FontPoint, ScreenPoint, ViewportTransform};
-pub use crate::core::lasso_and_zoom::{
-    apply_mode_nodes_transform, compute_rotate_tool_affine, compute_scale_tool_affine,
-    MetricsOrigin, TransformOriginSpec,
-};
-use crate::tokens::{
+use crate::core::math_consts::{
     BBOX_ALT_CENTER_SCALE_MULTIPLIER, BBOX_BASE_HANDLE_SIZE_DP, BBOX_FLAT_AXIS_THRESHOLD_UPM,
     BBOX_HANDLE_ZOOM_EXP, BBOX_KNOB_HIT_HALF_EXTENT_DP, BBOX_KNOB_OUTWARD_OFFSET_FACTOR,
     BBOX_MIN_SCREEN_SPAN_DP, BBOX_PILL_ROUND_FACTOR, BBOX_RAY_FALLTHROUGH_MAX_T,
@@ -258,6 +254,11 @@ pub fn hit_test_bbox_knobs(
     is_ctrl: bool,
     is_alt: bool,
 ) -> Option<BBoxAction> {
+    if let Some(rot_k) = crate::core::bbox_rotate_shear_ops::hit_test_bbox_outer_corner_rotation(
+        bounds, viewport, cursor_scr,
+    ) {
+        return Some(BBoxAction::Rotate(rot_k));
+    }
     let half_box = BBOX_KNOB_HIT_HALF_EXTENT_DP * 2.0;
     for k in bounds.active_knobs(viewport.zoom) {
         let p_box = bounds.box_screen_point(k, viewport);
@@ -282,9 +283,11 @@ pub fn hit_test_bbox_knobs(
         let t = (qx * vx + qy * vy) / len_sq;
         if t <= BBOX_RAY_FALLTHROUGH_MAX_T {
             continue;
+        } else if is_ctrl && is_alt && matches!(k, 1 | 3 | 5 | 7) {
+            return Some(BBoxAction::Slant(k));
         } else if t <= BBOX_RAY_SCALE_MAX_T {
             return Some(BBoxAction::Scale(k));
-        } else if k == 1 || (is_ctrl && is_alt && matches!(k, 3 | 5 | 7)) {
+        } else if k == 1 {
             return Some(BBoxAction::Slant(k));
         } else {
             return Some(BBoxAction::Rotate(k));

@@ -5,12 +5,10 @@
 use crate::core::bezier_ops::{Node, NodeId};
 use crate::core::coordinates::FontPoint;
 use crate::core::glyph_model::{ContourId, GlyphContour};
+use crate::core::host_requests::ComponentId;
 use crate::core::lasso_and_zoom::point_in_polygon;
-use crate::core::segment_ops::reverse_contour_nodes;
+use crate::core::reverse_contour_nodes;
 use crate::core::selection_info::{AnchorId, CanvasAnchor};
-pub use crate::tokens::{
-    CanvasHostRequest, ComponentId, TextStreamEditKind, TextStreamEditRequest,
-};
 use serde::{Deserialize, Serialize};
 
 /// Pre-resolved mark outline cloud associated with an anchor name (`SPEC-008 §2.2.1`).

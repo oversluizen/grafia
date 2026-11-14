@@ -42,6 +42,65 @@ impl<'a> GrafiaCanvasWidget<'a> {
         self
     }
 
+    fn resolve_canvas_cursor_icon(
+        state: &GrafiaCanvasState,
+        pos: crate::core::ScreenPoint,
+        space_held: bool,
+        alt_held: bool,
+    ) -> CursorIcon {
+        if matches!(state.select_state, SelectToolState::PanningViewport { .. }) {
+            return CursorIcon::Grabbing;
+        }
+        if state.view_mode == CanvasViewMode::PreviewFilled || space_held {
+            return CursorIcon::Grab;
+        }
+        match state.active_tool {
+            CanvasTool::Pen => {
+                if state.hovered_pen_close_target.is_some() {
+                    CursorIcon::PointingHand
+                } else if state.pen_hover_node_hit(pos).is_some() {
+                    CursorIcon::Move
+                } else {
+                    CursorIcon::Crosshair
+                }
+            }
+            CanvasTool::Select | CanvasTool::Lasso => {
+                if matches!(
+                    state.select_state,
+                    SelectToolState::DraggingNodes { .. } | SelectToolState::DraggingSegment { .. }
+                ) || state.drag_transients.guide_drag
+                    != crate::adapters::guide_management_ops::GuideDragState::Idle
+                {
+                    CursorIcon::Grabbing
+                } else if state.hit_test_node(pos).is_some() || state.hit_test_guides(pos).is_some()
+                {
+                    CursorIcon::PointingHand
+                } else if state.active_tool == CanvasTool::Lasso {
+                    CursorIcon::Crosshair
+                } else {
+                    CursorIcon::Default
+                }
+            }
+            CanvasTool::Rotate | CanvasTool::Scale => CursorIcon::Crosshair,
+            CanvasTool::Zoom => {
+                if alt_held {
+                    CursorIcon::ZoomOut
+                } else {
+                    CursorIcon::ZoomIn
+                }
+            }
+            CanvasTool::Knife
+            | CanvasTool::Primitives
+            | CanvasTool::Measurement
+            | CanvasTool::Pencil
+            | CanvasTool::Pixel => CursorIcon::Crosshair,
+            CanvasTool::Annotation | CanvasTool::TrueTypeInstructor | CanvasTool::Hoi => {
+                CursorIcon::Default
+            }
+            CanvasTool::Text => CursorIcon::Text,
+        }
+    }
+
     pub fn show(self, ui: &mut egui::Ui) -> GrafiaCanvasResponse {
         self.state.set_system_dark_mode(ui.visuals().dark_mode);
         let size = self
@@ -49,7 +108,6 @@ impl<'a> GrafiaCanvasWidget<'a> {
             .unwrap_or_else(|| Vec2::new(DEFAULT_CANVAS_WIDTH_DP, DEFAULT_CANVAS_HEIGHT_DP));
         let (rect, response) = ui.allocate_exact_size(size, Sense::click_and_drag());
 
-        // Process pointer and keyboard interactions through gated input dispatcher
         let events = ui.input(|i| i.events.clone());
         let mut dispatcher = InputDispatcher::for_canvas(self.state, rect);
         let changed = dispatcher.dispatch_events(&events, ui);
@@ -63,68 +121,13 @@ impl<'a> GrafiaCanvasWidget<'a> {
         if let Some(pos) = latest_pointer.filter(|p| rect.contains(egui::pos2(p.x.0, p.y.0))) {
             self.state.cursor_screen_pos = Some(pos);
             let space_held = ui.input(|i| i.key_down(egui::Key::Space));
-            let icon = if matches!(
-                self.state.select_state,
-                SelectToolState::PanningViewport { .. }
-            ) {
-                CursorIcon::Grabbing
-            } else if self.state.view_mode == CanvasViewMode::PreviewFilled || space_held {
-                CursorIcon::Grab
-            } else {
-                match self.state.active_tool {
-                    CanvasTool::Pen => {
-                        if self.state.hovered_pen_close_node.is_some()
-                            || self.state.hovered_pen_close_target.is_some()
-                        {
-                            CursorIcon::PointingHand
-                        } else if self.state.hit_test_pen_node(pos).is_some() {
-                            CursorIcon::Move
-                        } else {
-                            CursorIcon::Crosshair
-                        }
-                    }
-                    CanvasTool::Select | CanvasTool::Lasso => {
-                        if matches!(
-                            self.state.select_state,
-                            SelectToolState::DraggingNodes { .. }
-                                | SelectToolState::DraggingSegment { .. }
-                        ) || self.state.guide_drag
-                            != crate::adapters::v030_guides::GuideDragState::Idle
-                        {
-                            CursorIcon::Grabbing
-                        } else if self.state.hit_test_node(pos).is_some()
-                            || self.state.hit_test_guides(pos).is_some()
-                        {
-                            CursorIcon::PointingHand
-                        } else if self.state.active_tool == CanvasTool::Lasso {
-                            CursorIcon::Crosshair
-                        } else {
-                            CursorIcon::Default
-                        }
-                    }
-                    CanvasTool::Rotate | CanvasTool::Scale => CursorIcon::Crosshair,
-                    CanvasTool::Zoom => {
-                        if ui.input(|i| i.modifiers.alt) {
-                            CursorIcon::ZoomOut
-                        } else {
-                            CursorIcon::ZoomIn
-                        }
-                    }
-                    CanvasTool::Knife
-                    | CanvasTool::Primitives
-                    | CanvasTool::Measurement
-                    | CanvasTool::Pencil
-                    | CanvasTool::Pixel => CursorIcon::Crosshair,
-                    CanvasTool::Annotation => CursorIcon::Default,
-                    CanvasTool::Text => CursorIcon::Text,
-                }
-            };
+            let alt_held = ui.input(|i| i.modifiers.alt);
+            let icon = Self::resolve_canvas_cursor_icon(self.state, pos, space_held, alt_held);
             ui.ctx().set_cursor_icon(icon);
         } else {
             self.state.cursor_screen_pos = None;
         }
 
-        // Render multi-pass canvas
         let active_theme = match self.theme {
             Some(ext) if ext.is_dark() == self.state.theme.is_dark() => ext,
             _ => &self.state.theme,
@@ -250,8 +253,8 @@ impl GrafiaCanvasState {
     )> {
         let dragging = !matches!(self.select_state, SelectToolState::Idle)
             || !matches!(
-                self.v020_drag,
-                crate::adapters::v020_tools::V020DragState::Idle
+                self.bbox_drag,
+                crate::adapters::bbox_selection_tools::BBoxDragState::Idle
             );
         crate::core::find_duplicate_warning_nodes(&self.contours, &self.closed_flags(), dragging)
     }

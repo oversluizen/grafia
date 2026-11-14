@@ -4,12 +4,12 @@
 //! Extracted 1-to-1 from `CanvasTool` (`spec_ref..spec_ref`) in Reference Vector (``).
 
 use crate::core::knife_ops::{compute_knife_intersections, intersect_finite_segments};
-use crate::core::{extract_segments, ContourSegment, FontPoint, Node, NodeType};
-use crate::snapping::Guide;
-use crate::tokens::{
+use crate::core::math_consts::{
     GUIDE_PERPENDICULAR_DEG, KNIFE_PARAM_DEDUP_EPS, MEASUREMENT_DEC_ROUND_FACTOR,
     MEASUREMENT_POINT_DEDUP_UPM, MEASUREMENT_SIDEBEARING_EXTENT_UPM,
 };
+use crate::core::{extract_segments, ContourSegment, FontPoint, Node, NodeType};
+use crate::snapping::Guide;
 use kurbo::ParamCurve;
 
 /// Precomputed coordinate and segment-delta labels for `drawLocationsForLayer:origin:scale:shouldDrawDark:` (`spec_ref`).

@@ -2,14 +2,14 @@
 //!
 //! Extracted 1-to-1 from `CanvasTool` (`SPEC-005`) in Reference Vector (``).
 
-use crate::core::boolean_geom::{merge_two_closed_rings_at_cut, split_closed_ring_at_indices};
+use crate::core::math_consts::{
+    KNIFE_CUBIC_SUBDIVISIONS, KNIFE_MIN_DRAG_UPM, KNIFE_PARAM_DEDUP_EPS, KNIFE_SEG_T_MAX,
+    KNIFE_SEG_T_MIN, SNAP_LINE_INTERSECT_DET_EPS,
+};
+use crate::core::ring_slice_ops::{merge_two_closed_rings_at_cut, split_closed_ring_at_indices};
 use crate::core::{
     extract_segments, hit_test_segments, split_contour_segment, ContourSegment, FontPoint, Node,
     NodeId, NodeType,
-};
-use crate::tokens::{
-    KNIFE_CUBIC_SUBDIVISIONS, KNIFE_MIN_DRAG_UPM, KNIFE_PARAM_DEDUP_EPS, KNIFE_SEG_T_MAX,
-    KNIFE_SEG_T_MIN, SNAP_LINE_INTERSECT_DET_EPS,
 };
 use kurbo::ParamCurve;
 
@@ -176,6 +176,135 @@ pub fn knife_add_nodes_in_layer(
     inserted
 }
 
+fn split_open_contour_at_cuts(
+    working: Vec<Node>,
+    cut_ids: &[(f64, FontPoint, NodeId)],
+    next_node_id: &mut u64,
+    new_contours: &mut Vec<Vec<Node>>,
+    new_closed: &mut Vec<bool>,
+) {
+    let mut pieces = vec![working];
+    for &(_, _, cid) in cut_ids {
+        if let Some(p_idx) = pieces.iter().position(|p| {
+            p.iter()
+                .position(|n| n.id == cid)
+                .is_some_and(|i| i > 0 && i + 1 < p.len() && p[i].node_type != NodeType::OffCurve)
+        }) {
+            let piece = pieces.remove(p_idx);
+            let cut_idx = piece.iter().position(|n| n.id == cid).unwrap_or(0);
+            let mut part1 = piece[..=cut_idx].to_vec();
+            let mut part2 = piece[cut_idx..].to_vec();
+            if let Some(last) = part1.last_mut() {
+                last.node_type = NodeType::Corner;
+            }
+            if let Some(first) = part2.first_mut() {
+                first.id = NodeId(*next_node_id);
+                *next_node_id += 1;
+                first.node_type = NodeType::Corner;
+            }
+            let count_on = |v: &[Node]| {
+                v.iter()
+                    .filter(|n| n.node_type != NodeType::OffCurve)
+                    .count()
+            };
+            if count_on(&part1) >= 2 {
+                pieces.push(part1);
+            }
+            if count_on(&part2) >= 2 {
+                pieces.push(part2);
+            }
+        }
+    }
+    for piece in pieces {
+        new_contours.push(piece);
+        new_closed.push(false);
+    }
+}
+
+fn reconstruct_closed_rings_after_cuts(
+    mut touched_closed: Vec<Vec<Node>>,
+    mut closed_hits: Vec<(f64, FontPoint, NodeId)>,
+    start: FontPoint,
+    end: FontPoint,
+    next_node_id: &mut u64,
+    new_contours: &mut Vec<Vec<Node>>,
+    new_closed: &mut Vec<bool>,
+) {
+    closed_hits.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let (pairs, remainder) = closed_hits.as_chunks::<2>();
+    let has_oncurve = |r: &[Node], id: NodeId| {
+        r.iter()
+            .any(|n| n.id == id && n.node_type != NodeType::OffCurve)
+    };
+    for &[(_, _, id_a), (_, _, id_b)] in pairs {
+        let pos_a = touched_closed.iter().position(|r| has_oncurve(r, id_a));
+        let pos_b = touched_closed.iter().position(|r| has_oncurve(r, id_b));
+        match (pos_a, pos_b) {
+            (Some(r_a), Some(r_b)) if r_a == r_b => {
+                let ring = touched_closed.remove(r_a);
+                let ia = ring.iter().position(|n| n.id == id_a).unwrap_or(0);
+                let ib = ring.iter().position(|n| n.id == id_b).unwrap_or(0);
+                if ia != ib {
+                    let (half1, half2) = split_closed_ring_at_indices(&ring, ia, ib, next_node_id);
+                    touched_closed.push(half1);
+                    touched_closed.push(half2);
+                } else {
+                    touched_closed.push(ring);
+                }
+            }
+            (Some(r_a), Some(r_b)) => {
+                let (hi, lo) = if r_a > r_b { (r_a, r_b) } else { (r_b, r_a) };
+                let ring_hi = touched_closed.remove(hi);
+                let ring_lo = touched_closed.remove(lo);
+                let (ring_a, ring_b) = if r_a < r_b {
+                    (ring_lo, ring_hi)
+                } else {
+                    (ring_hi, ring_lo)
+                };
+                let ia = ring_a.iter().position(|n| n.id == id_a).unwrap_or(0);
+                let ib = ring_b.iter().position(|n| n.id == id_b).unwrap_or(0);
+                touched_closed.push(merge_two_closed_rings_at_cut(
+                    &ring_a,
+                    ia,
+                    &ring_b,
+                    ib,
+                    start,
+                    end,
+                    next_node_id,
+                ));
+            }
+            _ => {}
+        }
+    }
+    if let &[(_, _, id_rem)] = remainder {
+        if let Some(r_rem) = touched_closed.iter().position(|r| has_oncurve(r, id_rem)) {
+            let working = touched_closed.remove(r_rem);
+            if let Some(cut_idx) = working
+                .iter()
+                .position(|n| n.id == id_rem && n.node_type != NodeType::OffCurve)
+            {
+                let len = working.len();
+                let mut opened: Vec<Node> = (0..len)
+                    .map(|k| working[(cut_idx + k) % len].clone())
+                    .collect();
+                opened[0].node_type = NodeType::Corner;
+                let end_pt = opened[0].point;
+                let end_id = NodeId(*next_node_id);
+                *next_node_id += 1;
+                opened.push(Node::new(end_id, end_pt.x.0, end_pt.y.0, NodeType::Corner));
+                new_contours.push(opened);
+                new_closed.push(false);
+            } else {
+                touched_closed.push(working);
+            }
+        }
+    }
+    for ring in touched_closed {
+        new_contours.push(ring);
+        new_closed.push(true);
+    }
+}
+
 /// Slices contours along `(start, end)` (`CanvasTool::cutPathsInLayer:forPoint:endPoint:` at `spec_ref`).
 /// - Pair(s) of hits on closed contours -> splits or merges+splits across stems/counters (`reconnectNodesAtNode1:node2:`).
 /// - Single hit on a closed contour -> inserts node and opens the contour at the hit node (`dividePathAtNode:`).
@@ -217,121 +346,26 @@ pub fn knife_cut_paths_in_layer(
             closed_hits.extend(cut_ids);
             touched_closed.push(working);
         } else {
-            // Open contour: split at each OnCurve cut_id into independent open sub-contours
-            let mut pieces = vec![working];
-            for (_, _, cid) in cut_ids {
-                if let Some(p_idx) = pieces.iter().position(|p| {
-                    p.iter().position(|n| n.id == cid).is_some_and(|i| {
-                        i > 0 && i + 1 < p.len() && p[i].node_type != NodeType::OffCurve
-                    })
-                }) {
-                    let piece = pieces.remove(p_idx);
-                    let cut_idx = piece.iter().position(|n| n.id == cid).unwrap_or(0);
-                    let mut part1 = piece[..=cut_idx].to_vec();
-                    let mut part2 = piece[cut_idx..].to_vec();
-                    if let Some(last) = part1.last_mut() {
-                        last.node_type = NodeType::Corner;
-                    }
-                    if let Some(first) = part2.first_mut() {
-                        first.id = NodeId(*next_node_id);
-                        *next_node_id += 1;
-                        first.node_type = NodeType::Corner;
-                    }
-                    let count_on = |v: &[Node]| {
-                        v.iter()
-                            .filter(|n| n.node_type != NodeType::OffCurve)
-                            .count()
-                    };
-                    if count_on(&part1) >= 2 {
-                        pieces.push(part1);
-                    }
-                    if count_on(&part2) >= 2 {
-                        pieces.push(part2);
-                    }
-                }
-            }
-            for piece in pieces {
-                new_contours.push(piece);
-                new_closed.push(false);
-            }
+            split_open_contour_at_cuts(
+                working,
+                &cut_ids,
+                next_node_id,
+                &mut new_contours,
+                &mut new_closed,
+            );
         }
     }
 
     if !touched_closed.is_empty() {
-        closed_hits.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
-        let (pairs, remainder) = closed_hits.as_chunks::<2>();
-        let has_oncurve = |r: &[Node], id: NodeId| {
-            r.iter()
-                .any(|n| n.id == id && n.node_type != NodeType::OffCurve)
-        };
-        for &[(_, _, id_a), (_, _, id_b)] in pairs {
-            let pos_a = touched_closed.iter().position(|r| has_oncurve(r, id_a));
-            let pos_b = touched_closed.iter().position(|r| has_oncurve(r, id_b));
-            match (pos_a, pos_b) {
-                (Some(r_a), Some(r_b)) if r_a == r_b => {
-                    let ring = touched_closed.remove(r_a);
-                    let ia = ring.iter().position(|n| n.id == id_a).unwrap_or(0);
-                    let ib = ring.iter().position(|n| n.id == id_b).unwrap_or(0);
-                    if ia != ib {
-                        let (half1, half2) =
-                            split_closed_ring_at_indices(&ring, ia, ib, next_node_id);
-                        touched_closed.push(half1);
-                        touched_closed.push(half2);
-                    } else {
-                        touched_closed.push(ring);
-                    }
-                }
-                (Some(r_a), Some(r_b)) => {
-                    let (hi, lo) = if r_a > r_b { (r_a, r_b) } else { (r_b, r_a) };
-                    let ring_hi = touched_closed.remove(hi);
-                    let ring_lo = touched_closed.remove(lo);
-                    let (ring_a, ring_b) = if r_a < r_b {
-                        (ring_lo, ring_hi)
-                    } else {
-                        (ring_hi, ring_lo)
-                    };
-                    let ia = ring_a.iter().position(|n| n.id == id_a).unwrap_or(0);
-                    let ib = ring_b.iter().position(|n| n.id == id_b).unwrap_or(0);
-                    touched_closed.push(merge_two_closed_rings_at_cut(
-                        &ring_a,
-                        ia,
-                        &ring_b,
-                        ib,
-                        start,
-                        end,
-                        next_node_id,
-                    ));
-                }
-                _ => {}
-            }
-        }
-        if let &[(_, _, id_rem)] = remainder {
-            if let Some(r_rem) = touched_closed.iter().position(|r| has_oncurve(r, id_rem)) {
-                let working = touched_closed.remove(r_rem);
-                if let Some(cut_idx) = working
-                    .iter()
-                    .position(|n| n.id == id_rem && n.node_type != NodeType::OffCurve)
-                {
-                    let len = working.len();
-                    let mut opened: Vec<Node> = (0..len)
-                        .map(|k| working[(cut_idx + k) % len].clone())
-                        .collect();
-                    opened[0].node_type = NodeType::Corner;
-                    let end_pt = opened[0].point;
-                    let end_id = NodeId(*next_node_id);
-                    *next_node_id += 1;
-                    opened.push(Node::new(end_id, end_pt.x.0, end_pt.y.0, NodeType::Corner));
-                    new_contours.push(opened);
-                    new_closed.push(false);
-                } else {
-                    touched_closed.push(working);
-                }
-            }
-        }
-        for ring in touched_closed {
-            new_contours.push(ring);
-            new_closed.push(true);
-        }
+        reconstruct_closed_rings_after_cuts(
+            touched_closed,
+            closed_hits,
+            start,
+            end,
+            next_node_id,
+            &mut new_contours,
+            &mut new_closed,
+        );
     }
 
     if mutated {

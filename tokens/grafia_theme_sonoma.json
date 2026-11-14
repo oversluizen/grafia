@@ -59,5 +59,9 @@
   "component_selected_fill": { "r": 58, "g": 120, "b": 215, "a": 165 },
   "component_locked_fill": { "r": 145, "g": 145, "b": 150, "a": 105 },
   "master_compat_ray_color": { "r": 40, "g": 150, "b": 95, "a": 195 },
-  "master_incompat_highlight": { "r": 225, "g": 55, "b": 55, "a": 215 }
+  "master_incompat_highlight": { "r": 225, "g": 55, "b": 55, "a": 215 },
+  "smart_handle_color": { "r": 209, "g": 36, "b": 163, "a": 255 },
+  "ps_hint_stem_fill": { "r": 66, "g": 133, "b": 244, "a": 48 },
+  "ps_hint_ghost_fill": { "r": 142, "g": 142, "b": 147, "a": 42 },
+  "hoi_diamond_color": { "r": 217, "g": 95, "b": 14, "a": 255 }
 }
