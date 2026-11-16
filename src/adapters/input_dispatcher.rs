@@ -13,7 +13,6 @@ use egui::{Event, PointerButton, Rect};
 struct FramePointerFlags {
     has_ptr_btn: bool,
     has_ptr_move: bool,
-    was_touch: bool,
 }
 
 /// Dispatches input events to canvas tools and state machines with boundary gating.
@@ -42,8 +41,6 @@ impl<'a> InputDispatcher<'a> {
         let is_ctrl = ui.input(|i| i.modifiers.ctrl) || ts.touch_cmd_latched;
         let is_space = ui.input(|i| i.key_down(egui::Key::Space)) || ts.touch_space_pan_latched;
         let time = ui.input(|i| i.time);
-        let was_touch =
-            self.state.active_input_device() == crate::core::InputDeviceKind::TouchFinger;
         let has_touch_ev = events.iter().any(|e| matches!(e, Event::Touch { .. }));
         let any_touches = ui.input(|i| i.any_touches()) || has_touch_ev;
         self.state
@@ -78,7 +75,6 @@ impl<'a> InputDispatcher<'a> {
                 .iter()
                 .any(|e| matches!(e, Event::PointerButton { .. })),
             has_ptr_move: events.iter().any(|e| matches!(e, Event::PointerMoved(_))),
-            was_touch,
         };
         let mut changed = false;
         self.state.text_transients.text_tool_activated_in_frame = false;
@@ -194,41 +190,9 @@ impl<'a> InputDispatcher<'a> {
         let FramePointerFlags {
             has_ptr_btn,
             has_ptr_move,
-            was_touch,
         } = flags;
         match phase {
             egui::TouchPhase::Start if !has_ptr_btn => {
-                let prev_t = self
-                    .state
-                    .drag_transients
-                    .last_click_time_pos
-                    .map(|(t, _)| t)
-                    .or_else(|| {
-                        self.state
-                            .drag_transients
-                            .last_double_click_time_pos
-                            .map(|(t, _)| t)
-                    })
-                    .unwrap_or(0.0);
-                let is_companion_touchstart = time > 0.0
-                    && prev_t > 0.0
-                    && (time - prev_t).abs()
-                        <= crate::core::math_consts::TOUCH_SAME_PRESS_DEDUP_SEC;
-                if is_companion_touchstart {
-                    if was_touch {
-                        return false;
-                    }
-                    if let Some(before) = self
-                        .state
-                        .drag_transients
-                        .active_drag_before_snapshot
-                        .take()
-                    {
-                        self.state.restore_snapshot(&before);
-                    }
-                    self.state.drag_transients.last_click_time_pos = None;
-                    self.state.drag_transients.last_double_click_time_pos = None;
-                }
                 self.handle_primary_pointer_press(pos, egui::Modifiers::NONE, frame_mods, time)
             }
             egui::TouchPhase::Move if !has_ptr_move => {
@@ -265,6 +229,49 @@ impl<'a> InputDispatcher<'a> {
         }
     }
 
+    fn deduplicate_companion_touch_press(&mut self, time: f64) -> bool {
+        let now_touch =
+            self.state.active_input_device() == crate::core::InputDeviceKind::TouchFinger;
+        let prev_t = self
+            .state
+            .drag_transients
+            .touch_state
+            .last_raw_press_time_sec;
+        let prev_touch = self
+            .state
+            .drag_transients
+            .touch_state
+            .last_raw_press_was_touch;
+        let is_companion = now_touch
+            && time > 0.0
+            && prev_t > 0.0
+            && (time - prev_t).abs() <= crate::core::math_consts::TOUCH_SAME_PRESS_DEDUP_SEC;
+        if is_companion {
+            if prev_touch {
+                return true;
+            }
+            if let Some(before) = self
+                .state
+                .drag_transients
+                .active_drag_before_snapshot
+                .take()
+            {
+                self.state.restore_snapshot(&before);
+            }
+            self.state.drag_transients.last_click_time_pos = None;
+            self.state.drag_transients.last_double_click_time_pos = None;
+        }
+        self.state
+            .drag_transients
+            .touch_state
+            .last_raw_press_time_sec = time;
+        self.state
+            .drag_transients
+            .touch_state
+            .last_raw_press_was_touch = now_touch;
+        false
+    }
+
     fn handle_primary_pointer_press(
         &mut self,
         pos: egui::Pos2,
@@ -274,7 +281,9 @@ impl<'a> InputDispatcher<'a> {
     ) -> bool {
         let scr_pt = self.state.map_pointer_pos_with_touch_offset(pos);
         let adj_pos = egui::Pos2::new(scr_pt.x.0, scr_pt.y.0);
-        if !self.canvas_rect.contains(pos) && !self.canvas_rect.contains(adj_pos) {
+        if (!self.canvas_rect.contains(pos) && !self.canvas_rect.contains(adj_pos))
+            || self.deduplicate_companion_touch_press(time)
+        {
             return false;
         }
         self.state.last_pointer_screen_pos = Some(scr_pt);

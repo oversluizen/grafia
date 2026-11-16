@@ -82,6 +82,8 @@ pub struct TouchInteractionState {
     pub touch_alt_latched: bool,
     pub touch_cmd_latched: bool,
     pub touch_space_pan_latched: bool,
+    pub last_raw_press_time_sec: f64,
+    pub last_raw_press_was_touch: bool,
 }
 
 /// Binarization mode for bitmap & shadowed-camera auto-tracing (`SPEC-009 §2.5.1`).

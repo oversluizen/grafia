@@ -1779,7 +1779,7 @@ fn tc_v0130_009_to_012_touchscreen_auto_detection_handle_priority_segment_select
     });
     out_t1a.textures_delta.clear();
 
-    // 7ms later in the next frame, browser fires touchstart(Start) for the SAME physical finger press!
+    // 7ms later in the next frame, browser fires touchstart(Start) + synthesized PointerButton(pressed: true) for the SAME physical finger press!
     let raw_tap1 = RawInput {
         time: Some(1.007),
         events: vec![
@@ -1790,12 +1790,24 @@ fn tc_v0130_009_to_012_touchscreen_auto_detection_handle_priority_segment_select
                 pos: tap1,
                 force: Some(0.5),
             },
+            egui::Event::PointerButton {
+                pos: tap1,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            },
             egui::Event::Touch {
                 device_id: egui::TouchDeviceId(1),
                 id: egui::TouchId(10),
                 phase: egui::TouchPhase::End,
                 pos: tap1,
                 force: Some(0.0),
+            },
+            egui::Event::PointerButton {
+                pos: tap1,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
             },
         ],
         ..Default::default()
@@ -1807,13 +1819,19 @@ fn tc_v0130_009_to_012_touchscreen_auto_detection_handle_priority_segment_select
     assert_eq!(
         state_dbl.contours[0].len(),
         count_before_convert,
-        "pointerdown at t=1.000 followed 7ms later by touchstart at t=1.007 is ONE physical tap and must NOT trigger a double-tap"
+        "pointerdown at t=1.000 followed 7ms later by touchstart+PointerButton at t=1.007 is ONE physical tap and must NOT trigger a double-tap"
     );
     let snap_after_tap1 = state_dbl.snapshot();
 
     let raw_tap2 = RawInput {
         time: Some(1.18),
         events: vec![
+            egui::Event::PointerButton {
+                pos: tap2,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            },
             egui::Event::Touch {
                 device_id: egui::TouchDeviceId(1),
                 id: egui::TouchId(11),
@@ -1821,12 +1839,24 @@ fn tc_v0130_009_to_012_touchscreen_auto_detection_handle_priority_segment_select
                 pos: tap2,
                 force: Some(0.5),
             },
+            egui::Event::PointerButton {
+                pos: tap2,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            },
             egui::Event::Touch {
                 device_id: egui::TouchDeviceId(1),
                 id: egui::TouchId(11),
                 phase: egui::TouchPhase::End,
                 pos: tap2,
                 force: Some(0.0),
+            },
+            egui::Event::PointerButton {
+                pos: tap2,
+                button: egui::PointerButton::Primary,
+                pressed: false,
+                modifiers: egui::Modifiers::NONE,
             },
         ],
         ..Default::default()
