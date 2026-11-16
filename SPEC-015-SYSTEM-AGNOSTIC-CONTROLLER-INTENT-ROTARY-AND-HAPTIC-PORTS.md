@@ -130,16 +130,28 @@ Hardware controllers with built-in displays (Wacom Intuos 4 OLEDs, Loupedeck CT 
 
 ## 6. Port 5: Mobile & Stylus Precision Ergonomics
 
-1. **Pointer-Type Aware Finger Offset (`InputDeviceKind::{ Mouse, Stylus, TouchFinger }`)**:
-   - Configured via `state.set_active_input_device(device: InputDeviceKind)`.
-   - `state.resolve_effective_pointer_screen_pos(raw_pos: ScreenPoint) -> ScreenPoint` offsets `raw_pos.y` upward by `preferences.touch_finger_offset_dp` when `active_input_device == InputDeviceKind::TouchFinger` (or during active touch contacts), and returns exact `raw_pos` for `Mouse` and `Stylus`.
-2. **Adaptive Touch Hit-Target Inflation (`effective_hit_radius_dp`)**:
-   - When `active_input_device == InputDeviceKind::TouchFinger`, node and handle hit-testing inflates `preferences.hit_test_radius_dp` by `TOUCH_HIT_RADIUS_MULTIPLIER = 1.6` with a minimum floor of `14.0 dp`.
-3. **Edge-Flipping Magnification Loupe (`compute_precision_loupe_overlay`)**:
+1. **Pointer-Type Aware Finger Offset & Automatic Touch Detection (`InputDeviceKind::{ Mouse, Stylus, TouchFinger }`, `TC-V0130-006`, `TC-V0130-009`)**:
+   - Configured via `state.set_active_input_device(device: InputDeviceKind)`, and automatically activated (`active_input_device = InputDeviceKind::TouchFinger`) whenever `InputDispatcher::dispatch_events` receives any `egui::Event::Touch { .. }` (or `ui.input(|i| i.any_touches())`).
+   - Default `GrafiaPreferences::default().touch_finger_offset_dp` is `0.0` so direct touch on laptop/tablet screens hits the exact contact point under the finger without an unexpected vertical jump.
+   - `state.resolve_effective_pointer_screen_pos(raw_pos: ScreenPoint) -> ScreenPoint` offsets `raw_pos.y` upward by `preferences.touch_finger_offset_dp` when `active_input_device == InputDeviceKind::TouchFinger` (or during active touch contacts) and `touch_finger_offset_dp != 0.0`, returning exact `raw_pos` for `Mouse` and `Stylus`.
+2. **Adaptive Touch Hit-Target Inflation & `OffCurve` Handle Priority (`effective_hit_radius_dp`, `scale_touch_hit_radius_dp`, `TC-V0130-010`, `TC-V0130-011`)**:
+   - When `active_input_device == InputDeviceKind::TouchFinger`, node and handle hit-testing (`effective_hit_radius_dp`) inflates `preferences.hit_test_radius_dp` by `TOUCH_HIT_RADIUS_MULTIPLIER = 1.6` with a minimum floor of `TOUCH_NODE_HIT_MIN_FLOOR_DP = 16.0 dp`.
+   - In `hit_test_node_with_radius(pos, r_hit)`: when `show_nodes_offcurve` is `true`, all visible `NodeType::OffCurve` handles within `r_hit` are prioritized ahead of `OnCurve` nodes, and among multiple `OffCurve` handles within `r_hit`, the closest handle to `pos` is selected first (breaking exact distance ties by selection state).
+   - Universal touch hit-radius scaling (`scale_touch_hit_radius_dp`, floor `TOUCH_HIT_MIN_FLOOR_DP = 14.0 dp`) applies across all `Select` tool hit-testers:
+     - `effective_segment_hit_tolerance_dp()` (`>= 14.0 dp` in `TouchFinger` mode),
+     - `hit_test_tunni_line_at_upm` & `try_begin_tunni_press` (never stealing hits from nodes within `hit_test_node`),
+     - `select_anchor_at_upm` (`CanvasAnchor` hit-testing),
+     - `hit_test_guides` (`Guide` knob and line hit-testing),
+     - `hit_test_smart_handles_with_radius` (`CanvasSmartHandle` hit-testing).
+3. **Touch Tap-Slop Tolerance, Segment Selection & Double-Tap Line-to-Cubic Handle Creation (`TC-V0130-012`)**:
+   - **Touch Double-Tap Slop (`effective_double_click_slop_dp`)**: Uses `TOUCH_DOUBLE_TAP_MAX_DIST_DP = 20.0 dp` when `active_input_device == InputDeviceKind::TouchFinger` (vs. `DOUBLE_CLICK_MAX_DIST_DP = 8.0 dp` for mouse).
+   - **Single-Tap on a Segment Selects its Endpoints & Handles**: A tap on a `ContourSegment` (`Line` or `Cubic`) that moves by at most `TOUCH_TAP_SLOP_DP = 6.0 dp` in `TouchFinger` mode preserves `pending_segment_click` and selects both endpoint `OnCurve` nodes (plus `h1` and `h2` `OffCurve` handles for a `Cubic` segment) on release.
+   - **Double-Tap (or `Alt`-Click) on a Straight `ContourSegment::Line` Converts it to a Cubic Curve with 2 `OffCurve` Handles**: Double-tapping a `ContourSegment::Line` in `TouchFinger` mode (or `Alt`-clicking / `BreakCuspHandle`-clicking in any mode) inserts two `NodeType::OffCurve` handles at $1/3$ and $2/3$ along the segment inside an atomic `"Convert Line to Cubic"` Undo transaction and immediately selects both new `OffCurve` handles (`vec![h1_id, h2_id]`).
+4. **Edge-Flipping Magnification Loupe (`compute_precision_loupe_overlay`)**:
    - Returns `Option<PrecisionLoupeGeometry>` centered `78.0 dp` above the active pointer (`lens_radius_dp = 48.0`, `zoom_factor = 2.5`), automatically flipping below/laterally (`flipped_from_top_edge = true`) when approaching within `110.0 dp` of `canvas_rect.top()` so the lens circle never protrudes outside `canvas_rect`.
-4. **Graceful 1-to-2 Finger Multi-Touch Promotion (`promote_to_multitouch_gesture`)**:
+5. **Graceful 1-to-2 Finger Multi-Touch Promotion (`promote_to_multitouch_gesture`)**:
    - Cleanly rolls back any uncommitted single-finger drag or tentative `Pen` placement to `active_drag_before_snapshot` without polluting the `CommandHistory` Undo stack.
-5. **Stylus Barrel, Squeeze & Double-Tap Actions (`dispatch_stylus_accessory_event`)**:
+6. **Stylus Barrel, Squeeze & Double-Tap Actions (`dispatch_stylus_accessory_event`)**:
    - `StylusAccessoryEvent::DoubleTap`: swaps `active_tool` between `CanvasTool::Select` and the last active drawing tool (default `CanvasTool::Pen`).
    - `StylusAccessoryEvent::BarrelHold(bool)`: activates/deactivates `CanvasIntent::BreakCuspHandle` (`Alt`).
    - `StylusAccessoryEvent::Squeeze { pos }`: updates `cursor_screen_pos` to `pos` for instant radial menu invocation at the stylus tip.
@@ -268,7 +280,7 @@ impl GrafiaCanvasState {
 
 ---
 
-## 8. Complete Normative Test Matrix (`TC-V0130-001` .. `TC-V0130-008`)
+## 8. Complete Normative Test Matrix (`TC-V0130-001` .. `TC-V0130-012`)
 
 | Test Case ID | Requirement / Controller Port Contract | Input / Action | Expected Normative Outcome |
 | :--- | :--- | :--- | :--- |
@@ -280,3 +292,7 @@ impl GrafiaCanvasState {
 | **`TC-V0130-006`** | Mobile Finger Offset (`InputDeviceKind::TouchFinger`), `1.6x` Hit Inflation & Edge-Flipping `PrecisionLoupeGeometry` | Set `TouchFinger` with `touch_finger_offset_dp = 36.0`, test `hit_test_node` at `11.0 dp`, and compute loupe at `y = 250.0` vs. `y = 40.0`. | `TouchFinger` offsets pointer by `-36.0 dp`, captures node at `11.0 dp` (where `Mouse` misses), and flips the `48.0 dp` loupe inside `canvas_rect` near the top edge. |
 | **`TC-V0130-007`** | Graceful Multi-Touch Promotion (`promote_to_multitouch_gesture`) & `StylusAccessoryEvent` (`DoubleTap`, `BarrelHold`, `Squeeze`) | Start a tentative 1-finger `Pen` node placement, call `promote_to_multitouch_gesture()`, and dispatch stylus `DoubleTap` twice + `BarrelHold(true)`. | Rolls back tentative `Pen` node with zero Undo pollution; `DoubleTap` swaps `Pen <-> Select`; `BarrelHold(true)` activates `BreakCuspHandle`. |
 | **`TC-V0130-008`** | Property-Based & Stateful `arbtest` Controller Port Fuzzing | Fuzz arbitrary intent masks, rotary encoder ticks across all 6 channels, device switches, and `Undo`/`Redo`. | `state.validate_invariants()` holds after every operation and all coordinates/parameters remain finite. |
+| **`TC-V0130-009`** | Automatic `InputDeviceKind::TouchFinger` Activation on `egui::Event::Touch` | Dispatch `egui::Event::Touch` to `InputDispatcher` on default `GrafiaCanvasState`. | Automatically switches `state.active_input_device()` to `InputDeviceKind::TouchFinger` with default `touch_finger_offset_dp == 0.0`. |
+| **`TC-V0130-010`** | `OffCurve` Handle Hit-Priority Over Nearby `OnCurve` Nodes & Tunni Lines | Place an `OffCurve` handle and an `OnCurve` node `10.0 dp` apart on screen (and a previously selected `OffCurve` handle `14.0 dp` away) and touch-press within `16.0 dp`. | Prioritizes and selects the closest `OffCurve` handle over nearby `OnCurve` nodes, farther-away selected `OffCurve` handles, and Tunni lines. |
+| **`TC-V0130-011`** | Universal Touch Hit-Radius Scaling (`>= 14.0 dp`) Across Segments, Anchors & Guides | Touch-tap `11.0 dp` away from a contour segment, a `CanvasAnchor`, and a `Guide`. | Hits and selects the segment, anchor, and guide in `TouchFinger` mode instead of missing and starting an empty `MarqueeSelecting` box. |
+| **`TC-V0130-012`** | Touch Double-Tap Slop (`20.0 dp`), Tap-Slop Segment Selection (`6.0 dp`) & Double-Tap Line-to-Cubic Handle Creation | Single-tap a segment with `4.0 dp` finger roll; double-tap a straight `ContourSegment::Line` with `12.0 dp` finger slop between taps. | Single-tap selects the segment's nodes/handles; double-tap converts the `Line` segment into a 4-node `Cubic` with 2 `OffCurve` handles at $1/3$ and $2/3$, selects both handles, and round-trips through `Undo`/`Redo`. |

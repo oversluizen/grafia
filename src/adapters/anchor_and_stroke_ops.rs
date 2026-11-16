@@ -75,7 +75,8 @@ impl GrafiaCanvasState {
     /// Hit-tests and selects a `CanvasAnchor` at `pt` in UPM coordinates (`SPEC-008 §2.2.2`).
     pub fn select_anchor_at_upm(&mut self, pt: FontPoint, extend: bool) -> bool {
         let zoom = self.viewport.zoom.max(MIN_VIEWPORT_ZOOM);
-        let hit_radius_upm = f64::from(ANCHOR_HIT_RADIUS_DP / zoom);
+        let hit_dp = self.scale_touch_hit_radius_dp(ANCHOR_HIT_RADIUS_DP);
+        let hit_radius_upm = f64::from(hit_dp / zoom);
         let mut best: Option<(usize, f64)> = None;
         for (idx, a) in self.anchors.iter().enumerate() {
             let d = a.position.distance_to(pt);

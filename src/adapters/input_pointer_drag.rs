@@ -103,7 +103,7 @@ impl<'a> InputDispatcher<'a> {
     ) -> bool {
         match self.state.select_state.clone() {
             SelectToolState::MarqueeSelecting { start_screen, .. } => {
-                if start_screen.distance_to(scr_pt) > 1.0 {
+                if start_screen.distance_to(scr_pt) > self.state.effective_tap_drag_slop_dp() {
                     self.state.drag_transients.pending_segment_click = None;
                 }
                 self.state.select_state = SelectToolState::MarqueeSelecting {
@@ -226,7 +226,15 @@ impl<'a> InputDispatcher<'a> {
         } = initial_pts;
         let raw_dx = font_pt.x.0 - start_pt.x.0;
         let raw_dy = font_pt.y.0 - start_pt.y.0;
-        if raw_dx.hypot(raw_dy) > 0.0 {
+        let dist_font = raw_dx.hypot(raw_dy);
+        if self.state.active_input_device() == crate::core::InputDeviceKind::TouchFinger
+            && self.state.drag_transients.pending_segment_click.is_some()
+            && dist_font * f64::from(self.state.viewport.zoom)
+                <= f64::from(self.state.effective_tap_drag_slop_dp())
+        {
+            return;
+        }
+        if dist_font > 0.0 {
             self.state.drag_transients.pending_segment_click = None;
         }
         for (id, pt, nt) in self.state.drag_transients.drag_start_node_types.clone() {

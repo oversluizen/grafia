@@ -8,9 +8,10 @@
 pub mod demo_host_shell;
 
 pub use demo_host_shell::toolbar_specs::{
-    configure_demo_fonts, install_crash_logger, ALL_ACTION_ICONS, APP_TITLE, DEMO_GUIDE_X_UPM,
-    DEMO_GUIDE_Y_UPM, METRICS_ORIGIN_SPECS, MIN_WINDOW_HEIGHT_DP, MIN_WINDOW_WIDTH_DP,
-    ORIGIN_ANCHOR_GRID_ROWS, TOOL_ICON_SPECS, WINDOW_HEIGHT_DP, WINDOW_WIDTH_DP,
+    configure_demo_fonts, install_crash_logger, ALL_ACTION_ICONS, APP_TITLE,
+    DEMO_CENTRAL_CANVAS_H_DP, DEMO_CENTRAL_CANVAS_W_DP, DEMO_GUIDE_X_UPM, DEMO_GUIDE_Y_UPM,
+    METRICS_ORIGIN_SPECS, MIN_WINDOW_HEIGHT_DP, MIN_WINDOW_WIDTH_DP, ORIGIN_ANCHOR_GRID_ROWS,
+    TOOL_ICON_SPECS, WINDOW_HEIGHT_DP, WINDOW_WIDTH_DP,
 };
 use demo_host_shell::{
     demo_panels::{render_left_sidebar, render_top_toolbar},
@@ -59,8 +60,10 @@ impl Default for GrafiaVectorCanvasDemo {
 impl GrafiaVectorCanvasDemo {
     #[must_use]
     pub fn new() -> Self {
+        let mut state = GrafiaCanvasState::init_glyph_a();
+        state.fit_viewport_to_glyph(DEMO_CENTRAL_CANVAS_W_DP, DEMO_CENTRAL_CANVAS_H_DP);
         Self {
-            state: GrafiaCanvasState::init_glyph_a(),
+            state,
             theme: GrafiaTheme::sonoma_default(),
             show_preview_panel: true,
             host: MockFontHost::new(),
@@ -222,11 +225,13 @@ mod tests {
         for (preset, _) in DemoPreset::ALL {
             app.host
                 .apply_preset(preset, &mut app.state, &mut app.theme);
-            let raw_input = egui::RawInput {
-                screen_rect: Some(screen_rect),
-                ..Default::default()
-            };
-            let mut full_output = ctx.run_ui(raw_input, |ui| app.render_ui(ui));
+            let mut full_output = ctx.run_ui(
+                egui::RawInput {
+                    screen_rect: Some(screen_rect),
+                    ..Default::default()
+                },
+                |ui| app.render_ui(ui),
+            );
             full_output.textures_delta.clear();
             assert!(!ctx
                 .tessellate(full_output.shapes, full_output.pixels_per_point)
@@ -235,11 +240,13 @@ mod tests {
 
         // Verify zero redundant preview strip rasterization on idle frame
         let renders_before_idle = app.host.preview_cache.render_count();
-        let raw_idle = egui::RawInput {
-            screen_rect: Some(screen_rect),
-            ..Default::default()
-        };
-        let mut idle_output = ctx.run_ui(raw_idle, |ui| app.render_ui(ui));
+        let mut idle_output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(screen_rect),
+                ..Default::default()
+            },
+            |ui| app.render_ui(ui),
+        );
         idle_output.textures_delta.clear();
         assert_eq!(app.host.preview_cache.render_count(), renders_before_idle);
 
@@ -252,9 +259,8 @@ mod tests {
         app.state.delete_text_backward_at_caret();
         app.host.poll_host_ports(&mut app.state);
         assert_eq!(app.host.text_buffer, "AOVA");
-        assert!(app
-            .state
-            .apply_selection_info_action(grafia::core::SelectionInfoAction::SetLsb(55.0)));
+        let set_lsb = grafia::core::SelectionInfoAction::SetLsb(55.0);
+        assert!(app.state.apply_selection_info_action(set_lsb));
         app.host.poll_host_ports(&mut app.state);
         assert!(app
             .host
@@ -262,19 +268,16 @@ mod tests {
             .back()
             .is_some_and(|l| l.contains("SpacingDelta")));
         app.state = GrafiaCanvasState::init_glyph_a();
-        app.host.apply_preset(
-            DemoPreset::ComponentAndDecompose,
-            &mut app.state,
-            &mut app.theme,
-        );
+        let comp_p = DemoPreset::ComponentAndDecompose;
+        app.host
+            .apply_preset(comp_p, &mut app.state, &mut app.theme);
         assert!(app
             .state
             .double_click_component_at_upm(FontPoint::new(350.0, 620.0)));
         app.host.poll_host_ports(&mut app.state);
         assert_eq!(app.state.glyph.name, "acutecomb");
         assert!(app.state.validate_invariants().is_ok());
-        assert!(app.state.undo());
-        assert_eq!(app.state.glyph.name, "A");
+        assert!(app.state.undo() && app.state.glyph.name == "A");
     }
 
     #[test]
@@ -288,30 +291,24 @@ mod tests {
         configure_demo_fonts(&ctx);
         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
             let defs = ui.ctx().fonts_mut(|f| f.definitions().clone());
+            let cup = egui_macview::CUPERTINO_ICONS_FONT_NAME;
             assert_eq!(
                 defs.families[&egui::FontFamily::Proportional][0].as_str(),
-                egui_macview::CUPERTINO_ICONS_FONT_NAME
+                cup
             );
-            assert_eq!(
-                defs.families[&egui::FontFamily::Monospace][0].as_str(),
-                egui_macview::CUPERTINO_ICONS_FONT_NAME
-            );
+            assert_eq!(defs.families[&egui::FontFamily::Monospace][0].as_str(), cup);
             assert_eq!(METRICS_ORIGIN_SPECS.map(|s| s.1), ["Base", "xH/2", "Cap"]);
             let font_id = egui::FontId::proportional(TEST_ICON_FONT_SIZE_PT);
-            let tofu_uv = ui
-                .painter()
-                .layout_no_wrap("\u{fffe}".to_owned(), font_id.clone(), egui::Color32::WHITE)
-                .rows[0]
-                .glyphs[0]
-                .uv_rect;
+            let layout_str = |s: String| {
+                ui.painter()
+                    .layout_no_wrap(s, font_id.clone(), egui::Color32::WHITE)
+            };
+            let tofu_uv = layout_str("\u{fffe}".to_owned()).rows[0].glyphs[0].uv_rect;
             for ch in ('0'..='9').chain('A'..='Z').chain('a'..='z') {
-                let uv = ui
-                    .painter()
-                    .layout_no_wrap(ch.to_string(), font_id.clone(), egui::Color32::WHITE)
-                    .rows[0]
-                    .glyphs[0]
-                    .uv_rect;
-                assert_ne!(uv, tofu_uv);
+                assert_ne!(
+                    layout_str(ch.to_string()).rows[0].glyphs[0].uv_rect,
+                    tofu_uv
+                );
             }
             let all_icons = TOOL_ICON_SPECS
                 .iter()
@@ -321,11 +318,7 @@ mod tests {
                 .chain(egui_macview::MacSymbol::ALL.iter().map(|s| s.as_str()))
                 .chain(ALL_ACTION_ICONS);
             for icon in all_icons {
-                let galley = ui.painter().layout_no_wrap(
-                    icon.to_owned(),
-                    font_id.clone(),
-                    egui::Color32::WHITE,
-                );
+                let galley = layout_str(icon.to_owned());
                 assert!(galley.size().x > 0.0 && galley.size().y > 0.0);
                 assert_ne!(galley.rows[0].glyphs[0].uv_rect, tofu_uv);
             }

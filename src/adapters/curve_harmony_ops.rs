@@ -106,7 +106,8 @@ impl GrafiaCanvasState {
             return None;
         }
         let zoom = self.viewport.zoom.max(MIN_VIEWPORT_ZOOM);
-        let tol_upm = f64::from(TUNNI_HIT_RADIUS_DP / zoom);
+        let hit_dp = self.scale_touch_hit_radius_dp(TUNNI_HIT_RADIUS_DP);
+        let tol_upm = f64::from(hit_dp / zoom);
         let mut best: Option<((ContourId, usize), f64)> = None;
         for ov in self.compute_tunni_overlays() {
             let d = point_to_segment_distance_upm(pt, ov.p1, ov.p2);
@@ -392,7 +393,8 @@ impl GrafiaCanvasState {
             return false;
         }
         let zoom = self.viewport.zoom.max(MIN_VIEWPORT_ZOOM);
-        let tol_upm = f64::from(TUNNI_HIT_RADIUS_DP / zoom);
+        let hit_dp = self.scale_touch_hit_radius_dp(TUNNI_HIT_RADIUS_DP);
+        let tol_upm = f64::from(hit_dp / zoom);
         let mut best: Option<((ContourId, usize), f64)> = None;
         for ov in self.compute_tunni_overlays() {
             let d = point_to_segment_distance_upm(font_pt, ov.p1, ov.p2);

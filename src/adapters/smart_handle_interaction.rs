@@ -3,7 +3,10 @@
 
 use crate::adapters::state::{CanvasTool, GrafiaCanvasState};
 use crate::core::extra_nodes::{compute_layer_extra_nodes, hit_test_extra_nodes};
-use crate::core::smart_handles::{hit_test_smart_handles, project_pointer_onto_smart_handle};
+use crate::core::math_consts::SMART_HANDLE_HIT_RADIUS_DP;
+use crate::core::smart_handles::{
+    hit_test_smart_handles_with_radius, project_pointer_onto_smart_handle,
+};
 use crate::core::{CanvasHostRequest, FontPoint, ScreenPoint};
 
 pub fn handle_smart_handle_pointer_press(
@@ -12,9 +15,14 @@ pub fn handle_smart_handle_pointer_press(
     _font_pt: FontPoint,
 ) -> Option<bool> {
     let vp = state.active_slot_viewport();
-    if let Some(h_idx) =
-        hit_test_smart_handles(&state.smart_handles, &state.components, &vp, scr_pt)
-    {
+    let hit_r = state.scale_touch_hit_radius_dp(SMART_HANDLE_HIT_RADIUS_DP);
+    if let Some(h_idx) = hit_test_smart_handles_with_radius(
+        &state.smart_handles,
+        &state.components,
+        &vp,
+        scr_pt,
+        hit_r,
+    ) {
         state.drag_transients.active_drag_before_snapshot = Some(state.snapshot());
         state.drag_transients.active_smart_handle_drag = Some(h_idx);
         return Some(true);

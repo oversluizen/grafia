@@ -1552,3 +1552,294 @@ fn tc_v0130_001_to_008_system_agnostic_controller_intent_rotary_telemetry_haptic
         Some(FontPoint::new(165.0, 155.0))
     );
 }
+
+// TC-V0130-009 .. TC-V0130-012: Touchscreen Auto-Detection, OffCurve Handle Priority, Universal Touch Hit-Radii, Tap Slop & Double-Tap Line-to-Cubic.
+#[test]
+fn tc_v0130_009_to_012_touchscreen_auto_detection_handle_priority_segment_selection_and_double_tap_line_to_cubic(
+) {
+    use grafia::{AnchorId, CanvasAnchor, GrafiaPreferences, InputDeviceKind};
+
+    let ctx = Context::default();
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state = GrafiaCanvasState::init_glyph_a();
+    assert_eq!(state.active_input_device(), InputDeviceKind::Mouse);
+    assert_relative_eq!(
+        GrafiaPreferences::default().touch_finger_offset_dp,
+        0.0,
+        epsilon = 1e-6
+    );
+
+    // 1. TC-V0130-009: Dispatching egui::Event::Touch automatically switches active_input_device to TouchFinger.
+    let n0_scr = state.viewport.to_screen(state.contours[0][0].point);
+    let touch_pos = egui::Pos2::new(n0_scr.x.0 - 14.5, n0_scr.y.0);
+    let raw_touch = RawInput {
+        events: vec![
+            egui::Event::Touch {
+                device_id: egui::TouchDeviceId(1),
+                id: egui::TouchId(1),
+                phase: egui::TouchPhase::Start,
+                pos: touch_pos,
+                force: Some(0.5),
+            },
+            egui::Event::Touch {
+                device_id: egui::TouchDeviceId(1),
+                id: egui::TouchId(1),
+                phase: egui::TouchPhase::End,
+                pos: touch_pos,
+                force: Some(0.0),
+            },
+        ],
+        ..Default::default()
+    };
+    let mut out1 = ctx.run_ui(raw_touch, |ui| {
+        let _ = GrafiaCanvasWidget::new(&mut state, &theme).show(ui);
+    });
+    out1.textures_delta.clear();
+    assert_eq!(
+        state.active_input_device(),
+        InputDeviceKind::TouchFinger,
+        "Receiving egui::Event::Touch must automatically switch active_input_device to TouchFinger"
+    );
+    assert!(
+        state.effective_hit_radius_dp() >= 16.0,
+        "TouchFinger node hit radius must be >= 16.0 dp, got {}",
+        state.effective_hit_radius_dp()
+    );
+    assert_eq!(
+        state.selected_nodes,
+        vec![state.contours[0][0].id],
+        "Touch press 14.5 dp from node 0 must select node 0 under >= 16.0 dp touch hit radius"
+    );
+
+    // 2. TC-V0130-010: OffCurve handle priority over nearby OnCurve node AND closer OffCurve over farther selected OffCurve + Tunni line.
+    let mut state_h = GrafiaCanvasState::init_glyph_o();
+    state_h.set_active_input_device(InputDeviceKind::TouchFinger);
+    state_h.show_tunni_lines = true;
+    // Place OnCurve(1) at (100, 100), OffCurve(2) at (110, 100) [10 dp apart at zoom=1.0], and OffCurve(3) at (124, 100)
+    state_h.viewport =
+        grafia::ViewportTransform::new(1.0, grafia::ScreenPoint::new(50.0, 500.0), 1000);
+    let custom_cubic = GlyphContour::new(
+        ContourId(0),
+        vec![
+            Node::new(NodeId(1), 100.0, 100.0, NodeType::Smooth),
+            Node::new(NodeId(2), 110.0, 100.0, NodeType::OffCurve),
+            Node::new(NodeId(3), 124.0, 100.0, NodeType::OffCurve),
+            Node::new(NodeId(4), 200.0, 100.0, NodeType::Smooth),
+        ],
+    );
+    set_layer_contours(&mut state_h, vec![custom_cubic]);
+    // Even if NodeId(3) (at x=124) is already selected, touching at x=106 (4 dp from OnCurve(1), 4 dp from OffCurve(2), 18 dp from OffCurve(3), and right on the Tunni line)
+    // must select and drag OffCurve(2)!
+    state_h.selected_nodes = vec![NodeId(3), NodeId(1)];
+    let probe_scr = state_h.viewport.to_screen(FontPoint::new(108.0, 100.0));
+    assert_eq!(
+        state_h.hit_test_node(probe_scr),
+        Some(NodeId(2)),
+        "Closest OffCurve handle NodeId(2) must beat both nearby OnCurve NodeId(1) and farther selected OffCurve NodeId(3)"
+    );
+    let drag_to_scr = state_h.viewport.to_screen(FontPoint::new(108.0, 140.0));
+    let raw_h_drag = RawInput {
+        events: vec![
+            egui::Event::Touch {
+                device_id: egui::TouchDeviceId(1),
+                id: egui::TouchId(2),
+                phase: egui::TouchPhase::Start,
+                pos: egui::Pos2::new(probe_scr.x.0, probe_scr.y.0),
+                force: Some(0.5),
+            },
+            egui::Event::Touch {
+                device_id: egui::TouchDeviceId(1),
+                id: egui::TouchId(2),
+                phase: egui::TouchPhase::Move,
+                pos: egui::Pos2::new(drag_to_scr.x.0, drag_to_scr.y.0),
+                force: Some(0.5),
+            },
+            egui::Event::Touch {
+                device_id: egui::TouchDeviceId(1),
+                id: egui::TouchId(2),
+                phase: egui::TouchPhase::End,
+                pos: egui::Pos2::new(drag_to_scr.x.0, drag_to_scr.y.0),
+                force: Some(0.0),
+            },
+        ],
+        ..Default::default()
+    };
+    // Clear selection first so tapping at (108, 100) selects the hit node and drags it
+    state_h.selected_nodes = vec![NodeId(3)];
+    let mut out_h = ctx.run_ui(raw_h_drag, |ui| {
+        let _ = GrafiaCanvasWidget::new(&mut state_h, &theme).show(ui);
+    });
+    out_h.textures_delta.clear();
+    assert_eq!(state_h.selected_nodes, vec![NodeId(2)]);
+    assert!(
+        state_h.find_node(NodeId(2)).unwrap().point.y.0 > 125.0,
+        "Touch-dragging at (108, 100) must move OffCurve handle NodeId(2), not Tunni line or OnCurve(1)"
+    );
+    assert_relative_eq!(
+        state_h.find_node(NodeId(1)).unwrap().point.y.0,
+        100.0,
+        epsilon = 1e-4
+    );
+
+    // 3. TC-V0130-011: Universal Touch Hit-Radii (>= 14.0 dp) for Segments (with 4 dp tap roll), Anchors, and Guides.
+    let mut state_seg = GrafiaCanvasState::init_glyph_a();
+    state_seg.set_active_input_device(InputDeviceKind::TouchFinger);
+    state_seg.selected_nodes.clear();
+    // Bottom bar of /A is from (160, 0) to (30, 0); midpoint is (95, 0). Tap 11.0 dp below it with 4.0 dp finger roll!
+    let seg_mid_scr = state_seg.viewport.to_screen(FontPoint::new(95.0, 0.0));
+    let tap_start = egui::Pos2::new(seg_mid_scr.x.0, seg_mid_scr.y.0 + 11.0);
+    let tap_roll = egui::Pos2::new(seg_mid_scr.x.0 + 3.0, seg_mid_scr.y.0 + 13.5);
+    let raw_seg_tap = RawInput {
+        events: vec![
+            egui::Event::Touch {
+                device_id: egui::TouchDeviceId(1),
+                id: egui::TouchId(3),
+                phase: egui::TouchPhase::Start,
+                pos: tap_start,
+                force: Some(0.5),
+            },
+            egui::Event::Touch {
+                device_id: egui::TouchDeviceId(1),
+                id: egui::TouchId(3),
+                phase: egui::TouchPhase::Move,
+                pos: tap_roll,
+                force: Some(0.5),
+            },
+            egui::Event::Touch {
+                device_id: egui::TouchDeviceId(1),
+                id: egui::TouchId(3),
+                phase: egui::TouchPhase::End,
+                pos: tap_roll,
+                force: Some(0.0),
+            },
+        ],
+        ..Default::default()
+    };
+    let mut out_seg = ctx.run_ui(raw_seg_tap, |ui| {
+        let _ = GrafiaCanvasWidget::new(&mut state_seg, &theme).show(ui);
+    });
+    out_seg.textures_delta.clear();
+    assert_eq!(
+        state_seg.selected_nodes.len(),
+        2,
+        "Touch tap 11.0 dp from segment with 4 dp finger roll must select the segment's 2 endpoint nodes"
+    );
+
+    // Touch hit-testing on CanvasAnchor and Guide at 11.0 dp offset
+    state_seg.set_anchors(vec![CanvasAnchor {
+        id: AnchorId(1),
+        name: "top".into(),
+        position: FontPoint::new(300.0, 700.0),
+        selected: false,
+    }]);
+    let anchor_scr = state_seg.viewport.to_screen(FontPoint::new(300.0, 700.0));
+    let anchor_probe_upm = state_seg.viewport.to_font(grafia::ScreenPoint::new(
+        anchor_scr.x.0 + 11.0,
+        anchor_scr.y.0,
+    ));
+    assert!(
+        state_seg.select_anchor_at_upm(anchor_probe_upm, false),
+        "TouchFinger must hit-test CanvasAnchor at 11.0 dp"
+    );
+
+    let gid = state_seg.add_local_guide(FontPoint::new(300.0, 350.0), 0.0);
+    let guide_scr = state_seg.viewport.to_screen(FontPoint::new(300.0, 350.0));
+    let guide_hit = state_seg.hit_test_guides(grafia::ScreenPoint::new(
+        guide_scr.x.0,
+        guide_scr.y.0 + 11.0,
+    ));
+    assert!(
+        guide_hit.is_some(),
+        "TouchFinger must hit-test Guide at 11.0 dp"
+    );
+    let _ = gid;
+
+    // 4. TC-V0130-012: Double-tapping (with 12.0 dp finger slop between taps) on a straight Line segment converts it to a Cubic with 2 OffCurve handles selected!
+    let mut state_dbl = GrafiaCanvasState::init_glyph_a();
+    state_dbl.fit_viewport_to_glyph(760.0, 520.0);
+    state_dbl.set_active_input_device(InputDeviceKind::TouchFinger);
+    let snap_before_convert = state_dbl.snapshot();
+    let count_before_convert = state_dbl.contours[0].len();
+    let line_mid_scr = state_dbl.viewport.to_screen(FontPoint::new(95.0, 0.0));
+    let tap1 = egui::Pos2::new(line_mid_scr.x.0, line_mid_scr.y.0);
+    let tap2 = egui::Pos2::new(line_mid_scr.x.0 + 12.0, line_mid_scr.y.0 + 3.0);
+
+    let raw_tap1 = RawInput {
+        time: Some(1.0),
+        events: vec![
+            egui::Event::Touch {
+                device_id: egui::TouchDeviceId(1),
+                id: egui::TouchId(10),
+                phase: egui::TouchPhase::Start,
+                pos: tap1,
+                force: Some(0.5),
+            },
+            egui::Event::Touch {
+                device_id: egui::TouchDeviceId(1),
+                id: egui::TouchId(10),
+                phase: egui::TouchPhase::End,
+                pos: tap1,
+                force: Some(0.0),
+            },
+        ],
+        ..Default::default()
+    };
+    let mut out_t1 = ctx.run_ui(raw_tap1, |ui| {
+        let _ = GrafiaCanvasWidget::new(&mut state_dbl, &theme).show(ui);
+    });
+    out_t1.textures_delta.clear();
+    let snap_after_tap1 = state_dbl.snapshot();
+
+    let raw_tap2 = RawInput {
+        time: Some(1.18),
+        events: vec![
+            egui::Event::Touch {
+                device_id: egui::TouchDeviceId(1),
+                id: egui::TouchId(11),
+                phase: egui::TouchPhase::Start,
+                pos: tap2,
+                force: Some(0.5),
+            },
+            egui::Event::Touch {
+                device_id: egui::TouchDeviceId(1),
+                id: egui::TouchId(11),
+                phase: egui::TouchPhase::End,
+                pos: tap2,
+                force: Some(0.0),
+            },
+        ],
+        ..Default::default()
+    };
+    let mut out_t2 = ctx.run_ui(raw_tap2, |ui| {
+        let _ = GrafiaCanvasWidget::new(&mut state_dbl, &theme).show(ui);
+    });
+    out_t2.textures_delta.clear();
+
+    assert_eq!(
+        state_dbl.contours[0].len(),
+        count_before_convert + 2,
+        "Double-tapping a straight Line segment in TouchFinger mode must convert it to a Cubic with 2 OffCurve handles"
+    );
+    assert_eq!(
+        state_dbl.history.last_undo_label(),
+        Some("Convert Line to Cubic")
+    );
+    assert_eq!(
+        state_dbl.selected_nodes.len(),
+        2,
+        "Both newly created OffCurve handles must be selected immediately after double-tap conversion"
+    );
+    for &hid in &state_dbl.selected_nodes {
+        assert_eq!(
+            state_dbl.find_node(hid).unwrap().node_type,
+            NodeType::OffCurve
+        );
+    }
+    let snap_after_convert = state_dbl.snapshot();
+    assert!(
+        state_dbl.undo()
+            && state_dbl.contours == snap_before_convert.contours
+            && state_dbl.snapshot() == snap_after_tap1
+    );
+    assert!(state_dbl.redo() && state_dbl.snapshot() == snap_after_convert);
+}

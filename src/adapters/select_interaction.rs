@@ -10,7 +10,6 @@ use crate::core::{
 };
 use crate::interaction::{Modifiers, SelectToolState};
 use crate::render::ProjectedNode;
-use crate::tokens::DOUBLE_CLICK_MAX_DIST_DP;
 use kurbo::Point;
 
 pub fn handle_select_press(
@@ -103,13 +102,43 @@ pub fn handle_select_press(
     true
 }
 
+fn try_convert_hit_line_segment_to_cubic(
+    state: &mut GrafiaCanvasState,
+    contour_idx: usize,
+    segment: &ContourSegment,
+    before: crate::interaction::GlyphSnapshot,
+) -> bool {
+    let grid_step = state.effective_grid_step();
+    let Some((h1_id, h2_id)) = convert_line_segment_to_cubic_with_grid(
+        &mut state.contours[contour_idx],
+        segment,
+        &mut state.next_node_id,
+        grid_step,
+    ) else {
+        return false;
+    };
+    state.selected_nodes = vec![h1_id, h2_id];
+    state.sync_paths_from_contours();
+    state.record_mutation("Convert Line to Cubic", before);
+    state.select_state = SelectToolState::Idle;
+    state.drag_transients.active_drag_before_snapshot = None;
+    state.assert_invariants();
+    true
+}
+
 fn handle_select_double_click(
     state: &mut GrafiaCanvasState,
     scr_pt: ScreenPoint,
     font_pt: FontPoint,
     is_shift: bool,
 ) -> bool {
-    let hit_node = state.hit_test_node(scr_pt);
+    let is_touch = state.active_input_device() == crate::core::InputDeviceKind::TouchFinger;
+    let oncurve_r = if is_touch {
+        state.preferences.hit_test_radius_dp
+    } else {
+        state.effective_hit_radius_dp()
+    };
+    let hit_node = state.hit_test_node_with_radius(scr_pt, oncurve_r);
     if let Some(node_id) = hit_node.filter(|&id| {
         state
             .find_node(id)
@@ -122,8 +151,23 @@ fn handle_select_double_click(
     if state.try_begin_tunni_press(font_pt, true) {
         return true;
     }
-    let tol_font = (DOUBLE_CLICK_MAX_DIST_DP as f64) / (state.viewport.zoom as f64);
-    let closed_flags = state.closed_flags();
+    let tol_dp = state
+        .effective_segment_hit_tolerance_dp()
+        .max(state.effective_double_click_slop_dp());
+    let tol_font = f64::from(tol_dp) / f64::from(state.viewport.zoom);
+    let seg_hit = hit_test_segments(&state.contours, &state.closed_flags(), font_pt, tol_font);
+    if is_touch && !is_shift {
+        if let Some(hit) = seg_hit.filter(|h| matches!(h.segment, ContourSegment::Line { .. })) {
+            let before = state
+                .drag_transients
+                .active_drag_before_snapshot
+                .take()
+                .unwrap_or_else(|| state.snapshot());
+            if try_convert_hit_line_segment_to_cubic(state, hit.contour_idx, &hit.segment, before) {
+                return true;
+            }
+        }
+    }
     let target_contour = hit_node
         .and_then(|nid| {
             state
@@ -131,39 +175,30 @@ fn handle_select_double_click(
                 .iter()
                 .position(|c| c.iter().any(|n| n.id == nid))
         })
-        .or_else(|| {
-            hit_test_segments(&state.contours, &closed_flags, font_pt, tol_font)
-                .map(|h| h.contour_idx)
-        });
+        .or_else(|| seg_hit.map(|h| h.contour_idx));
     if let Some(c_idx) = target_contour {
         let contour_ids: Vec<NodeId> = state.contours[c_idx].iter().map(|n| n.id).collect();
-        if is_shift {
-            if contour_ids
-                .iter()
-                .all(|id| state.selected_nodes.contains(id))
-            {
-                state.selected_nodes.retain(|id| !contour_ids.contains(id));
-            } else {
-                for id in contour_ids {
-                    if !state.selected_nodes.contains(&id) {
-                        state.selected_nodes.push(id);
-                    }
+        if !is_shift {
+            state.selected_nodes = contour_ids;
+        } else if contour_ids
+            .iter()
+            .all(|id| state.selected_nodes.contains(id))
+        {
+            state.selected_nodes.retain(|id| !contour_ids.contains(id));
+        } else {
+            for id in contour_ids {
+                if !state.selected_nodes.contains(&id) {
+                    state.selected_nodes.push(id);
                 }
             }
-        } else {
-            state.selected_nodes = contour_ids;
         }
-        (
-            state.select_state,
-            state.drag_transients.active_drag_before_snapshot,
-        ) = (SelectToolState::Idle, None);
+        state.select_state = SelectToolState::Idle;
+        state.drag_transients.active_drag_before_snapshot = None;
         return true;
     }
     if state.double_click_component_at_upm(font_pt) {
-        (
-            state.select_state,
-            state.drag_transients.active_drag_before_snapshot,
-        ) = (SelectToolState::Idle, None);
+        state.select_state = SelectToolState::Idle;
+        state.drag_transients.active_drag_before_snapshot = None;
         return true;
     }
     false
@@ -179,24 +214,12 @@ fn handle_select_segment_hit(
     let (is_shift, is_alt) = (mods.shift, mods.option);
     let tol_font =
         f64::from(state.effective_segment_hit_tolerance_dp()) / f64::from(state.viewport.zoom);
-    let closed_flags = state.closed_flags();
-    let grid_step = state.effective_grid_step();
-    let Some(hit) = hit_test_segments(&state.contours, &closed_flags, font_pt, tol_font) else {
+    let Some(hit) = hit_test_segments(&state.contours, &state.closed_flags(), font_pt, tol_font)
+    else {
         return false;
     };
-    if is_alt
-        && convert_line_segment_to_cubic_with_grid(
-            &mut state.contours[hit.contour_idx],
-            &hit.segment,
-            &mut state.next_node_id,
-            grid_step,
-        )
-        .is_some()
+    if is_alt && try_convert_hit_line_segment_to_cubic(state, hit.contour_idx, &hit.segment, before)
     {
-        state.sync_paths_from_contours();
-        state.record_mutation("Convert Line to Cubic", before);
-        state.drag_transients.active_drag_before_snapshot = None;
-        state.assert_invariants();
         return true;
     }
 

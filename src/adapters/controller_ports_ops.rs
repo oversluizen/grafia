@@ -7,8 +7,9 @@
 use crate::adapters::state::{CanvasTool, GrafiaCanvasState};
 use crate::core::math_consts::{
     BRUSH_MAX_RADIUS_DP, BRUSH_MIN_RADIUS_DP, LOUPE_OFFSET_DP, LOUPE_RADIUS_DP,
-    LOUPE_TOP_EDGE_FLIP_THRESHOLD_DP, LOUPE_ZOOM_FACTOR, TOUCH_HIT_MIN_FLOOR_DP,
-    TOUCH_HIT_RADIUS_MULTIPLIER,
+    LOUPE_TOP_EDGE_FLIP_THRESHOLD_DP, LOUPE_ZOOM_FACTOR, TOUCH_DOUBLE_TAP_MAX_DIST_DP,
+    TOUCH_HIT_MIN_FLOOR_DP, TOUCH_HIT_RADIUS_MULTIPLIER, TOUCH_NODE_HIT_MIN_FLOOR_DP,
+    TOUCH_TAP_SLOP_DP,
 };
 use crate::core::{
     CanvasHapticEvent, CanvasIntent, CanvasIntentMask, ControllerTelemetryDescriptor,
@@ -208,14 +209,44 @@ impl GrafiaCanvasState {
             .clamp(BRUSH_MIN_RADIUS_DP, BRUSH_MAX_RADIUS_DP)
     }
 
-    /// Returns the effective node hit-test radius in `dp`, inflating by `1.6x` (floor `14.0 dp`) for `TouchFinger` (`SPEC-015 §6`).
+    /// Returns the effective node hit-test radius in `dp`, inflating by `1.6x` (floor `16.0 dp`) for `TouchFinger` (`SPEC-015 §6`).
     #[must_use]
     pub fn effective_hit_radius_dp(&self) -> f32 {
         let base = self.preferences.hit_test_radius_dp;
         if self.active_input_device() == InputDeviceKind::TouchFinger {
-            (base * TOUCH_HIT_RADIUS_MULTIPLIER).max(TOUCH_HIT_MIN_FLOOR_DP)
+            (base * TOUCH_HIT_RADIUS_MULTIPLIER).max(TOUCH_NODE_HIT_MIN_FLOOR_DP)
         } else {
             base
+        }
+    }
+
+    /// Scales a screen-space hit-test tolerance `base_dp` by `1.6x` (floor `14.0 dp`) when `TouchFinger` is active (`SPEC-015 §6`).
+    #[must_use]
+    pub fn scale_touch_hit_radius_dp(&self, base_dp: f32) -> f32 {
+        if self.active_input_device() == InputDeviceKind::TouchFinger {
+            (base_dp * TOUCH_HIT_RADIUS_MULTIPLIER).max(TOUCH_HIT_MIN_FLOOR_DP)
+        } else {
+            base_dp
+        }
+    }
+
+    /// Returns the effective double-click / double-tap maximum distance in `dp` (`20.0 dp` on touch, `8.0 dp` on mouse).
+    #[must_use]
+    pub fn effective_double_click_slop_dp(&self) -> f32 {
+        if self.active_input_device() == InputDeviceKind::TouchFinger {
+            TOUCH_DOUBLE_TAP_MAX_DIST_DP
+        } else {
+            crate::tokens::DOUBLE_CLICK_MAX_DIST_DP
+        }
+    }
+
+    /// Returns the maximum finger/pointer roll in `dp` before a tap on a segment turns into a drag (`6.0 dp` on touch, `1.0 dp` on mouse).
+    #[must_use]
+    pub fn effective_tap_drag_slop_dp(&self) -> f32 {
+        if self.active_input_device() == InputDeviceKind::TouchFinger {
+            TOUCH_TAP_SLOP_DP
+        } else {
+            1.0
         }
     }
 

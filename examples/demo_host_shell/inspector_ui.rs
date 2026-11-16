@@ -274,7 +274,7 @@ impl MockFontHost {
     }
 
     pub fn render_preview_strip_panel(&mut self, ui: &mut Ui, state: &GrafiaCanvasState) {
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.strong("v0.6 Preview Strip (PreviewStripCache)");
             ui.add(Separator::default().vertical());
             let _ = ui.add(
@@ -290,10 +290,11 @@ impl MockFontHost {
         let (tex, _) = self
             .preview_cache
             .get_or_update_texture(ui.ctx(), state, &self.preview_cfg);
-        let size = egui::Vec2::new(
-            self.preview_cfg.width_px as f32,
-            self.preview_cfg.height_px as f32,
-        );
+        let avail_w = ui
+            .available_width()
+            .max(1.0)
+            .min(self.preview_cfg.width_px as f32);
+        let size = egui::Vec2::new(avail_w, self.preview_cfg.height_px as f32);
         ui.add(Image::from_texture((tex.id(), size)));
     }
 }

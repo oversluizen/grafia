@@ -81,6 +81,23 @@ pub fn hit_test_smart_handles(
     viewport: &ViewportTransform,
     cursor_scr: ScreenPoint,
 ) -> Option<usize> {
+    hit_test_smart_handles_with_radius(
+        handles,
+        components,
+        viewport,
+        cursor_scr,
+        SMART_HANDLE_HIT_RADIUS_DP,
+    )
+}
+
+#[must_use]
+pub fn hit_test_smart_handles_with_radius(
+    handles: &[CanvasSmartHandle],
+    components: &[CanvasComponent],
+    viewport: &ViewportTransform,
+    cursor_scr: ScreenPoint,
+    hit_radius_dp: f32,
+) -> Option<usize> {
     let mut best: Option<(f32, usize)> = None;
     for (idx, h) in handles.iter().enumerate() {
         let is_active_comp = components
@@ -91,7 +108,7 @@ pub fn hit_test_smart_handles(
         }
         let scr = viewport.to_screen(smart_handle_upm_position(h));
         let d = scr.distance_to(cursor_scr);
-        if d <= SMART_HANDLE_HIT_RADIUS_DP && best.is_none_or(|(bd, _)| d < bd) {
+        if d <= hit_radius_dp && best.is_none_or(|(bd, _)| d < bd) {
             best = Some((d, idx));
         }
     }

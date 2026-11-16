@@ -11,8 +11,7 @@ use crate::core::{
 };
 use crate::interaction::{Modifiers, SelectToolState};
 use crate::tokens::{
-    DOUBLE_CLICK_MAX_DELAY_SEC, DOUBLE_CLICK_MAX_DIST_DP, TRANSFORM_CLICK_THRESHOLD_DP,
-    TRANSFORM_ORIGIN_HIT_RADIUS_DP,
+    DOUBLE_CLICK_MAX_DELAY_SEC, TRANSFORM_CLICK_THRESHOLD_DP, TRANSFORM_ORIGIN_HIT_RADIUS_DP,
 };
 use egui::{Key, Rect};
 
@@ -39,10 +38,11 @@ pub fn restore_temp_tool_override(state: &mut GrafiaCanvasState) {
 
 impl GrafiaCanvasState {
     pub fn check_triple_click(&mut self, scr_pt: ScreenPoint, current_time: f64) -> bool {
+        let max_dist = self.effective_double_click_slop_dp();
         if let Some((last_dbl_time, last_dbl_pos)) = self.drag_transients.last_double_click_time_pos
         {
             if (current_time - last_dbl_time).abs() <= DOUBLE_CLICK_MAX_DELAY_SEC
-                && last_dbl_pos.distance_to(scr_pt) <= DOUBLE_CLICK_MAX_DIST_DP
+                && last_dbl_pos.distance_to(scr_pt) <= max_dist
             {
                 self.drag_transients.last_double_click_time_pos = None;
                 self.drag_transients.last_click_time_pos = None;
@@ -53,9 +53,10 @@ impl GrafiaCanvasState {
     }
 
     pub fn check_double_click(&mut self, scr_pt: ScreenPoint, current_time: f64) -> bool {
+        let max_dist = self.effective_double_click_slop_dp();
         if let Some((last_time, last_pos)) = self.drag_transients.last_click_time_pos {
             if (current_time - last_time).abs() <= DOUBLE_CLICK_MAX_DELAY_SEC
-                && last_pos.distance_to(scr_pt) <= DOUBLE_CLICK_MAX_DIST_DP
+                && last_pos.distance_to(scr_pt) <= max_dist
             {
                 self.drag_transients.last_click_time_pos = None;
                 self.drag_transients.last_double_click_time_pos = Some((current_time, scr_pt));
@@ -73,26 +74,32 @@ impl GrafiaCanvasState {
         radius_dp: f32,
     ) -> Option<NodeId> {
         let vp = self.active_slot_viewport();
-        let mut best: Option<((u8, u32), NodeId)> = None;
+        let mut best: Option<((u8, u32, u8), NodeId)> = None;
         for (c_idx, contour) in self.contours.iter().enumerate() {
             let is_open = !self.is_contour_closed(c_idx);
             let len = contour.len();
             for (n_idx, node) in contour.iter().enumerate() {
+                let is_off = node.node_type == NodeType::OffCurve;
+                if (is_off && !self.show_nodes_offcurve) || (!is_off && !self.show_nodes_oncurve) {
+                    continue;
+                }
                 let dist = vp.to_screen(node.point).distance_to(screen_pt);
                 if dist >= radius_dp {
                     continue;
                 }
                 let is_sel = self.selected_nodes.contains(&node.id);
                 let is_open_ep = is_open && (n_idx == 0 || n_idx + 1 == len);
-                let tier = match (node.node_type == NodeType::OffCurve, is_open_ep, is_sel) {
-                    (true, _, true) => 0,
-                    (true, _, false) => 1,
-                    (false, true, true) => 2,
-                    (false, true, false) => 3,
-                    (false, false, true) => 4,
-                    (false, false, false) => 5,
+                let key = if is_off {
+                    (0, dist.to_bits(), u8::from(!is_sel))
+                } else {
+                    let tier = match (is_open_ep, is_sel) {
+                        (true, true) => 1,
+                        (true, false) => 2,
+                        (false, true) => 3,
+                        (false, false) => 4,
+                    };
+                    (tier, dist.to_bits(), 0)
                 };
-                let key = (tier, dist.to_bits());
                 if best.is_none_or(|(b_key, _)| key < b_key) {
                     best = Some((key, node.id));
                 }

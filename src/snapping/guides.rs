@@ -178,17 +178,33 @@ impl Guide {
         cursor_scr: ScreenPoint,
         viewport: &ViewportTransform,
     ) -> Option<GuideHitKind> {
+        self.hit_test_screen_with_radii(
+            cursor_scr,
+            viewport,
+            GUIDE_KNOB_HIT_RADIUS_DP,
+            GUIDE_LINE_HIT_TOLERANCE_DP,
+        )
+    }
+
+    /// Hit-tests the guide knob and line in screen space using custom screen-space radii.
+    #[must_use]
+    pub fn hit_test_screen_with_radii(
+        &self,
+        cursor_scr: ScreenPoint,
+        viewport: &ViewportTransform,
+        knob_radius_dp: f32,
+        line_tol_dp: f32,
+    ) -> Option<GuideHitKind> {
         let guide_ref = SelectedGuideRef {
             id: self.id,
             is_global: self.is_global,
         };
         let knob_scr = viewport.to_screen(self.position);
-        if cursor_scr.distance_to(knob_scr) <= GUIDE_KNOB_HIT_RADIUS_DP {
+        if cursor_scr.distance_to(knob_scr) <= knob_radius_dp {
             return Some(GuideHitKind::Knob(guide_ref));
         }
         let cursor_font = viewport.to_font(cursor_scr);
-        let tol_upm =
-            f64::from(GUIDE_LINE_HIT_TOLERANCE_DP) / f64::from(viewport.zoom.max(f32::EPSILON));
+        let tol_upm = f64::from(line_tol_dp) / f64::from(viewport.zoom.max(f32::EPSILON));
         if self.perpendicular_distance(cursor_font) <= tol_upm {
             return Some(GuideHitKind::Line(guide_ref));
         }

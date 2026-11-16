@@ -209,13 +209,21 @@ impl GrafiaCanvasState {
         if !self.show_guides {
             return None;
         }
+        let knob_r =
+            self.scale_touch_hit_radius_dp(crate::core::math_consts::GUIDE_KNOB_HIT_RADIUS_DP);
+        let line_r =
+            self.scale_touch_hit_radius_dp(crate::core::math_consts::GUIDE_LINE_HIT_TOLERANCE_DP);
         for g in self.guides.iter().chain(self.global_guides.iter()) {
-            if let Some(GuideHitKind::Knob(r)) = g.hit_test_screen(cursor_scr, &self.viewport) {
+            if let Some(GuideHitKind::Knob(r)) =
+                g.hit_test_screen_with_radii(cursor_scr, &self.viewport, knob_r, line_r)
+            {
                 return Some(GuideHitKind::Knob(r));
             }
         }
         for g in self.guides.iter().chain(self.global_guides.iter()) {
-            if let Some(hit) = g.hit_test_screen(cursor_scr, &self.viewport) {
+            if let Some(hit) =
+                g.hit_test_screen_with_radii(cursor_scr, &self.viewport, knob_r, line_r)
+            {
                 return Some(hit);
             }
         }

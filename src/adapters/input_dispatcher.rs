@@ -36,10 +36,15 @@ impl<'a> InputDispatcher<'a> {
         let is_space = ui.input(|i| i.key_down(egui::Key::Space)) || ts.touch_space_pan_latched;
         let time = ui.input(|i| i.time);
         let has_touch_ev = events.iter().any(|e| matches!(e, Event::Touch { .. }));
+        let any_touches = ui.input(|i| i.any_touches()) || has_touch_ev;
         self.state
             .drag_transients
             .touch_state
-            .egui_any_touches_in_frame = ui.input(|i| i.any_touches()) || has_touch_ev;
+            .egui_any_touches_in_frame = any_touches;
+        if any_touches {
+            self.state
+                .set_active_input_device(crate::core::InputDeviceKind::TouchFinger);
+        }
         let raw_mods = Modifiers {
             shift: is_shift,
             option: is_alt,

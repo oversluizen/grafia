@@ -150,6 +150,10 @@ impl MockFontHost {
             GlyphArchetype::A
         };
         state.load_glyph_archetype(next);
+        state.fit_viewport_to_glyph(
+            super::toolbar_specs::DEMO_CENTRAL_CANVAS_W_DP,
+            super::toolbar_specs::DEMO_CENTRAL_CANVAS_H_DP,
+        );
         state.glyph.name = if next == GlyphArchetype::A {
             "A".into()
         } else {

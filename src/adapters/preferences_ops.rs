@@ -176,13 +176,14 @@ impl GrafiaCanvasState {
         }
     }
 
-    /// Returns the effective contour segment hit-test tolerance in `dp` (`TC-MATURITY-007`).
+    /// Returns the effective contour segment hit-test tolerance in `dp` (`TC-MATURITY-007`, `TC-V0130-011`).
     #[must_use]
     pub fn effective_segment_hit_tolerance_dp(&self) -> f32 {
-        clamp_pref_radius(
+        let base = clamp_pref_radius(
             self.preferences.segment_hit_tolerance_dp,
             crate::tokens::SEGMENT_HIT_TOLERANCE_DP,
-        )
+        );
+        self.scale_touch_hit_radius_dp(base)
     }
 
     /// Returns the effective kerning keyboard step in UPM (`high == true` for `Shift`).
