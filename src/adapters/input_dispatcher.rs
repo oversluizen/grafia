@@ -106,7 +106,7 @@ impl<'a> InputDispatcher<'a> {
             }
             return false;
         }
-        if self.state.drag_transients.touch_state.two_finger_peak {
+        if self.state.drag_transients.touch_state.two_finger_peak || self.is_compat_mouse(event) {
             return false;
         }
         match event {
@@ -167,6 +167,44 @@ impl<'a> InputDispatcher<'a> {
                 );
                 crate::adapters::contour_edit_interaction::restore_temp_tool_override(self.state);
                 res
+            }
+            _ => false,
+        }
+    }
+
+    fn is_compat_mouse(&mut self, event: &Event) -> bool {
+        if self
+            .state
+            .drag_transients
+            .touch_state
+            .egui_any_touches_in_frame
+        {
+            return false;
+        }
+        let Some(touch_pos) = self.state.drag_transients.touch_state.active_touch_raw_pos else {
+            return false;
+        };
+        let max_d = crate::core::math_consts::TOUCH_DOUBLE_TAP_MAX_DIST_DP;
+        match event {
+            Event::PointerMoved(pos) if pos.distance(touch_pos) <= max_d => true,
+            Event::PointerButton {
+                pos,
+                button: PointerButton::Primary,
+                pressed: true,
+                ..
+            } if pos.distance(touch_pos) <= max_d => true,
+            Event::PointerButton {
+                pos,
+                button: PointerButton::Primary,
+                pressed: false,
+                ..
+            } if pos.distance(touch_pos) <= max_d => {
+                self.state.drag_transients.touch_state.active_touch_raw_pos = None;
+                true
+            }
+            Event::PointerButton { .. } | Event::PointerMoved(_) => {
+                self.state.drag_transients.touch_state.active_touch_raw_pos = None;
+                false
             }
             _ => false,
         }

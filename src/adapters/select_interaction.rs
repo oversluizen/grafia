@@ -44,13 +44,17 @@ pub fn handle_select_press(
     }
 
     if let Some(node_id) = state.hit_test_node(scr_pt) {
+        let is_off = state
+            .find_node(node_id)
+            .is_some_and(|n| n.node_type == NodeType::OffCurve);
         if is_shift {
             if state.selected_nodes.contains(&node_id) {
                 state.selected_nodes.retain(|&id| id != node_id);
             } else {
                 state.selected_nodes.push(node_id);
             }
-        } else if !state.selected_nodes.contains(&node_id) {
+        } else if !state.selected_nodes.contains(&node_id) || (is_off && !(mods.control && is_alt))
+        {
             state.selected_nodes = vec![node_id];
         }
         state.record_drag_start();
@@ -79,26 +83,22 @@ pub fn handle_select_press(
         return true;
     }
 
-    state.drag_transients.marquee_pre_selection = if is_shift {
-        state.selected_nodes.clone()
-    } else {
-        Vec::new()
-    };
-    state.drag_transients.marquee_modifiers = mods;
     if !is_shift {
         state.selected_nodes.clear();
         state.clear_anchor_and_component_selections();
     }
+    state.drag_transients.marquee_pre_selection = state.selected_nodes.clone();
+    state.drag_transients.marquee_modifiers = mods;
     state.drag_transients.active_drag_before_snapshot = None;
-    if is_alt {
-        state.drag_transients.alt_marquee_pending_start = Some(scr_pt);
-        state.select_state = SelectToolState::Idle;
+    state.drag_transients.alt_marquee_pending_start = is_alt.then_some(scr_pt);
+    state.select_state = if is_alt {
+        SelectToolState::Idle
     } else {
-        state.select_state = SelectToolState::MarqueeSelecting {
+        SelectToolState::MarqueeSelecting {
             start_screen: scr_pt,
             current_screen: scr_pt,
-        };
-    }
+        }
+    };
     true
 }
 
