@@ -1774,6 +1774,19 @@ fn tc_v0130_009_to_012_touchscreen_auto_detection_handle_priority_segment_select
                 pos: tap1,
                 force: Some(0.5),
             },
+            // winit + egui-winit web emits duplicate PointerButton(pressed: true) alongside Touch(Start)
+            egui::Event::PointerButton {
+                pos: tap1,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            },
+            egui::Event::PointerButton {
+                pos: tap1,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::NONE,
+            },
             egui::Event::Touch {
                 device_id: egui::TouchDeviceId(1),
                 id: egui::TouchId(10),
