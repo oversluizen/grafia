@@ -9,6 +9,13 @@ use crate::interaction::{Modifiers, PenToolState, SelectToolState};
 use crate::tokens::GrafiaTheme;
 use egui::{Event, PointerButton, Rect};
 
+#[derive(Debug, Clone, Copy)]
+struct FramePointerFlags {
+    has_ptr_btn: bool,
+    has_ptr_move: bool,
+    was_touch: bool,
+}
+
 /// Dispatches input events to canvas tools and state machines with boundary gating.
 pub struct InputDispatcher<'a> {
     pub state: &'a mut GrafiaCanvasState,
@@ -35,6 +42,8 @@ impl<'a> InputDispatcher<'a> {
         let is_ctrl = ui.input(|i| i.modifiers.ctrl) || ts.touch_cmd_latched;
         let is_space = ui.input(|i| i.key_down(egui::Key::Space)) || ts.touch_space_pan_latched;
         let time = ui.input(|i| i.time);
+        let was_touch =
+            self.state.active_input_device() == crate::core::InputDeviceKind::TouchFinger;
         let has_touch_ev = events.iter().any(|e| matches!(e, Event::Touch { .. }));
         let any_touches = ui.input(|i| i.any_touches()) || has_touch_ev;
         self.state
@@ -64,15 +73,13 @@ impl<'a> InputDispatcher<'a> {
                 self.state.last_pointer_screen_pos = Some(ScreenPoint::new(pos.x, pos.y));
             }
         }
-        let has_touch_end = events.iter().any(|e| {
-            matches!(
-                e,
-                Event::Touch {
-                    phase: egui::TouchPhase::End | egui::TouchPhase::Cancel,
-                    ..
-                }
-            )
-        });
+        let flags = FramePointerFlags {
+            has_ptr_btn: events
+                .iter()
+                .any(|e| matches!(e, Event::PointerButton { .. })),
+            has_ptr_move: events.iter().any(|e| matches!(e, Event::PointerMoved(_))),
+            was_touch,
+        };
         let mut changed = false;
         self.state.text_transients.text_tool_activated_in_frame = false;
         for event in events {
@@ -86,7 +93,7 @@ impl<'a> InputDispatcher<'a> {
             ) {
                 changed = true;
             }
-            if self.dispatch_pointer_event(event, frame_mods, time, has_touch_end) {
+            if self.dispatch_pointer_event(event, frame_mods, time, flags) {
                 changed = true;
             }
         }
@@ -99,20 +106,18 @@ impl<'a> InputDispatcher<'a> {
         event: &Event,
         frame_mods: Modifiers,
         time: f64,
-        has_touch_end: bool,
+        flags: FramePointerFlags,
     ) -> bool {
         if let Some(handled) = self.state.handle_touch_event(event) {
             if handled || self.state.drag_transients.touch_state.two_finger_peak {
                 return handled;
             }
             if let Event::Touch { phase, pos, .. } = event {
-                return self.synthesize_single_touch_pointer(*phase, *pos, frame_mods, time);
+                return self.synthesize_single_touch_pointer(*phase, *pos, frame_mods, time, flags);
             }
             return false;
         }
-        if self.state.drag_transients.touch_state.two_finger_peak
-            || self.is_compat_mouse(event, has_touch_end)
-        {
+        if self.state.drag_transients.touch_state.two_finger_peak {
             return false;
         }
         match event {
@@ -178,71 +183,55 @@ impl<'a> InputDispatcher<'a> {
         }
     }
 
-    fn is_compat_mouse(&mut self, event: &Event, has_touch_end: bool) -> bool {
-        if !matches!(event, Event::PointerButton { .. } | Event::PointerMoved(_)) {
-            return false;
-        }
-        if self
-            .state
-            .drag_transients
-            .touch_state
-            .egui_any_touches_in_frame
-            || !self.state.drag_transients.touch_state.contacts.is_empty()
-        {
-            if matches!(
-                event,
-                Event::PointerButton {
-                    button: PointerButton::Primary,
-                    pressed: false,
-                    ..
-                }
-            ) && !has_touch_end
-            {
-                self.state.drag_transients.touch_state.contacts.clear();
-                return false;
-            }
-            return true;
-        }
-        let Some(touch_pos) = self.state.drag_transients.touch_state.active_touch_raw_pos else {
-            return false;
-        };
-        let max_d = crate::core::math_consts::TOUCH_DOUBLE_TAP_MAX_DIST_DP;
-        match event {
-            Event::PointerMoved(pos) if pos.distance(touch_pos) <= max_d => true,
-            Event::PointerButton {
-                pos,
-                button: PointerButton::Primary,
-                pressed: true,
-                ..
-            } if pos.distance(touch_pos) <= max_d => true,
-            Event::PointerButton {
-                pos,
-                button: PointerButton::Primary,
-                pressed: false,
-                ..
-            } if pos.distance(touch_pos) <= max_d => {
-                self.state.drag_transients.touch_state.active_touch_raw_pos = None;
-                true
-            }
-            _ => {
-                self.state.drag_transients.touch_state.active_touch_raw_pos = None;
-                false
-            }
-        }
-    }
-
     fn synthesize_single_touch_pointer(
         &mut self,
         phase: egui::TouchPhase,
         pos: egui::Pos2,
         frame_mods: Modifiers,
         time: f64,
+        flags: FramePointerFlags,
     ) -> bool {
+        let FramePointerFlags {
+            has_ptr_btn,
+            has_ptr_move,
+            was_touch,
+        } = flags;
         match phase {
-            egui::TouchPhase::Start => {
+            egui::TouchPhase::Start if !has_ptr_btn => {
+                let prev_t = self
+                    .state
+                    .drag_transients
+                    .last_click_time_pos
+                    .map(|(t, _)| t)
+                    .or_else(|| {
+                        self.state
+                            .drag_transients
+                            .last_double_click_time_pos
+                            .map(|(t, _)| t)
+                    })
+                    .unwrap_or(0.0);
+                let is_companion_touchstart = time > 0.0
+                    && prev_t > 0.0
+                    && (time - prev_t).abs()
+                        <= crate::core::math_consts::TOUCH_SAME_PRESS_DEDUP_SEC;
+                if is_companion_touchstart {
+                    if was_touch {
+                        return false;
+                    }
+                    if let Some(before) = self
+                        .state
+                        .drag_transients
+                        .active_drag_before_snapshot
+                        .take()
+                    {
+                        self.state.restore_snapshot(&before);
+                    }
+                    self.state.drag_transients.last_click_time_pos = None;
+                    self.state.drag_transients.last_double_click_time_pos = None;
+                }
                 self.handle_primary_pointer_press(pos, egui::Modifiers::NONE, frame_mods, time)
             }
-            egui::TouchPhase::Move => {
+            egui::TouchPhase::Move if !has_ptr_move => {
                 let scr_pt = self.state.map_pointer_pos_with_touch_offset(pos);
                 self.state.last_pointer_screen_pos = Some(scr_pt);
                 self.state.cursor_screen_pos = Some(scr_pt);
@@ -259,7 +248,7 @@ impl<'a> InputDispatcher<'a> {
                 let font_pt = self.state.active_slot_viewport().to_font(scr_pt);
                 self.handle_pointer_move(scr_pt, font_pt, frame_mods)
             }
-            egui::TouchPhase::End | egui::TouchPhase::Cancel => {
+            egui::TouchPhase::End | egui::TouchPhase::Cancel if !has_ptr_btn => {
                 let scr_pt = self.state.map_pointer_pos_with_touch_offset(pos);
                 self.state.last_pointer_screen_pos = Some(scr_pt);
                 let font_pt = self.state.active_slot_viewport().to_font(scr_pt);
@@ -272,6 +261,7 @@ impl<'a> InputDispatcher<'a> {
                 crate::adapters::contour_edit_interaction::restore_temp_tool_override(self.state);
                 res
             }
+            _ => false,
         }
     }
 

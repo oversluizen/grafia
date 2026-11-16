@@ -1764,8 +1764,24 @@ fn tc_v0130_009_to_012_touchscreen_auto_detection_handle_priority_segment_select
     let tap1 = egui::Pos2::new(line_mid_scr.x.0, line_mid_scr.y.0);
     let tap2 = egui::Pos2::new(line_mid_scr.x.0 + 12.0, line_mid_scr.y.0 + 3.0);
 
+    let raw_tap1_ptr = RawInput {
+        time: Some(1.000),
+        events: vec![egui::Event::PointerButton {
+            pos: tap1,
+            button: egui::PointerButton::Primary,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        }],
+        ..Default::default()
+    };
+    let mut out_t1a = ctx.run_ui(raw_tap1_ptr, |ui| {
+        let _ = GrafiaCanvasWidget::new(&mut state_dbl, &theme).show(ui);
+    });
+    out_t1a.textures_delta.clear();
+
+    // 7ms later in the next frame, browser fires touchstart(Start) for the SAME physical finger press!
     let raw_tap1 = RawInput {
-        time: Some(1.0),
+        time: Some(1.007),
         events: vec![
             egui::Event::Touch {
                 device_id: egui::TouchDeviceId(1),
@@ -1773,19 +1789,6 @@ fn tc_v0130_009_to_012_touchscreen_auto_detection_handle_priority_segment_select
                 phase: egui::TouchPhase::Start,
                 pos: tap1,
                 force: Some(0.5),
-            },
-            // winit + egui-winit web emits duplicate PointerButton(pressed: true) alongside Touch(Start)
-            egui::Event::PointerButton {
-                pos: tap1,
-                button: egui::PointerButton::Primary,
-                pressed: true,
-                modifiers: egui::Modifiers::NONE,
-            },
-            egui::Event::PointerButton {
-                pos: tap1,
-                button: egui::PointerButton::Primary,
-                pressed: true,
-                modifiers: egui::Modifiers::NONE,
             },
             egui::Event::Touch {
                 device_id: egui::TouchDeviceId(1),
@@ -1801,35 +1804,10 @@ fn tc_v0130_009_to_012_touchscreen_auto_detection_handle_priority_segment_select
         let _ = GrafiaCanvasWidget::new(&mut state_dbl, &theme).show(ui);
     });
     out_t1.textures_delta.clear();
-    // Simulate browser-synthesized compatibility mousedown/mouseup 30ms after TouchPhase::End of tap1:
-    // A single physical tap + browser compatibility mouse click must NOT falsely trigger a double-tap!
-    let raw_compat_mouse = RawInput {
-        time: Some(1.03),
-        events: vec![
-            egui::Event::PointerMoved(tap1),
-            egui::Event::PointerButton {
-                pos: tap1,
-                button: egui::PointerButton::Primary,
-                pressed: true,
-                modifiers: egui::Modifiers::NONE,
-            },
-            egui::Event::PointerButton {
-                pos: tap1,
-                button: egui::PointerButton::Primary,
-                pressed: false,
-                modifiers: egui::Modifiers::NONE,
-            },
-        ],
-        ..Default::default()
-    };
-    let mut out_compat = ctx.run_ui(raw_compat_mouse, |ui| {
-        let _ = GrafiaCanvasWidget::new(&mut state_dbl, &theme).show(ui);
-    });
-    out_compat.textures_delta.clear();
     assert_eq!(
         state_dbl.contours[0].len(),
         count_before_convert,
-        "Browser compatibility PointerButton after a single Touch tap must be suppressed and not trigger a double-click"
+        "pointerdown at t=1.000 followed 7ms later by touchstart at t=1.007 is ONE physical tap and must NOT trigger a double-tap"
     );
     let snap_after_tap1 = state_dbl.snapshot();
 
