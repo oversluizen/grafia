@@ -1846,9 +1846,9 @@ fn tc_v0130_009_to_012_touchscreen_auto_detection_handle_priority_segment_select
     });
     out_t1a.textures_delta.clear();
 
-    // 7ms later in the next frame, browser fires touchstart(Start) + synthesized PointerButton(pressed: true) for the SAME physical finger press!
+    // 75ms later in the next frame (when WebGL frame rendering takes > 50ms), browser fires touchstart(Start) + synthesized PointerButton(pressed: true) for the SAME unreleased physical finger press!
     let raw_tap1 = RawInput {
-        time: Some(1.007),
+        time: Some(1.075),
         events: vec![
             egui::Event::Touch {
                 device_id: egui::TouchDeviceId(1),

@@ -270,6 +270,7 @@ impl<'a> InputDispatcher<'a> {
         is_alt: bool,
         is_ctrl: bool,
     ) -> bool {
+        self.state.drag_transients.touch_state.primary_press_active = false;
         if self.state.try_finish_gradient_handle_release() {
             return true;
         }

@@ -232,21 +232,18 @@ impl<'a> InputDispatcher<'a> {
     fn deduplicate_companion_touch_press(&mut self, time: f64) -> bool {
         let now_touch =
             self.state.active_input_device() == crate::core::InputDeviceKind::TouchFinger;
-        let prev_t = self
-            .state
-            .drag_transients
-            .touch_state
-            .last_raw_press_time_sec;
-        let prev_touch = self
-            .state
-            .drag_transients
-            .touch_state
-            .last_raw_press_was_touch;
-        let is_companion = now_touch
-            && time > 0.0
-            && prev_t > 0.0
-            && (time - prev_t).abs() <= crate::core::math_consts::TOUCH_SAME_PRESS_DEDUP_SEC;
-        if is_companion {
+        let ts = &self.state.drag_transients.touch_state;
+        let (prev_t, prev_touch, active) = (
+            ts.last_raw_press_time_sec,
+            ts.last_raw_press_was_touch,
+            ts.primary_press_active,
+        );
+        let max_dt = if active {
+            crate::core::math_consts::TOUCH_ACTIVE_PRESS_DEDUP_SEC
+        } else {
+            crate::core::math_consts::TOUCH_SAME_PRESS_DEDUP_SEC
+        };
+        if now_touch && time > 0.0 && prev_t > 0.0 && (time - prev_t).abs() <= max_dt {
             if prev_touch {
                 return true;
             }
@@ -261,14 +258,10 @@ impl<'a> InputDispatcher<'a> {
             self.state.drag_transients.last_click_time_pos = None;
             self.state.drag_transients.last_double_click_time_pos = None;
         }
-        self.state
-            .drag_transients
-            .touch_state
-            .last_raw_press_time_sec = time;
-        self.state
-            .drag_transients
-            .touch_state
-            .last_raw_press_was_touch = now_touch;
+        let ts_mut = &mut self.state.drag_transients.touch_state;
+        ts_mut.last_raw_press_time_sec = time;
+        ts_mut.last_raw_press_was_touch = now_touch;
+        ts_mut.primary_press_active = true;
         false
     }
 
