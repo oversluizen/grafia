@@ -336,6 +336,8 @@ impl GrafiaCanvasState {
 
     // 2.4 Live Orthogonal Stem Thickness Band & Reference Stem Gauge
     pub fn set_reference_stems(&mut self, stems_upm: Vec<f64>, tolerance_upm: f64);
+    pub fn set_show_stem_gauge(&mut self, enabled: bool);
+    pub fn toggle_show_stem_gauge(&mut self);
     pub fn measure_orthogonal_stem_thickness(
         &self,
         contour_idx: usize,
@@ -344,6 +346,8 @@ impl GrafiaCanvasState {
     ) -> Option<StemThicknessMeasurement>;
 
     // 2.5 Closed-Form Green's Theorem Counter Area & Visual Centroid
+    pub fn set_show_visual_centroid(&mut self, enabled: bool);
+    pub fn toggle_show_visual_centroid(&mut self);
     pub fn compute_layer_counter_balance(&self) -> CounterBalanceReport;
 
     // 2.6 Optical Symmetry Ghost Overlay

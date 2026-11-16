@@ -180,12 +180,14 @@ fn render_pen_drag_and_hover_handles_ts(
             fill_circle(pixmap, g_scr.x.0, g_scr.y.0, half_node * 0.5, smooth_color);
         }
     }
+    crate::render::smart_corner_overlays::render_outline_audit_tiny_skia(pixmap, state, theme, vp);
 }
 
 pub(crate) fn render_nodes(pixmap: &mut Pixmap, state: &GrafiaCanvasState, theme: &GrafiaTheme) {
     let vp = state.active_slot_viewport();
     crate::render::render_duplicate_warnings_tiny_skia(pixmap, state, theme);
     crate::render::render_alignment_badges_tiny_skia(pixmap, state);
+    crate::render::render_harmony_overlays_tiny_skia(pixmap, state, theme);
     let half_node = theme.edit_canvas.node_size_dp * 0.5;
     let node_size = theme.edit_canvas.node_size_dp;
     let handle_radius = theme.edit_canvas.bcp_handle_size_dp * 0.5;

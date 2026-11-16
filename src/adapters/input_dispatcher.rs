@@ -28,23 +28,28 @@ impl<'a> InputDispatcher<'a> {
 
     /// Dispatches all pending frame events and returns whether the glyph was mutated.
     pub fn dispatch_events(&mut self, events: &[Event], ui: &egui::Ui) -> bool {
-        let is_shift = ui.input(|i| i.modifiers.shift);
-        let is_alt = ui.input(|i| i.modifiers.alt);
-        let is_cmd = ui.input(|i| i.modifiers.command);
-        let is_ctrl = ui.input(|i| i.modifiers.ctrl);
-        let is_space = ui.input(|i| i.key_down(egui::Key::Space));
+        let ts = &self.state.drag_transients.touch_state;
+        let is_shift = ui.input(|i| i.modifiers.shift) || ts.touch_shift_latched;
+        let is_alt = ui.input(|i| i.modifiers.alt) || ts.touch_alt_latched;
+        let is_cmd = ui.input(|i| i.modifiers.command) || ts.touch_cmd_latched;
+        let is_ctrl = ui.input(|i| i.modifiers.ctrl) || ts.touch_cmd_latched;
+        let is_space = ui.input(|i| i.key_down(egui::Key::Space)) || ts.touch_space_pan_latched;
         let time = ui.input(|i| i.time);
+        let has_touch_ev = events.iter().any(|e| matches!(e, Event::Touch { .. }));
         self.state
             .drag_transients
             .touch_state
-            .egui_any_touches_in_frame = ui.input(|i| i.any_touches());
-        let frame_mods = Modifiers {
+            .egui_any_touches_in_frame = ui.input(|i| i.any_touches()) || has_touch_ev;
+        let raw_mods = Modifiers {
             shift: is_shift,
             option: is_alt,
             command: is_cmd,
             control: is_ctrl,
             space: is_space,
         };
+        let frame_mods = self
+            .state
+            .resolve_modifiers_with_intents(raw_mods, is_space);
         self.state.drag_transients.last_modifiers = frame_mods;
         crate::adapters::drawing_tool_state::sync_temp_measurement_modifier_override(
             self.state, is_cmd, is_ctrl, is_alt, is_space,
@@ -54,6 +59,10 @@ impl<'a> InputDispatcher<'a> {
                 self.state.last_pointer_screen_pos = Some(ScreenPoint::new(pos.x, pos.y));
             }
         }
+        let has_ptr_btn = events
+            .iter()
+            .any(|e| matches!(e, Event::PointerButton { .. }));
+        let has_ptr_move = events.iter().any(|e| matches!(e, Event::PointerMoved(_)));
         let mut changed = false;
         self.state.text_transients.text_tool_activated_in_frame = false;
         for event in events {
@@ -67,7 +76,7 @@ impl<'a> InputDispatcher<'a> {
             ) {
                 changed = true;
             }
-            if self.dispatch_pointer_event(event, frame_mods, time) {
+            if self.dispatch_pointer_event(event, frame_mods, time, (has_ptr_btn, has_ptr_move)) {
                 changed = true;
             }
         }
@@ -75,9 +84,25 @@ impl<'a> InputDispatcher<'a> {
         changed
     }
 
-    fn dispatch_pointer_event(&mut self, event: &Event, frame_mods: Modifiers, time: f64) -> bool {
+    fn dispatch_pointer_event(
+        &mut self,
+        event: &Event,
+        frame_mods: Modifiers,
+        time: f64,
+        has_ptr: (bool, bool),
+    ) -> bool {
         if let Some(handled) = self.state.handle_touch_event(event) {
-            return handled;
+            if handled || self.state.drag_transients.touch_state.two_finger_peak {
+                return handled;
+            }
+            if let Event::Touch { phase, pos, .. } = event {
+                return self
+                    .synthesize_single_touch_pointer(*phase, *pos, frame_mods, time, has_ptr);
+            }
+            return false;
+        }
+        if self.state.drag_transients.touch_state.two_finger_peak {
+            return false;
         }
         match event {
             Event::Zoom(factor) => {
@@ -142,6 +167,53 @@ impl<'a> InputDispatcher<'a> {
         }
     }
 
+    fn synthesize_single_touch_pointer(
+        &mut self,
+        phase: egui::TouchPhase,
+        pos: egui::Pos2,
+        frame_mods: Modifiers,
+        time: f64,
+        has_ptr: (bool, bool),
+    ) -> bool {
+        let (has_ptr_btn, has_ptr_move) = has_ptr;
+        match phase {
+            egui::TouchPhase::Start if !has_ptr_btn => {
+                self.handle_primary_pointer_press(pos, egui::Modifiers::NONE, frame_mods, time)
+            }
+            egui::TouchPhase::Move if !has_ptr_move => {
+                let scr_pt = self.state.map_pointer_pos_with_touch_offset(pos);
+                self.state.last_pointer_screen_pos = Some(scr_pt);
+                self.state.cursor_screen_pos = Some(scr_pt);
+                let strip_font_pt = self.state.viewport.to_font(scr_pt);
+                if let Some(handled) =
+                    crate::adapters::text_stream_interaction::handle_text_stream_pointer_move(
+                        self.state,
+                        scr_pt,
+                        strip_font_pt,
+                    )
+                {
+                    return handled;
+                }
+                let font_pt = self.state.active_slot_viewport().to_font(scr_pt);
+                self.handle_pointer_move(scr_pt, font_pt, frame_mods)
+            }
+            egui::TouchPhase::End | egui::TouchPhase::Cancel if !has_ptr_btn => {
+                let scr_pt = self.state.map_pointer_pos_with_touch_offset(pos);
+                self.state.last_pointer_screen_pos = Some(scr_pt);
+                let font_pt = self.state.active_slot_viewport().to_font(scr_pt);
+                let res = self.handle_pointer_release(
+                    font_pt,
+                    frame_mods.shift,
+                    frame_mods.option,
+                    frame_mods.control,
+                );
+                crate::adapters::contour_edit_interaction::restore_temp_tool_override(self.state);
+                res
+            }
+            _ => false,
+        }
+    }
+
     fn handle_primary_pointer_press(
         &mut self,
         pos: egui::Pos2,
@@ -158,13 +230,16 @@ impl<'a> InputDispatcher<'a> {
         self.state.cursor_screen_pos = Some(scr_pt);
         let strip_font_pt = self.state.viewport.to_font(scr_pt);
 
-        let mods = Modifiers {
+        let raw_mods = Modifiers {
             shift: modifiers.shift || frame_mods.shift,
             option: modifiers.alt || frame_mods.option,
             command: modifiers.command || frame_mods.command,
             control: modifiers.ctrl || frame_mods.control,
             space: frame_mods.space,
         };
+        let mods = self
+            .state
+            .resolve_modifiers_with_intents(raw_mods, raw_mods.space);
         if mods.space
             && !mods.command
             && !mods.control

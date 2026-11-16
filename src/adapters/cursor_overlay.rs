@@ -166,7 +166,11 @@ impl GrafiaCanvasState {
             | CanvasTool::Pixel
             | CanvasTool::Text
             | CanvasTool::TrueTypeInstructor
-            | CanvasTool::Hoi => Some(GrafiaCursorKind::SelectArrow),
+            | CanvasTool::Hoi
+            | CanvasTool::Stem
+            | CanvasTool::CurvedTrajectory
+            | CanvasTool::Trowel
+            | CanvasTool::Cleaner => Some(GrafiaCursorKind::SelectArrow),
         }
     }
 }

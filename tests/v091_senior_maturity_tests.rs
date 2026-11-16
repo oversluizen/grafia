@@ -407,3 +407,32 @@ fn tc_maturity_007_preferences_hit_radii_kerning_steps_and_ghost_hint_widths_con
     };
     assert!((custom_ghost.effective_width_upm() - 15.0).abs() < 1e-6);
 }
+
+#[test]
+fn tc_maturity_008_wasm32_browser_canvas_entrypoint_and_fs_guards() {
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let demo_src =
+        std::fs::read_to_string(manifest_dir.join("examples/vector_canvas_demo.rs")).unwrap();
+    assert!(
+        demo_src.contains("get_element_by_id(\"grafia_canvas\")"),
+        "WASM entrypoint must target <canvas id=\"grafia_canvas\">"
+    );
+    assert!(
+        !demo_src.contains("get_element_by_id(\"the_canvas_id\")"),
+        "WASM entrypoint must not use placeholder the_canvas_id"
+    );
+
+    let toolbar_src =
+        std::fs::read_to_string(manifest_dir.join("examples/demo_host_shell/toolbar_specs.rs"))
+            .unwrap();
+    assert!(
+        toolbar_src.matches("#[cfg(not(target_arch = \"wasm32\"))]").count() >= 2,
+        "toolbar_specs.rs must guard both install_crash_logger() and native disk font loading with #[cfg(not(target_arch = \"wasm32\"))]"
+    );
+
+    let cargo_toml = std::fs::read_to_string(manifest_dir.join("Cargo.toml")).unwrap();
+    assert!(
+        cargo_toml.contains("features = [\"glow\", \"default_fonts\"]"),
+        "Cargo.toml wasm32 eframe dev-dependency must include default_fonts so browser text renders without C:\\Windows\\Fonts"
+    );
+}

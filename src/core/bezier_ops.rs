@@ -7,7 +7,7 @@ use crate::core::math_consts::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct NodeId(pub u64);
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]

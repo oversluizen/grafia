@@ -73,6 +73,10 @@ pub fn render_drawing_tool_overlays_tiny_skia(pixmap: &mut Pixmap, state: &Grafi
             fill_circle_ts(pixmap, s.x.0, s.y.0, PENCIL_SAMPLE_DOT_RADIUS_DP, col);
         }
     }
+    render_pixel_and_brush_preview_ts(pixmap, state);
+}
+
+fn render_pixel_and_brush_preview_ts(pixmap: &mut Pixmap, state: &GrafiaCanvasState) {
     if state.active_tool == CanvasTool::Pixel {
         if let Some(scr) = state.last_pointer_screen_pos {
             let step = state.effective_pixel_step_upm();
@@ -90,6 +94,18 @@ pub fn render_drawing_tool_overlays_tiny_skia(pixmap: &mut Pixmap, state: &Grafi
                 p1.y.0,
                 color32_to_tiny_skia(state.theme.pixel_preview_stroke_color32()),
                 PIXEL_PREVIEW_STROKE_WIDTH_DP,
+            );
+        }
+    }
+    if matches!(state.active_tool, CanvasTool::Trowel | CanvasTool::Cleaner) {
+        if let Some(scr) = state.cursor_screen_pos.or(state.last_pointer_screen_pos) {
+            let mut pb = PathBuilder::new();
+            pb.push_circle(scr.x.0, scr.y.0, state.effective_brush_radius_dp());
+            stroke_ts(
+                pixmap,
+                pb,
+                color32_to_tiny_skia(state.theme.primitive_preview_stroke_color32()),
+                PRIMITIVE_PREVIEW_STROKE_WIDTH_DP,
             );
         }
     }

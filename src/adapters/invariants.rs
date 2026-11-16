@@ -351,6 +351,18 @@ impl GrafiaCanvasState {
         if self.show_pixel_preview_ppem == Some(0) {
             return Err("Invariant violated: show_pixel_preview_ppem == Some(0)".into());
         }
+        let mut seen_smart = std::collections::HashSet::with_capacity(self.smart_corners.len());
+        for spec in &self.smart_corners {
+            if !spec.radius_upm.is_finite() {
+                return Err("Invariant violated: non-finite SmartCornerSpec radius_upm".into());
+            }
+            if !seen_smart.insert(spec.node_id) {
+                return Err(format!(
+                    "Invariant violated: duplicate SmartCornerSpec node_id {:?}",
+                    spec.node_id
+                ));
+            }
+        }
         Ok(())
     }
 

@@ -1,9 +1,7 @@
 //! Node deletion, open-contour cut, and empty-contour pruning for keyboard shortcuts.
 
 use crate::adapters::state::GrafiaCanvasState;
-use crate::core::{
-    enforce_smooth_collinearity_on_handle_drag, expanded_nodes_with_attached_handles, NodeType,
-};
+use crate::core::{expanded_nodes_with_attached_handles, NodeType};
 use egui::Key;
 
 pub(crate) fn handle_arrow_nudge(
@@ -40,6 +38,9 @@ pub(crate) fn handle_arrow_nudge(
         return state.nudge_selected_guide(dx, dy)
             || state.nudge_selected_anchors_or_components(dx, dy);
     }
+    if state.try_apply_harmony_arrow_nudge(dx, dy, ctrl_held, alt_held) {
+        return true;
+    }
     let before = state.snapshot();
     if ctrl_held && alt_held {
         state.record_drag_start();
@@ -61,21 +62,8 @@ pub(crate) fn handle_arrow_nudge(
             node.point.y.0 += dy;
         }
     }
-    if state.selected_nodes.len() == 1 {
-        let sel_id = state.selected_nodes[0];
-        if state
-            .find_node(sel_id)
-            .is_some_and(|n| n.node_type == NodeType::OffCurve)
-        {
-            for (c_idx, contour) in state.contours.iter_mut().enumerate() {
-                enforce_smooth_collinearity_on_handle_drag(
-                    contour,
-                    closed_flags[c_idx],
-                    sel_id,
-                    alt_held,
-                );
-            }
-        }
+    if let [sel_id] = state.selected_nodes.as_slice() {
+        state.enforce_single_offcurve_handle_drag_constraints(*sel_id, &closed_flags, alt_held);
     }
     state.sync_paths_from_contours();
     state.record_mutation("Nudge Nodes", before);

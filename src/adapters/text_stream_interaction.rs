@@ -418,7 +418,8 @@ impl GrafiaCanvasState {
     }
 
     fn emit_text_edit_request(&mut self, edit: TextStreamEditKind) -> bool {
-        self.host_requests
+        self.drag_transients
+            .host_requests
             .push(CanvasHostRequest::EditTextStream(TextStreamEditRequest {
                 caret_index: self.text_stream.caret_index,
                 selection_range: self.text_stream.selection_range,

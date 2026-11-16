@@ -69,10 +69,11 @@ All curvature equations, tangent-balance handle ratios, proportional handle serv
 
 ### 2.2 Interactive Tangent Balance (Tunni) Lines (`show_tunni_lines: bool` — `src/core/curve_harmony.rs`)
 
-1. **Tangent Balance Line & Midpoint Geometry**:
+1. **Tangent Balance Line, Dashed Apex Projections, Ring Knob & Handle-Ratio Percentage HUD**:
    - For every cubic Bézier segment $(P_0, P_1, P_2, P_3)$ whose tangent rays $\vec{u} = P_1 - P_0$ and $\vec{v} = P_2 - P_3$ intersect forward at apex $T$:
      - The **Tangent Balance (Tunni) Line** is the line segment $[P_1, P_2]$ connecting the two off-curve control points.
-     - The **Balance Midpoint** $M_{\text{tunni}} = \frac{1}{2}(P_1 + P_2)$ is rendered on the balance line when `state.show_tunni_lines == true`.
+     - The **Balance Midpoint** $M_{\text{tunni}} = \frac{1}{2}(P_1 + P_2)$ is rendered on the balance line as a ring/filled knob when `state.show_tunni_lines == true`.
+     - Dashed tangent projection segments $[P_1, T]$ and $[P_2, T]$ are rendered from both off-curve handles to the tangent intersection apex $T$, together with `SegmentHandleRatioHud` percentage pills (`"60%"`, `"75%"`) next to the two handles across both `egui::Painter` and `tiny_skia::Pixmap`.
      - The segment's handle ratios are $t_1 = \|P_1 - P_0\|_2 / \|T - P_0\|_2$ and $t_2 = \|P_2 - P_3\|_2 / \|T - P_3\|_2$, with mean ratio $t_{\text{tunni}} = \frac{1}{2}(t_1 + t_2)$.
 2. **Interactive Hit-Testing, Dragging & Clamping (`[0.20, 0.95]`)**:
    - When `state.show_tunni_lines == true`:
@@ -154,6 +155,11 @@ All curvature equations, tangent-balance handle ratios, proportional handle serv
 
 ---
 
+2. **Pass-4 Vector Red Arrow & Angled Handle Overlay (`show_outline_audit: bool`)**:
+   - When `state.curve_harmony.show_outline_audit == true`, Pass 4 (`paint_harmony_overlays_egui` and `render_harmony_overlays_tiny_skia`) renders a crisp vector **Red Arrow** (`~18 dp` diagonal shaft and `~6 dp` arrowhead wings) pointing directly at the defect target point (`point` for `MissingExtremum`, segment midpoint for `QuasiOrthogonalStem` and `CollinearCubic`, and handle-chord intersection/midpoint for `CrossedHandles`) with a compact pill badge (`"EXT"`, `"STEM"`, `"CROSS"`, `"FLAT"`) at the arrow tail, and highlights every `AngledHandleWarning` ray `[smooth_pt, handle_pt]`, handle knob (rendered on top of the base off-curve handle with a warning ring so the handle knob center and ring visibly switch to `master_incompat_highlight_color32()`), and laterally offset degree-deviation pill (`"{:.1}°"`) in warning red/orange.
+
+---
+
 ### 2.6 Off-Axis Handle Warning & Handle-Ratio HUD (`compute_angled_handle_warnings`, `compute_segment_handle_ratios` — `src/core/curve_harmony.rs`)
 
 1. **Off-Axis Handle Warning (`compute_angled_handle_warnings(&self) -> Vec<AngledHandleWarning>`)**:
@@ -175,6 +181,11 @@ All curvature equations, tangent-balance handle ratios, proportional handle serv
    - **Ray Extension Projection (`TangentExtensionSnapKind::RayExtension`)**:
      - Projects `query_pt` orthogonally onto the infinite line extending each diagonal segment $[A_m, B_m]$. If $\|P_{\text{proj}} - \text{query\_pt}\|_2 \le \text{snap\_radius\_upm}$, records $P_{\text{proj}}$ as a ray-extension snap candidate so truncated diagonal stems can slide along their exact slope without changing angle.
    - Returns the matching `TangentExtensionSnap` (`VirtualApex` prioritized when within `snap_radius_upm`, otherwise nearest candidate).
+   - **Live Node Drag Integration & Overlay (`active_tangent_snap: Option<TangentExtensionSnap>`)**:
+     - During live node dragging when `state.selected_nodes.len() == 1` and `state.preferences.snap_targets.nodes` is enabled, `resolve_node_drag_displacement` evaluates `compute_tangent_extension_snaps` (excluding `RayExtension` on segments incident to the dragged node itself while allowing `VirtualApex` snaps), snaps the dragged node to `snap.snap_point`, and stores `state.curve_harmony.active_tangent_snap = Some(snap)` (cleared to `None` on pointer release).
+     - When `active_tangent_snap` is `Some(snap)`, Pass 4 renders the dashed diagonal extension ray(s) from the diagonal leg endpoints to `snap.snap_point` and a diamond/crosshair snap badge at `snap.snap_point`.
+   - **Tablet Touch Sticky Modifiers & 2-Finger Gesture Cancellation**:
+     - `TouchInteractionState` provides sticky modifier latches (`touch_shift_latched`, `touch_alt_latched`, `touch_cmd_latched`, `touch_space_pan_latched`) ORed into `InputDispatcher::dispatch_events`, synthesizes single-finger pointer press/move/release when standalone `Event::Touch` events are dispatched, preserves `touch_finger_offset_dp` across the entire touch frame (including `TouchPhase::End`), and cancels/restores any tentative 1-finger drag (`DraggingNodes`, `DraggingSegment`, `DraggingTunniLine`, `MarqueeSelecting`, `PanningViewport`) back to `SelectToolState::Idle` as soon as a second finger touches down (`contacts.len() == 2`).
 
 ---
 
@@ -330,6 +341,35 @@ pub struct TangentExtensionSnap {
     pub kind: TangentExtensionSnapKind,
 }
 
+/// Real-time 4-level geometric continuity grade at an on-curve join node (`■` G0, `●` G1, `★` G2, `❖` G3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+pub enum ContinuityGrade {
+    G0Corner,
+    G1Tangent,
+    G2Curvature,
+    G3Clothoid,
+}
+
+/// Single sample tooth on a live `CurvatureComb` (`Krommingskam`) overlay.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct CurvatureCombTooth {
+    pub t: f64,
+    pub base: FontPoint,
+    pub tip: FontPoint,
+    pub signed_curvature: f64,
+    pub dkappa_ds: f64,
+}
+
+/// Curvature comb polyline, teeth, inflection markers, and curvature-rate dip locations for one cubic segment.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct CurvatureCombPoly {
+    pub contour_id: ContourId,
+    pub segment_index: usize,
+    pub teeth: Vec<CurvatureCombTooth>,
+    pub inflections: Vec<FontPoint>,
+    pub dkappa_dip_points: Vec<FontPoint>,
+}
+
 /// Evaluates the signed parametric curvature $\kappa(t)$ of cubic Bézier $(P_0, P_1, P_2, P_3)$ at $t \in [0.0, 1.0]$.
 pub fn cubic_signed_curvature(
     p0: FontPoint,
@@ -376,6 +416,16 @@ impl GrafiaCanvasState {
         query_pt: FontPoint,
         snap_radius_upm: f64,
     ) -> Option<TangentExtensionSnap>;
+
+    // 2.8 Live G0 / G1 / G2 / G3 Continuity Classifier & G3Clothoid Lock
+    pub fn classify_node_continuity(&self, node_id: NodeId) -> ContinuityGrade;
+    pub fn set_node_g3_lock(&mut self, node_id: NodeId, enabled: bool);
+    pub fn harmonize_selected_nodes_g3(&mut self);
+
+    // 2.9 Live 120 fps CurvatureComb Overlay
+    pub fn toggle_show_curvature_comb(&mut self);
+    pub fn set_show_curvature_comb(&mut self, enabled: bool);
+    pub fn compute_curvature_comb_overlay(&self) -> Vec<CurvatureCombPoly>;
 }
 ```
 

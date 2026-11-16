@@ -1,4 +1,6 @@
 /target/
+/dist/
+/.cargo/
 **/*.rs.bk
 *.pdb
 .DS_Store

@@ -1,5 +1,6 @@
 //! Node displacement, smooth/corner toggling, and `Alt/Option + Drag` contour duplication for `SelectTool`.
 
+pub use crate::adapters::smart_corners_and_stem_ops::apply_segment_click_selection;
 use crate::adapters::state::GrafiaCanvasState;
 use crate::core::{
     apply_ctrl_alt_interpolate_nudge, apply_ctrl_alt_mirrored_handle_drag,
@@ -206,6 +207,18 @@ impl GrafiaCanvasState {
         ) {
             return;
         }
+        if !ctrl_held
+            && !alt_held
+            && has_on_curve_selected
+            && self.try_apply_power_nudge_or_servo_drag(
+                &selected_copy,
+                &shadow_contours,
+                &closed_flags,
+                FontPoint::new(snapped_dx, snapped_dy),
+            )
+        {
+            return;
+        }
         let decouple_handles = alt_held && !ctrl_held && selected_copy.len() == 1;
         for (id, start_pt) in self.drag_transients.drag_start_font_positions.clone() {
             if let Some(node) = self.find_node_mut(id) {
@@ -227,21 +240,71 @@ impl GrafiaCanvasState {
             return;
         }
         if let [sel_id] = selected_copy.as_slice() {
-            if self
-                .find_node(*sel_id)
-                .is_some_and(|n| n.node_type == NodeType::OffCurve)
-            {
-                for (c_idx, c) in self.contours.iter_mut().enumerate() {
-                    enforce_smooth_collinearity_on_handle_drag(
-                        c,
-                        closed_flags[c_idx],
-                        *sel_id,
-                        alt_held,
-                    );
-                }
-            }
+            self.enforce_single_offcurve_handle_drag_constraints(*sel_id, &closed_flags, alt_held);
         }
         self.sync_paths_from_contours();
+    }
+
+    fn try_apply_power_nudge_or_servo_drag(
+        &mut self,
+        selected_copy: &[NodeId],
+        shadow_contours: &[Vec<crate::core::Node>],
+        closed_flags: &[bool],
+        delta: FontPoint,
+    ) -> bool {
+        if self.power_nudge_enabled {
+            self.contours = shadow_contours.to_vec();
+            crate::core::power_nudge_contours(
+                &mut self.contours,
+                closed_flags,
+                selected_copy,
+                delta,
+            );
+            self.sync_paths_from_contours();
+            return true;
+        }
+        if self.curve_harmony.servo_scaling_enabled && selected_copy.len() == 1 {
+            self.contours = shadow_contours.to_vec();
+            crate::core::servo_translate_node_in_contours(
+                &mut self.contours,
+                closed_flags,
+                selected_copy[0],
+                delta,
+            );
+            self.sync_paths_from_contours();
+            return true;
+        }
+        false
+    }
+
+    pub(crate) fn enforce_single_offcurve_handle_drag_constraints(
+        &mut self,
+        sel_id: NodeId,
+        closed_flags: &[bool],
+        alt_held: bool,
+    ) {
+        if self
+            .find_node(sel_id)
+            .is_some_and(|n| n.node_type == NodeType::OffCurve)
+        {
+            for (c_idx, c) in self.contours.iter_mut().enumerate() {
+                enforce_smooth_collinearity_on_handle_drag(
+                    c,
+                    closed_flags[c_idx],
+                    sel_id,
+                    alt_held,
+                );
+            }
+            if !alt_held {
+                crate::core::enforce_genius_or_g3_on_handle_move(
+                    &mut self.contours,
+                    closed_flags,
+                    sel_id,
+                    &self.curve_harmony.genius_nodes,
+                    &self.curve_harmony.g3_nodes,
+                );
+            }
+        }
     }
 
     fn apply_ctrl_alt_drag_displacement(

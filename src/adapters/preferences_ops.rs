@@ -162,10 +162,17 @@ impl GrafiaCanvasState {
     #[must_use]
     pub fn effective_pen_node_hit_radius_dp(&self) -> f32 {
         let r = self.preferences.hit_test_radius_dp;
-        if r.is_finite() && (r - crate::tokens::SELECT_NODE_HIT_RADIUS_DP).abs() > 1e-5 {
+        let base = if r.is_finite() && (r - crate::tokens::SELECT_NODE_HIT_RADIUS_DP).abs() > 1e-5 {
             r.clamp(PREF_MIN_RADIUS_DP, PREF_MAX_RADIUS_DP)
         } else {
             crate::tokens::PEN_NODE_HIT_RADIUS_DP
+        };
+        if self.drawing_tool_state.controller_ports.active_input_device
+            == crate::core::InputDeviceKind::TouchFinger
+        {
+            base * crate::core::math_consts::TOUCH_HIT_RADIUS_INFLATION_FACTOR
+        } else {
+            base
         }
     }
 
@@ -221,7 +228,9 @@ impl GrafiaCanvasState {
     #[must_use]
     pub(crate) fn map_pointer_pos_with_touch_offset(&self, raw: Pos2) -> ScreenPoint {
         if (!self.drag_transients.touch_state.contacts.is_empty()
-            || self.drag_transients.touch_state.egui_any_touches_in_frame)
+            || self.drag_transients.touch_state.egui_any_touches_in_frame
+            || self.drawing_tool_state.controller_ports.active_input_device
+                == crate::core::InputDeviceKind::TouchFinger)
             && self.preferences.touch_finger_offset_dp != 0.0
         {
             ScreenPoint::new(raw.x, raw.y - self.preferences.touch_finger_offset_dp)
@@ -282,7 +291,15 @@ impl GrafiaCanvasState {
                     .insert(key, (*pos, *pos));
                 self.drag_transients.touch_state.active_touch_raw_pos = Some(*pos);
                 if self.drag_transients.touch_state.contacts.len() == 2 {
+                    if let Some(before) = self.drag_transients.active_drag_before_snapshot.take() {
+                        self.restore_snapshot(&before);
+                    }
                     self.drag_transients.touch_state.two_finger_peak = true;
+                    self.select_state = crate::interaction::SelectToolState::Idle;
+                    self.pen_state = crate::interaction::PenToolState::Idle;
+                    self.drawing_tool_state.reset_in_flight_drags();
+                    self.active_snappers.clear();
+                    self.curve_harmony.active_tangent_snap = None;
                 }
                 let eff = self.map_pointer_pos_with_touch_offset(*pos);
                 self.cursor_screen_pos = Some(eff);

@@ -90,22 +90,7 @@ impl GrafiaVectorCanvasDemo {
         });
 
         Panel::bottom("status_bar").show(ui, |ui| {
-            ui.horizontal(|ui| {
-                let tool_str = TOOL_ICON_SPECS
-                    .iter()
-                    .find(|(t, _, _)| *t == self.state.active_tool)
-                    .map_or("", |(_, _, tip)| *tip);
-                ui.label(tool_str);
-                ui.add(Separator::default().vertical());
-                let total_nodes: usize = self.state.contours.iter().map(Vec::len).sum();
-                ui.label(format!(
-                    "Contours: {} | Nodes: {total_nodes} (Selected: {}) | Anchors: {} | Components: {}",
-                    self.state.contours.len(),
-                    self.state.selected_nodes.len(),
-                    self.state.anchors.len(),
-                    self.state.components.len()
-                ));
-            });
+            MockFontHost::render_status_bar_contents(ui, &self.state);
         });
 
         Panel::left("shapes_sidebar").show(ui, |ui| {
@@ -136,6 +121,7 @@ impl eframe::App for GrafiaVectorCanvasDemo {
 }
 
 /// Builds deterministic `eframe::NativeOptions` resilient against hybrid-GPU + virtual-adapter `wgpu` TDRs.
+#[cfg(not(target_arch = "wasm32"))]
 #[must_use]
 pub fn build_native_options() -> eframe::NativeOptions {
     let renderer = match std::env::var("GRAFIA_RENDERER").as_deref() {
@@ -164,6 +150,7 @@ pub fn build_native_options() -> eframe::NativeOptions {
     }
 }
 
+#[cfg(all(not(target_arch = "wasm32"), not(target_os = "linux")))]
 pub fn main() -> eframe::Result<()> {
     install_crash_logger();
     eframe::run_native(
@@ -176,6 +163,33 @@ pub fn main() -> eframe::Result<()> {
     )
 }
 
+#[cfg(all(not(target_arch = "wasm32"), target_os = "linux"))]
+pub fn main() {}
+
+#[cfg(target_arch = "wasm32")]
+pub fn main() {
+    use wasm_bindgen::JsCast as _;
+    wasm_bindgen_futures::spawn_local(async {
+        let Some(canvas) = web_sys::window()
+            .and_then(|w| w.document())
+            .and_then(|d| d.get_element_by_id("grafia_canvas"))
+            .and_then(|el| el.dyn_into::<web_sys::HtmlCanvasElement>().ok())
+        else {
+            return;
+        };
+        let _ = eframe::WebRunner::new()
+            .start(
+                canvas,
+                eframe::WebOptions::default(),
+                Box::new(|cc| {
+                    configure_demo_fonts(&cc.egui_ctx);
+                    Ok(Box::new(GrafiaVectorCanvasDemo::new()))
+                }),
+            )
+            .await;
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -184,6 +198,7 @@ mod tests {
 
     const TEST_ICON_FONT_SIZE_PT: f32 = 14.0;
 
+    #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn test_native_options_prevent_wgpu_tdr_and_system_font_main_thread_hang() {
         let options = build_native_options();

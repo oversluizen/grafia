@@ -24,6 +24,7 @@ pub const APP_TITLE: &str = "Grafia Vector Canvas — Host-Port (Stekkers) Testb
 
 /// Installs a deterministic panic hook writing `grafia_canvas_crash.log` beside the executable.
 pub fn install_crash_logger() {
+    #[cfg(not(target_arch = "wasm32"))]
     std::panic::set_hook(Box::new(|info| {
         if let Ok(exe_path) = std::env::current_exe() {
             let _ = std::fs::write(
@@ -72,8 +73,8 @@ pub const METRICS_ORIGIN_SPECS: [(MetricsOrigin, &str, &str); 3] = [
     ),
 ];
 
-/// Tool icon and tooltip table covering all 15 `CanvasTool` variants.
-pub const TOOL_ICON_SPECS: [(CanvasTool, &str, &str); 15] = [
+/// Tool icon and tooltip table covering all 19 `CanvasTool` variants.
+pub const TOOL_ICON_SPECS: [(CanvasTool, &str, &str); 19] = [
     (
         CanvasTool::Select,
         "\u{f61e}",
@@ -149,6 +150,26 @@ pub const TOOL_ICON_SPECS: [(CanvasTool, &str, &str); 15] = [
         "\u{f899}",
         "Higher-Order Interpolation Tool [H] — Non-linear cubic master interpolation control polygon",
     ),
+    (
+        CanvasTool::Stem,
+        "\u{f500}",
+        "Structural Stem Tool — Click paired stem to adjust width with handle servo (Alt: narrower)",
+    ),
+    (
+        CanvasTool::CurvedTrajectory,
+        "\u{f6e5}",
+        "Curved Master Trajectory Tool — Click or drag quadratic/cubic migration control handle",
+    ),
+    (
+        CanvasTool::Trowel,
+        "\u{f6f4}",
+        "Trowel Brush Tool — Drag circular brush to locally smooth jagged contour chains",
+    ),
+    (
+        CanvasTool::Cleaner,
+        "\u{f80a}",
+        "Cleaner Brush Tool — Drag circular brush to excise micro-loops, spikes & duplicate nodes",
+    ),
 ];
 
 /// All standalone action icon codepoints rendered in the toolbar and sidebar.
@@ -180,42 +201,45 @@ pub const ALL_ACTION_ICONS: [&str; 22] = [
 /// Deterministically initializes `egui` fonts and registers `egui-macview` Cupertino vector icons.
 pub fn configure_demo_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
-    let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
-    let udir = std::path::Path::new(&local_app_data).join("Microsoft\\Windows\\Fonts");
-    let sdir = std::path::Path::new("C:\\Windows\\Fonts");
-    let sys_fonts = [
-        ("segoe_ui", "segoeui.ttf", egui::FontFamily::Proportional),
-        ("inter", "Inter-Regular.ttf", egui::FontFamily::Proportional),
-        (
-            "roboto",
-            "Roboto-Regular.ttf",
-            egui::FontFamily::Proportional,
-        ),
-        ("consolas", "consola.ttf", egui::FontFamily::Monospace),
-        (
-            "jetbrains_mono",
-            "JetBrainsMono-Regular.ttf",
-            egui::FontFamily::Monospace,
-        ),
-    ];
-    for (name, file, family) in sys_fonts {
-        let maybe_bytes = std::fs::read(udir.join(file))
-            .or_else(|_| std::fs::read(sdir.join(file)))
-            .ok()
-            .filter(|b| {
-                b.get(..4)
-                    .is_some_and(|h| matches!(h, [0, 1, 0, 0] | b"OTTO" | b"true" | b"ttcf"))
-            });
-        if let Some(b) = maybe_bytes {
-            fonts.font_data.insert(
-                name.to_owned(),
-                std::sync::Arc::new(egui::FontData::from_owned(b)),
-            );
-            fonts
-                .families
-                .entry(family)
-                .or_default()
-                .insert(0, name.to_owned());
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
+        let udir = std::path::Path::new(&local_app_data).join("Microsoft\\Windows\\Fonts");
+        let sdir = std::path::Path::new("C:\\Windows\\Fonts");
+        let sys_fonts = [
+            ("segoe_ui", "segoeui.ttf", egui::FontFamily::Proportional),
+            ("inter", "Inter-Regular.ttf", egui::FontFamily::Proportional),
+            (
+                "roboto",
+                "Roboto-Regular.ttf",
+                egui::FontFamily::Proportional,
+            ),
+            ("consolas", "consola.ttf", egui::FontFamily::Monospace),
+            (
+                "jetbrains_mono",
+                "JetBrainsMono-Regular.ttf",
+                egui::FontFamily::Monospace,
+            ),
+        ];
+        for (name, file, family) in sys_fonts {
+            let maybe_bytes = std::fs::read(udir.join(file))
+                .or_else(|_| std::fs::read(sdir.join(file)))
+                .ok()
+                .filter(|b| {
+                    b.get(..4)
+                        .is_some_and(|h| matches!(h, [0, 1, 0, 0] | b"OTTO" | b"true" | b"ttcf"))
+                });
+            if let Some(b) = maybe_bytes {
+                fonts.font_data.insert(
+                    name.to_owned(),
+                    std::sync::Arc::new(egui::FontData::from_owned(b)),
+                );
+                fonts
+                    .families
+                    .entry(family)
+                    .or_default()
+                    .insert(0, name.to_owned());
+            }
         }
     }
     setup_symbols_font(&mut fonts);

@@ -1,5 +1,6 @@
 //! Interactive Host-Port ("Stekkers") Testbank & Mock Font Host for `vector_canvas_demo`.
 
+pub mod cagd_and_controller_presets;
 pub mod color_and_hinting_presets;
 pub mod demo_panels;
 pub mod host_ports;

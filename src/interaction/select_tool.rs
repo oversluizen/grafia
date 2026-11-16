@@ -2,7 +2,7 @@
 
 use crate::core::coordinates::{FontPoint, ScreenPoint};
 use crate::core::curve_manipulation::ContourSegment;
-use crate::core::NodeId;
+use crate::core::{ContourId, NodeId};
 use crate::interaction::gestures::Modifiers;
 use kurbo::Rect;
 
@@ -23,6 +23,10 @@ pub enum SelectToolState {
         start_pt: FontPoint,
         initial_h1: FontPoint,
         initial_h2: FontPoint,
+    },
+    DraggingTunniLine {
+        contour_id: ContourId,
+        segment_index: usize,
     },
     PanningViewport {
         last_screen: ScreenPoint,

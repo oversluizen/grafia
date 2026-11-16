@@ -6,7 +6,6 @@ use crate::adapters::state::GrafiaCanvasState;
 use crate::core::{ContourId, Glyph, GlyphContour, NodeId, NodeType, ShapeBooleanRole};
 use crate::interaction::{CommandHistory, GlyphSnapshot, PenToolState, SelectToolState};
 use crate::snapping::GlyphMetrics;
-use crate::tokens::GlyphArchetype;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -41,6 +40,8 @@ impl GrafiaCanvasState {
         self.drag_transients.hoi_layer_sets = glyph.hoi_layer_sets.clone();
         self.drag_transients.hoi_sibling_contours = glyph.hoi_sibling_contours.clone();
         self.backdrop_ghost_contours = glyph.backdrop_ghost_contours.clone();
+        self.smart_corners.clear();
+        self.curve_harmony.smart_corners.clear();
         self.editing_background_layer = false;
         self.glyph = glyph;
         self.selected_nodes.clear();
@@ -103,6 +104,7 @@ impl GrafiaCanvasState {
         self.drag_transients.guide_drag = GuideDragState::Idle;
         self.drawing_tool_state.reset_in_flight_drags();
         self.active_snappers.clear();
+        self.curve_harmony.active_tangent_snap = None;
         self.drag_transients.active_drag_before_snapshot = None;
         self.pending_pen_bcp_out = None;
         self.pending_pen_first_bcp_in = None;
@@ -152,44 +154,6 @@ impl GrafiaCanvasState {
             hoi_sibling_contours: self.drag_transients.hoi_sibling_contours.clone(),
             backdrop_ghost_contours: self.backdrop_ghost_contours.clone(),
         }
-    }
-
-    pub fn load_preset_a(&mut self) {
-        self.load_glyph_archetype(GlyphArchetype::A);
-    }
-    pub fn load_preset_n(&mut self) {
-        self.load_glyph_archetype(GlyphArchetype::N);
-    }
-    pub fn load_preset_o(&mut self) {
-        self.load_glyph_archetype(GlyphArchetype::O);
-    }
-    pub fn load_preset_s(&mut self) {
-        self.load_glyph_archetype(GlyphArchetype::S);
-    }
-
-    pub fn reverse_selected_or_all_contours(&mut self) -> bool {
-        if self.contours.is_empty() {
-            return false;
-        }
-        let before = self.snapshot();
-        let closed_flags = self.closed_flags();
-        let any_sel = !self.selected_nodes.is_empty();
-        for (c_idx, contour) in self.contours.iter_mut().enumerate() {
-            if !any_sel || contour.iter().any(|n| self.selected_nodes.contains(&n.id)) {
-                crate::core::reverse_contour_nodes(contour, closed_flags[c_idx]);
-            }
-        }
-        self.pending_pen_bcp_out = None;
-        self.pending_pen_first_bcp_in = None;
-        self.hovered_pen_close_target = None;
-        self.sync_paths_from_contours();
-        self.record_mutation("Reverse Contour", before);
-        self.assert_invariants();
-        true
-    }
-
-    pub fn make_selected_node_first(&mut self) -> bool {
-        self.make_node_first()
     }
 
     #[must_use]
@@ -258,14 +222,7 @@ impl GrafiaCanvasState {
             self.custom_reference_frame.clone(),
             self.text_stream.writing_direction,
         )
-        .with_hinting_and_hoi_state(crate::interaction::history::HintingAndHoiSnapshot {
-            postscript_hints: self.postscript_hints.clone(),
-            selected_postscript_hint: self.selected_postscript_hint,
-            truetype_instructions: self.truetype_instructions.clone(),
-            selected_truetype_instruction: self.selected_truetype_instruction,
-            hoi_layer_sets: self.drag_transients.hoi_layer_sets.clone(),
-            hoi_sibling_contours: self.drag_transients.hoi_sibling_contours.clone(),
-        })
+        .with_hinting_and_hoi_state(self.build_hinting_and_hoi_snapshot())
     }
 
     pub fn restore_snapshot(&mut self, snap: &GlyphSnapshot) {
@@ -360,6 +317,8 @@ impl GrafiaCanvasState {
         self.selected_truetype_instruction = snap.hinting.selected_truetype_instruction;
         self.drag_transients.hoi_layer_sets = snap.hinting.hoi_layer_sets.clone();
         self.drag_transients.hoi_sibling_contours = snap.hinting.hoi_sibling_contours.clone();
+        self.curve_harmony = snap.hinting.curve_harmony.clone();
+        self.smart_corners = self.curve_harmony.smart_corners.clone();
         self.glyph.postscript_hints = self.postscript_hints.clone();
         self.glyph.truetype_instructions = self.truetype_instructions.clone();
         self.glyph.hoi_layer_sets = self.drag_transients.hoi_layer_sets.clone();

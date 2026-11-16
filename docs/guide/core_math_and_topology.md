@@ -136,3 +136,88 @@ $$T(x, y) = \mu(x, y) \cdot \left(1 + k \cdot \left(\frac{\sigma(x, y)}{R} - 1\r
 - **Horizontal & Vertical Text Streams (`CanvasTextStream`, `WritingDirection`):** Supports `LeftToRight`, `RightToLeft`, and vertical CJK `TopToBottom` (`recompute_vertical_slot_origins` centering glyphs on $x_c = \frac{1}{2}W$ and advancing downward by `advance_height` + vertical pair kerning). Keyboard adjustments emit `SpacingDelta` and `KerningDelta` on `MetricsAxis::Horizontal` or `MetricsAxis::Vertical`.
 - **PostScript & TrueType Hinting (`PostScriptHint`, `TrueTypeVisualInstruction`):** Models horizontal/vertical stem hints, ghost hints (`20`/`21` UPM), and TrueType grid-fitting instructions (`Snap`, `Stem`, `Shift`, `Interpolate`, `Delta`) with live PPEM rounding grids (`truetype_upm_per_px`).
 - **Higher-Order Interpolation (`HoiCubicLayerSet`, `compute_hoi_overlay_geometry`):** In standard variable fonts, point coordinates interpolate linearly between masters, which can cause stems to kink or narrow at midpoint weights when rotating shapes. **Higher-Order Interpolation (`HOI`)** treats master coordinates as control points of a **non-linear cubic Bézier trajectory across design space** ($P(u) = (1-u)^3 M_0 + 3(1-u)^2 u M_1 + 3(1-u) u^2 M_2 + u^3 M_3$), visualized on canvas via control-polygon polylines and `prev`/`current`/`next` timing diamonds.
+
+---
+
+## 7. Precision Curve Harmonization ($G^2 / G^3$), Tangent Balance (Tunni) Lines & Outline Audit (`v0.10.0`)
+
+### 7.1 Signed Curvature $\kappa(t)$ & Romer/Henestrosa $G^2 / G^3$ Harmonization (`cubic_signed_curvature`, `harmonize_selected_nodes`)
+
+Two cubic Bézier segments $(Q_0, Q_1, Q_2, P)$ and $(P, R_1, R_2, R_3)$ meeting at a `NodeType::Smooth` anchor $P$ share a collinear tangent ($G^1$ continuity), but can still exhibit a visible jump in curvature $\kappa(t)$:
+
+$$\kappa(t) = \frac{x'(t) y''(t) - y'(t) x''(t)}{\left(x'(t)^2 + y'(t)^2\right)^{3/2}}$$
+
+At the join $P$, the endpoint curvature magnitudes depend on the adjacent handle lengths $a = \|P - Q_2\|_2$, $b = \|R_1 - P\|_2$, and the perpendicular distances $d_{\text{in}}, d_{\text{out}}$ of the far handles $Q_1, R_2$ to the common tangent line:
+
+$$|\kappa_{\text{in}}(1)| = \frac{2 \, d_{\text{in}}}{3 \, a^2}, \qquad |\kappa_{\text{out}}(0)| = \frac{2 \, d_{\text{out}}}{3 \, b^2}, \qquad p_0 = \frac{a}{b} = \sqrt{\frac{d_{\text{in}}}{d_{\text{out}}}}$$
+
+- **`harmonize_selected_nodes` (`Ctrl+Shift+H`):** Relocates $P$ along $[Q_2, R_1]$ to $P' = \frac{Q_2 + p_0 R_1}{1 + p_0}$ so $\kappa_{\text{in}}(1) = \kappa_{\text{out}}(0)$ ($G^2$).
+- **`harmonize_handles_keep_node` & `set_node_genius`:** Balances $(a, b)$ while keeping $P$ stationary, or enforces live $G^2$ continuity during interactive handle drags.
+- **4-Level Continuity Classifier (`classify_node_continuity`) & $G^3$ Clothoid Lock (`harmonize_selected_nodes_g3`, `set_node_g3_lock`):** Evaluates `ContinuityGrade::{ G0Corner, G1Tangent, G2Curvature, G3Clothoid }` and equalizes the arc-length rate of change of curvature $\frac{d\kappa}{ds} = \frac{\kappa'(t)}{\|B'(t)\|_2}$ across smooth joins.
+- **Live 120 fps `CurvatureComb` (`compute_curvature_comb_overlay`):** Evaluates normal comb teeth $C_{\text{tip}}(t) = B(t) + s_{\text{comb}} \kappa(t) \hat{n}(t)$, inflection zero-crossings ($\kappa(t) = 0$), and $|d\kappa/ds|$ dips.
+
+### 7.2 Interactive Tangent Balance (Tunni) Lines, Proportional Handle Servo & Neighbour Nudge
+
+- **Tangent Balance (Tunni) Lines (`compute_tunni_overlays`, `scale_segment_tunni_ratio`, `balance_segment_tunni`):** Connects the two off-curve handles $[P_1, P_2]$ with balance midpoint $M_{\text{tunni}} = \frac{1}{2}(P_1 + P_2)$ whenever the tangent rays intersect forward at apex $T$. Dragging scales both handles along their tangent rays within $[0.20, 0.95]$ (`TUNNI_MIN_RATIO .. TUNNI_MAX_RATIO`), and balancing equalizes $t_1 = t_2 = \bar{t}$ so $[P_1, P_2] \parallel [P_0, P_3]$.
+- **Proportional Handle Servo (`servo_translate_on_curve_node`) & Interpolated Neighbour Nudge (`power_nudge_translate_selected`, Shortcut `C`):** Preserves dimensionless off-curve handle ratios along each axis when an extremum moves, and linearly interpolates intermediate unselected contour nodes between translated stems and stationary contour extrema.
+
+### 7.3 Master Trajectory Kinks, Auto-Matching & Proactive Vector Outline Audit
+
+- **Cross-Master Kink & Crossing Detection (`compute_master_kinks_and_crossings`) & Auto-Matching (`auto_match_master_compatibility`):** Detects crossed linear point trajectories $\vec{T}_j(s) \cap \vec{T}_k(u) \neq \emptyset$, flags `NodeType::Smooth` joins whose cross-master tangent angle ($\Delta\theta > 1^\circ$) and handle-length ratio ($|r_A - r_B| > 0.05$) simultaneously diverge, and automatically repairs contour order, winding parity, and cyclic `Node 0` alignment via least-squares registration.
+- **Proactive Vector Outline Audit (`audit_layer_outlines`), Handle Warnings & Virtual Apex Snapping:** Audits contours for `MissingExtremum` (including italic-slanted extrema), `QuasiOrthogonalStem` ($0.1^\circ \le \Delta\theta \le 2.0^\circ$), `CrossedHandles`, and `CollinearCubic` ($\le 0.05\;\text{UPM}$), flags slightly tilted extremum handles (`compute_angled_handle_warnings`), reports apex handle-length percentages (`compute_segment_handle_ratios`), and snaps truncated diagonal stems (`/A`, `/V`, `/M`, `/K`) to infinite ray extensions or virtual ray-ray apex intersections (`compute_tangent_extension_snaps`).
+
+---
+
+## 8. Non-Destructive Smart Corners, Ink Traps, Calligraphic Brush, Stem Gauge & Green's Theorem Counter Balance (`v0.11.0`)
+
+### 8.1 Non-Destructive Smart Corners & Ink Traps (`SmartCornerSpec`, `compute_smart_corner_preview_contours`, `bake_smart_corners`)
+
+Each `SmartCornerSpec { node_id, radius_upm }` attaches a parametric corner modifier to an on-curve vertex $V$ with incoming unit edge vector $\hat{u}_{\text{in}}$, outgoing unit edge vector $\hat{u}_{\text{out}}$, and interior angle $\theta = \arccos(\hat{u}_{\text{in}} \cdot \hat{u}_{\text{out}})$:
+
+- **Positive Fillet (`radius_upm > 0.0`):** Replaces $V$ non-destructively with a 4-node tangent circular-arc cubic $(T_{\text{in}}, H_{\text{in}}, H_{\text{out}}, T_{\text{out}})$ clamped to $0.48 \cdot \min(L_{\text{in}}, L_{\text{out}})$ with handle factor $\kappa_{\text{arc}} = \frac{4}{3}\tan\!\left(\frac{\pi - \theta}{4}\right)$.
+- **Negative Ink Trap Notch (`radius_upm < 0.0`):** Cuts a 4-vertex inward recess $(T_{\text{in}}, N_{\text{in}}, N_{\text{out}}, T_{\text{out}})$ of depth $D = |R|$ along the interior angle bisector $\hat{b} = \frac{\hat{u}_{\text{in}} + \hat{u}_{\text{out}}}{\|\hat{u}_{\text{in}} + \hat{u}_{\text{out}}\|_2}$ to prevent optical ink crowding in acute joins.
+- **`bake_smart_corners`:** Atomically commits the evaluated preview contours into `glyph.contours` inside a reversible Undo transaction.
+
+### 8.2 W3C Stylus Calligraphic Brush, Curvature Heatmap Envelope & Inflection Solver
+
+- **Pressure & Tilt Calligraphic Brush (`CalligraphicNibSpec`, `CalligraphicSample`, `fit_calligraphic_brush_stroke`, `apply_calligraphic_brush_stroke`):** Maps `W3C Pointer Events Level 3` stylus streams `(pos, pressure, tilt_x, tilt_y)` into half-width $h_i = \frac{1}{2}(w_{\min} + p_i(w_{\max} - w_{\min}))$ and instantaneous nib orientation $\phi_i = \phi_0 + \alpha_{\text{tilt}} \operatorname{atan2}(\theta_y, \theta_x)$, constructing a closed cubic Bézier envelope contour.
+- **Curvature Heatmap Envelope & Inflection Roots (`CurvatureCombStyle::HeatmapEnvelope`, `compute_curvature_heatmap_envelopes`, `find_cubic_inflection_points`):** Solves the cross-product quadratic $(B_d \times C)t^2 + (A \times C)t + (A \times B_d) = 0$ for exact interior cubic inflection points $t \in (0, 1)$ and builds closed normalized curvature envelopes ($|\kappa(t)| / \kappa_{\max} \in [0, 1]$).
+
+### 8.3 Orthogonal Stem Gauge, Green's Theorem Counter Balance & Lamé Superellipse / Symmetry Overlays
+
+- **Orthogonal Stem Thickness Gauge (`measure_orthogonal_stem_thickness`, `StemGaugeMatch`):** Casts an inward unit normal ray $R(s) = p_{\text{entry}} + s\,\hat{N}_{\text{in}}$ across the filled interior to the opposite wall and classifies perpendicular stem thickness $d_\perp$ against `reference_stems_upm` within `stem_tolerance_upm` (`Matched`, `Thinner`, `Thicker`).
+- **Closed-Form Green's Theorem Area & Visual Centroid $\oplus$ (`compute_contour_area_and_centroid`, `compute_layer_counter_balance`):** Evaluates exact 5-point Gauss-Legendre line integrals for signed area $A = \frac{1}{2}\oint (x\,dy - y\,dx)$ and visual center of mass $(C_x, C_y)$, separating outer black stems from inner white counters and reporting `black_to_white_ratio`.
+- **Lamé Superellipse Generator & Optical Symmetry Ghost Overlays (`build_superellipse_contour_nodes`, `SymmetryOverlayMode`, `compute_symmetry_ghost_contours`):** Generates 12-node closed superellipse/squircle contours for $\left|\frac{x-c_x}{a}\right|^n + \left|\frac{y-c_y}{b}\right|^n = 1$ ($n \in [2, 20]$) and projects live horizontal, vertical, or $180^\circ$ point-inverted ghost contours around the layer bounding-box center.
+
+---
+
+## 9. Interactive Structural `Stem` Tool, Curved Master Trajectories, Local Brushes & Scanline Optical Rhythm Integrals (`v0.12.0`)
+
+### 9.1 Paired-Wall Structural `Stem` Detection, Servo-Coupled Editing & Measurement Rainbow (`detect_structural_stems`, `adjust_structural_stem`)
+
+- **Anti-Parallel Wall Pairing (`detect_structural_stems_in_contours`):** Pairs opposing straight or quasi-linear contour walls $(S_L, S_R)$ whose inward unit normals satisfy $\hat{n}_L \cdot \hat{n}_R \le -\cos 12^\circ$ with mutual tangential projection overlap and zero intervening contour intersections, classifying each stem into `StemOrientation::{ Horizontal, Vertical, Diagonal }` with exact perpendicular thickness $d_\perp = |(P_R - P_L) \cdot \hat{n}_L|$.
+- **Servo-Coupled Thickness & Angle Editing (`adjust_structural_stem`):** Translates paired stem walls along $\pm\hat{n}_{LR}$ under `StemAdjustmentMode::{ SymmetricCenter, LockLeft, LockRight }` while proportionally scaling incident `OffCurve` handles on connected arches (`servo_translate_node_in_contours`) so smooth transitions remain $G^1$-collinear without kinks, and optionally emits `CanvasHostRequest::PropagateStemDelta`.
+- **Measurement Rainbow Heatmap (`compute_measurement_rainbow_quads`, `set_show_measurement_rainbow`):** Shades interior cross-sections between opposing contour walls in Pass 2 with a continuous spectral ramp mapped to local perpendicular thickness $d_\perp(s)$.
+
+### 9.2 Non-Linear Quadratic & Cubic Master Trajectories (`CurvedTrajectoryLink`, `evaluate_curved_master_point`)
+
+When a stroke rotates or shifts diagonally between two compatible masters $(P^{(A)}, P^{(B)})$, linear interpolation $(1-t)P^{(A)} + t P^{(B)}$ can cause optical stem weight to sag at intermediate weights $t \in (0, 1)$. `CurvedTrajectoryLink` replaces the straight chord with a quadratic $B_2(t)$ (`control2 == None`) or cubic $B_3(t)$ (`control2 == Some(C_2)`) Bézier trajectory:
+
+$$B_2(t) = (1-t)^2 P^{(A)} + 2(1-t)t C_1 + t^2 P^{(B)}, \qquad B_3(t) = (1-t)^3 P^{(A)} + 3(1-t)^2 t C_1 + 3(1-t)t^2 C_2 + t^3 P^{(B)}$$
+
+### 9.3 Windowed `Trowel` Smoothing & `Cleaner` Micro-Loop Pruning Brushes (`apply_trowel_brush_at_upm`, `apply_cleaner_brush_at_upm`)
+
+- **`CanvasTool::Trowel` (`apply_trowel_brush_in_contours`):** Collects only the contiguous sub-chain of nodes intersecting the circular brush disc $\mathcal{B}(c, R_{\text{upm}})$ and refits/simplifies that interior window within `fit_tolerance_upm` while keeping the boundary entry/exit nodes and every node $P_k \notin \mathcal{B}(c, R_{\text{upm}})$ 100% bit-identical ($\Delta P_k \equiv 0$).
+- **`CanvasTool::Cleaner` (`apply_cleaner_brush_in_contours`):** Sweeps over $\mathcal{B}(c, R_{\text{upm}})$ to eliminate near-duplicate nodes, self-intersecting micro-loops with $|A(\gamma_{\text{loop}})| < \text{max\_loop\_area\_upm2}$, and collinear or hairpin-spike redundancies inside one atomic `"Clean Contour"` Undo step.
+
+### 9.4 Scanline Optical Inter-Shape Rhythm Quadrature & Clean 1-Axis Live Mirror (`compute_pair_optical_whitespace`, `ActiveMirrorAxis`)
+
+Mechanical sidebearings measure only the single closest bounding-box extremum, ignoring how convex bowls (`'O'`) recede away from the sidebearing while flat stems (`'H'`) occupy the full vertical height. `compute_pair_optical_whitespace` casts $N$ italic-sheared horizontal scanlines $y_k \in [y_{\min}, y_{\max}]$ across adjacent shapes $(G_L, G_R)$, clamps deep open counters (such as `'L'`, `'T'`, `'c'`) to `max_cavity_depth_upm` ($d_{\max}$):
+
+$$x_{L,\text{exit}}(y) = \max\!\big(x_{L,\text{raw}}(y),\; X_{\max}^{(L)} - d_{\max}\big), \qquad x_{R,\text{entry}}(y) = \min\!\big(x_{R,\text{raw}}(y),\; X_{\min}^{(R)} + d_{\max}\big)$$
+
+and integrates the bounded inter-contour optical channel volume via trapezoidal quadrature:
+
+$$V_{\text{opt}} = \int_{y_{\min}}^{y_{\max}} \max\!\big(0,\; x_{R,\text{entry}}(y) - x_{L,\text{exit}}(y)\big)\,dy$$
+
+while reporting the exact mechanical collision distance `min_clearance_upm` and `scanline_spans` for Pass-1 translucent "water-volume" rhythm overlays (`set_show_optical_rhythm_fill`). Combined with `ActiveMirrorAxis::{ Vertical, Horizontal }` (`reflect_contour_across_mirror_axis`, `add_contour_with_active_mirror`), live drawing strokes automatically emit winding-corrected symmetric contours in a single Undo step.

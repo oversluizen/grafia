@@ -296,7 +296,8 @@ impl GrafiaCanvasState {
 
     /// Emits `CanvasHostRequest::ResetDefaultAnchors` for the active glyph (`Cmd+U`).
     pub fn reset_default_anchors(&mut self) {
-        self.host_requests
+        self.drag_transients
+            .host_requests
             .push(CanvasHostRequest::ResetDefaultAnchors {
                 glyph_name: self.glyph.name.clone(),
             });

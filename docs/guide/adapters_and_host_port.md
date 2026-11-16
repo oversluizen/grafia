@@ -45,3 +45,35 @@ When a user edits a numeric field in your host application's inspector panel, si
 ## 3. 1:1 Headless Offscreen Verification (`headless`)
 
 GUI canvases are notoriously difficult to test in CI without a GPU display server. `grafia::adapters::headless` (`rasterize_canvas_subregion` and `pixmap_to_rgba_image`) renders the exact same 5-pass scene geometry into an in-memory `tiny_skia::Pixmap` RGBA buffer, enabling deterministic pixel-diff and Structural Similarity (`SSIM`) regression tests on headless Linux/Windows/macOS runners.
+
+---
+
+## 4. Universal Hardware & Controller Ports (`SPEC-015` — "Stekkers")
+
+See the complete [Universal Hardware & Controller Ports Developer Guide](https://github.com/oversluizen/grafia/blob/main/docs/guide/hardware_and_controller_ports.md) for architecture diagrams and copy-paste integration recipes connecting `egui-macview` radial `PieMenu` HUDs, **Loupedeck CT** rotary dials & LCD keys, **Wacom Intuos 4** Touch Rings & 128×64 OLEDs, and **Apple Pencil Pro / iPadOS / Android / macOS Haptic Engines** to [`crate::GrafiaCanvasState`]:
+
+```rust
+use grafia::{
+    CanvasIntent, CanvasRotaryChannel, GrafiaCanvasState, InputDeviceKind,
+};
+
+let mut state = GrafiaCanvasState::init_glyph_o();
+
+// 1. Semantic Intent Port (replaces raw keyboard modifier coupling):
+state.set_intent_latched(CanvasIntent::ConstrainAngle, true);
+assert!(state.is_intent_latched(CanvasIntent::ConstrainAngle));
+
+// 2. Universal Rotary Encoder Port (Loupedeck CT / Wacom Touch Ring / On-Screen Dial):
+state.step_rotary_encoder(CanvasRotaryChannel::ViewportZoom, 2.0);
+
+// 3. Display Telemetry Port (Wacom OLEDs / Loupedeck LCDs / egui-macview PieMenu):
+let telemetry = state.controller_telemetry();
+assert!(!telemetry.available_intents.is_empty());
+
+// 4. Semantic Haptic Feedback Port (Taptic Engine / Pencil Pro / Trackpad):
+let haptics = state.drain_haptic_events();
+assert!(!haptics.is_empty());
+
+// 5. Stylus & Touch Precision Port (1.6x touch hit-radius inflation & edge-flipping loupe):
+state.set_active_input_device(InputDeviceKind::TouchFinger);
+```

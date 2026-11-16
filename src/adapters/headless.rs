@@ -67,6 +67,8 @@ fn render_metrics_box(pixmap: &mut Pixmap, state: &GrafiaCanvasState, theme: &Gr
     crate::render::render_canvas_grid_tiny_skia(pixmap, state);
     crate::render::paint_custom_reference_frame_pixmap_pass(pixmap, state, theme);
     crate::render::paint_pixel_preview_and_ghost_pixmap_pass(pixmap, state, theme);
+    crate::render::render_overshoot_ribbons_tiny_skia(pixmap, state);
+    crate::render::render_optical_rhythm_fill_tiny_skia(pixmap, state);
     if !state.show_metrics || (state.contours.is_empty() && state.glyph.width <= 0.0) {
         return;
     }
@@ -233,6 +235,14 @@ fn render_canvas_passes(
             render_metrics_box(pixmap, state, theme);
             crate::render::render_background_image_tiny_skia(pixmap, state, theme);
             crate::render::paint_color_layers_pixmap_pass(pixmap, state);
+            crate::render::render_measurement_rainbow_tiny_skia(pixmap, state);
+            let quick_preview =
+                state.curve_harmony.quick_preview_on_drag && state.is_interactive_drag_active();
+            if quick_preview {
+                render_preview_silhouette(pixmap, state, theme);
+                crate::render::render_text_strip_overlays_tiny_skia(pixmap, state);
+                return;
+            }
             if !(state.active_tool == CanvasTool::Text && !state.text_stream.slots.is_empty()) {
                 if state.preferences.fill_active_glyph_while_editing {
                     crate::render::render_edit_active_fill_tiny_skia(pixmap, state, theme);

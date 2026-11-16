@@ -283,7 +283,8 @@ impl GrafiaCanvasState {
         let extras = self.compute_active_extra_nodes();
         let key = hit_test_extra_nodes(&extras, &vp, scr_pt)?;
         self.selected_extra_node = Some(key);
-        self.host_requests
+        self.drag_transients
+            .host_requests
             .push(CanvasHostRequest::SelectOrMutateExtraNode { key });
         Some(key)
     }

@@ -336,7 +336,8 @@ impl GrafiaCanvasState {
         if count == 0 {
             return 0;
         }
-        self.host_requests
+        self.drag_transients
+            .host_requests
             .push(CanvasHostRequest::EditTextStream(TextStreamEditRequest {
                 caret_index: self.text_stream.caret_index,
                 selection_range: self.text_stream.selection_range,

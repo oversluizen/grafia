@@ -8,7 +8,6 @@
     clippy::iter_over_hash_type
 )]
 #![allow(unexpected_cfgs)]
-#![cfg(feature = "v0110_red")]
 //! Normative COTS Verification Suite for `SPEC-012` (`grafia v0.11.0`):
 //! Non-Destructive Smart Corners (`radius_upm > 0.0`), Ink Traps (`radius_upm < 0.0`),
 //! Pressure & Tilt Calligraphic Brush, Live Curvature Comb & Heatmap Envelope / Inflection Markers,
@@ -84,7 +83,7 @@ fn make_quarter_circle_contour(id: usize) -> GlyphContour {
 
 fn set_layer_contours(state: &mut GrafiaCanvasState, contours: Vec<GlyphContour>) {
     state.contours = contours.iter().map(|c| c.nodes.clone()).collect();
-    state.active_contour_closed = contours.last().map_or(true, |c| c.closed);
+    state.active_contour_closed = contours.last().is_none_or(|c| c.closed);
     state.glyph.contours = contours;
     state.sync_paths_from_contours();
 }
@@ -148,6 +147,28 @@ fn tc_v0110_003_and_004_ink_trap_notch_and_bake_smart_corners_with_undo() {
     assert_eq!(state.glyph.contours[0].nodes.len(), 4);
     assert_eq!(state.smart_corners.len(), 2);
     assert!(state.redo() && state.snapshot() == snap_after_bake);
+    state.validate_invariants().unwrap();
+
+    // Corner flanked by a zero-length retracted OffCurve handle should still fillet cleanly.
+    let retracted_cubic_square = GlyphContour::new(
+        ContourId(0),
+        vec![
+            Node::new(NodeId(50), 0.0, 0.0, NodeType::Corner),
+            Node::new(NodeId(51), 0.0, 0.0, NodeType::OffCurve),
+            Node::new(NodeId(52), 140.0, 0.0, NodeType::OffCurve),
+            Node::new(NodeId(53), 200.0, 0.0, NodeType::Corner),
+            Node::new(NodeId(54), 200.0, 200.0, NodeType::Corner),
+            Node::new(NodeId(55), 0.0, 200.0, NodeType::Corner),
+        ],
+    );
+    set_layer_contours(&mut state, vec![retracted_cubic_square]);
+    state.set_smart_corner(SmartCornerSpec {
+        node_id: NodeId(50),
+        radius_upm: 20.0,
+    });
+    let retracted_prev = state.compute_smart_corner_preview_contours();
+    assert!(retracted_prev[0].nodes.len() > 6);
+    state.bake_smart_corners();
     state.validate_invariants().unwrap();
 }
 
@@ -230,6 +251,37 @@ fn tc_v0110_005_to_007_calligraphic_brush_pressure_tilt_and_undo() {
     assert!(
         state.undo() && state.snapshot() == snap_0 && state.redo() && state.snapshot() == snap_1
     );
+
+    // Curved calligraphic stroke must fit non-collinear Catmull-Rom OffCurve handles along the curve tangent!
+    let curved_samples = vec![
+        CalligraphicSample {
+            pos: FontPoint::new(0.0, 0.0),
+            pressure: 0.5,
+            tilt_x: 0.0,
+            tilt_y: 0.0,
+        },
+        CalligraphicSample {
+            pos: FontPoint::new(100.0, 120.0),
+            pressure: 0.5,
+            tilt_x: 0.0,
+            tilt_y: 0.0,
+        },
+        CalligraphicSample {
+            pos: FontPoint::new(200.0, 0.0),
+            pressure: 0.5,
+            tilt_x: 0.0,
+            tilt_y: 0.0,
+        },
+    ];
+    let c_arc = fit_calligraphic_brush_stroke(nib, &curved_samples).expect("curved stroke");
+    // At the middle Smooth node on the left rail (index 3), its outgoing OffCurve handle (index 4) must be horizontal (dy ≈ 0), not collinear with the chord to rail[2]!
+    assert_eq!(c_arc.nodes[3].node_type, NodeType::Smooth);
+    assert_eq!(c_arc.nodes[4].node_type, NodeType::OffCurve);
+    assert!(
+        (c_arc.nodes[4].point.y.0 - c_arc.nodes[3].point.y.0).abs() < 5.0,
+        "Catmull-Rom tangent handle at arch peak must be horizontal rather than polygonal chord, got {:?}",
+        c_arc.nodes[4].point
+    );
 }
 
 // TC-V0110-008, TC-V0110-009, TC-V0110-010 & TC-V0110-013: Curvature Comb spines, Heatmap Envelope, inflection markers & rendering.
@@ -309,6 +361,24 @@ fn tc_v0110_008_to_010_and_013_curvature_comb_heatmap_inflections_and_rendering(
     state.set_appearance_mode(AppearanceMode::Dark);
     let dark_px = rasterize_canvas_subregion(&state, &GrafiaTheme::sonoma_dark(), 320, 180);
     assert_ne!(light_px.data(), dark_px.data());
+
+    // HeatmapEnvelope must render filled intensity-modulated quad meshes in egui::Painter and tiny-skia
+    state.set_appearance_mode(AppearanceMode::Light);
+    let ctx_hm = egui::Context::default();
+    let theme_hm = GrafiaTheme::sonoma_default();
+    let mut out_hm = ctx_hm.run_ui(egui::RawInput::default(), |ui| {
+        let _ = grafia::GrafiaCanvasWidget::new(&mut state, &theme_hm).show(ui);
+    });
+    out_hm.textures_delta.clear();
+    let hm_mesh_count = out_hm
+        .shapes
+        .iter()
+        .filter(|cs| matches!(&cs.shape, egui::Shape::Mesh(_)))
+        .count();
+    assert!(
+        hm_mesh_count > 4,
+        "CurvatureCombStyle::HeatmapEnvelope must render intensity-modulated filled quad meshes, got {hm_mesh_count}"
+    );
 }
 
 // TC-V0110-014, TC-V0110-015 & TC-V0110-016: Orthogonal Stem Gauge, Green's Theorem Counter Balance & Superellipse / Symmetry Overlay.
@@ -364,6 +434,41 @@ fn tc_v0110_014_to_016_stem_gauge_counter_balance_superellipse_and_symmetry() {
     assert_relative_eq!(bal.total_counter_area_upm2, 15_000.0, epsilon = 1.0);
     assert_relative_eq!(bal.black_to_white_ratio, 3.0, epsilon = 1e-3);
     assert_relative_eq!(bal.overall_centroid.x.0, 100.0, epsilon = 1e-2);
+    let m_from_counter = state
+        .measure_orthogonal_stem_thickness(1, 0, 0.5)
+        .expect("stem from inner counter left wall");
+    assert_relative_eq!(m_from_counter.thickness_upm, 50.0, epsilon = 1e-2);
+    assert_relative_eq!(m_from_counter.p_exit.x.0, 0.0, epsilon = 1e-2);
+
+    // Visual Centroid crosshair ⊕ and Live Orthogonal Stem Thickness Gauge rendering under hovered_segment_hit
+    let theme_sg = GrafiaTheme::sonoma_default();
+    state.fit_viewport_to_glyph(320.0, 240.0);
+    let px_base = rasterize_canvas_subregion(&state, &theme_sg, 320, 240);
+    state.set_show_visual_centroid(true);
+    let px_centroid = rasterize_canvas_subregion(&state, &theme_sg, 320, 240);
+    assert_ne!(
+        px_base.data(),
+        px_centroid.data(),
+        "set_show_visual_centroid(true) must render the CounterBalanceReport::overall_centroid crosshair ⊕"
+    );
+
+    let segs_0 = grafia::extract_segments(&state.contours[0], true);
+    state.hovered_segment_hit = Some(grafia::SegmentHit {
+        contour_idx: 0,
+        segment: segs_0[3],
+        t: 0.5,
+        point: FontPoint::new(0.0, 150.0),
+        distance_font: 0.0,
+    });
+    state.set_show_stem_gauge(true);
+    let px_gauge = rasterize_canvas_subregion(&state, &theme_sg, 320, 240);
+    assert_ne!(
+        px_centroid.data(),
+        px_gauge.data(),
+        "set_show_stem_gauge(true) must render the Live Orthogonal Stem Thickness Gauge under hovered_segment_hit"
+    );
+    state.set_show_stem_gauge(false);
+    state.set_show_visual_centroid(false);
 
     // TC-V0110-016: Superellipse / Squircle generator & Optical Symmetry Ghost Overlay.
     let ell = build_superellipse_contour_nodes(

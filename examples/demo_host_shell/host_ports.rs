@@ -27,6 +27,9 @@ impl MockFontHost {
                 kd.left_glyph, kd.right_glyph, kd.delta_upm, kd.new_kern_upm
             ));
         }
+        for hap in state.drain_haptic_events() {
+            self.push_log(format!("HapticPort: {hap:?}"));
+        }
     }
 
     fn handle_canvas_host_request(
@@ -94,6 +97,16 @@ impl MockFontHost {
                 self.push_log(format!(
                     "HostPort: HoiLayerNode(L{layer_index}:C{contour_index}:{node_id:?} -> {:.1},{:.1})",
                     new_pos.x.0, new_pos.y.0
+                ));
+            }
+            CanvasHostRequest::PropagateStemDelta {
+                orientation,
+                old_width_upm,
+                new_width_upm,
+                angle_delta_deg,
+            } => {
+                self.push_log(format!(
+                    "HostPort: PropagateStemDelta({orientation:?}: {old_width_upm:.1} -> {new_width_upm:.1}, dAngle={angle_delta_deg:+.1}°)"
                 ));
             }
         }

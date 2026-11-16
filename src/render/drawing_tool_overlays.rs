@@ -78,6 +78,10 @@ pub fn paint_drawing_tool_overlays_egui(painter: &Painter, state: &GrafiaCanvasS
             painter.circle_filled(p, PENCIL_SAMPLE_DOT_RADIUS_DP, col);
         }
     }
+    paint_pixel_and_brush_preview_egui(painter, state);
+}
+
+fn paint_pixel_and_brush_preview_egui(painter: &Painter, state: &GrafiaCanvasState) {
     if state.active_tool == CanvasTool::Pixel {
         if let Some(scr) = state.last_pointer_screen_pos {
             let step = state.effective_pixel_step_upm();
@@ -96,6 +100,18 @@ pub fn paint_drawing_tool_overlays_egui(painter: &Painter, state: &GrafiaCanvasS
                     state.theme.pixel_preview_stroke_color32(),
                 ),
                 egui::StrokeKind::Middle,
+            );
+        }
+    }
+    if matches!(state.active_tool, CanvasTool::Trowel | CanvasTool::Cleaner) {
+        if let Some(scr) = state.cursor_screen_pos.or(state.last_pointer_screen_pos) {
+            painter.circle_stroke(
+                Pos2::new(scr.x.0, scr.y.0),
+                state.effective_brush_radius_dp(),
+                Stroke::new(
+                    PRIMITIVE_PREVIEW_STROKE_WIDTH_DP,
+                    state.theme.primitive_preview_stroke_color32(),
+                ),
             );
         }
     }

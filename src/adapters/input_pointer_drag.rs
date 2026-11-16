@@ -148,6 +148,14 @@ impl<'a> InputDispatcher<'a> {
                 );
                 true
             }
+            SelectToolState::DraggingTunniLine {
+                contour_id,
+                segment_index,
+            } => {
+                self.state
+                    .update_active_tunni_drag(contour_id, segment_index, font_pt);
+                true
+            }
             SelectToolState::PanningViewport { .. } | SelectToolState::Idle => false,
         }
     }
@@ -326,7 +334,9 @@ impl<'a> InputDispatcher<'a> {
         }
         if matches!(
             self.state.select_state,
-            SelectToolState::DraggingNodes { .. } | SelectToolState::DraggingSegment { .. }
+            SelectToolState::DraggingNodes { .. }
+                | SelectToolState::DraggingSegment { .. }
+                | SelectToolState::DraggingTunniLine { .. }
         ) {
             if matches!(
                 self.state.select_state,
@@ -338,6 +348,7 @@ impl<'a> InputDispatcher<'a> {
             }
             self.state.select_state = SelectToolState::Idle;
             self.state.active_snappers.clear();
+            self.state.curve_harmony.active_tangent_snap = None;
             let before_opt = self
                 .state
                 .drag_transients
@@ -371,7 +382,9 @@ impl<'a> InputDispatcher<'a> {
             .active_open_contour
             .is_some_and(|c| self.state.is_contour_closed(c))
         {
-            self.state.active_open_contour = None;
+            if let Some(c_idx) = self.state.active_open_contour.take() {
+                self.state.try_reflect_contour_at_index(c_idx);
+            }
         }
         if let Some(before) = self
             .state

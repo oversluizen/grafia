@@ -33,7 +33,7 @@ impl GrafiaCanvasState {
         self.postscript_hints.push(hint.clone());
         self.glyph.postscript_hints = self.postscript_hints.clone();
         let req = CanvasHostRequest::MutatePostScriptHint(PostScriptHintMutation::Add(hint));
-        self.host_requests.push(req);
+        self.drag_transients.host_requests.push(req);
         self.record_mutation("Add PostScript Hint", before);
         self.assert_invariants();
     }
@@ -88,7 +88,7 @@ impl GrafiaCanvasState {
         self.glyph.postscript_hints = self.postscript_hints.clone();
         let req =
             CanvasHostRequest::MutatePostScriptHint(PostScriptHintMutation::Delete { hint_id });
-        self.host_requests.push(req);
+        self.drag_transients.host_requests.push(req);
         self.record_mutation("Delete PostScript Hint", before);
         self.assert_invariants();
         true
@@ -122,7 +122,8 @@ impl GrafiaCanvasState {
             width_upm,
             top_ghost,
         };
-        self.host_requests
+        self.drag_transients
+            .host_requests
             .push(CanvasHostRequest::MutatePostScriptHint(m));
         self.record_mutation("Change PostScript Hint", before);
         self.assert_invariants();
@@ -175,7 +176,7 @@ impl GrafiaCanvasState {
         let req = CanvasHostRequest::MutateTrueTypeInstruction(TrueTypeInstructionMutation::Add(
             instruction,
         ));
-        self.host_requests.push(req);
+        self.drag_transients.host_requests.push(req);
         self.record_mutation("Add TrueType Instruction", before);
         self.assert_invariants();
     }
@@ -303,7 +304,7 @@ impl GrafiaCanvasState {
             let req = CanvasHostRequest::MutateTrueTypeInstruction(
                 TrueTypeInstructionMutation::Update(ins.clone()),
             );
-            self.host_requests.push(req);
+            self.drag_transients.host_requests.push(req);
         }
         self.glyph.truetype_instructions = self.truetype_instructions.clone();
         self.record_mutation("Change TrueType Instruction", before);
@@ -380,7 +381,7 @@ impl GrafiaCanvasState {
             node_id,
             new_pos,
         };
-        self.host_requests.push(req);
+        self.drag_transients.host_requests.push(req);
         self.record_mutation("Change HOI Layer Node", before);
         self.assert_invariants();
         true

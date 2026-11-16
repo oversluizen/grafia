@@ -1,6 +1,6 @@
 [package]
 name = "grafia"
-version = "0.9.0"
+version = "0.12.0"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 authors = ["Jaco Oversluizen", "grafia contributors"]
@@ -10,7 +10,7 @@ documentation = "https://docs.rs/grafia"
 readme = "README.md"
 keywords = ["egui", "bezier", "glyph", "font-editor", "vector-canvas"]
 categories = ["gui", "graphics", "rendering::data-formats", "mathematics"]
-exclude = ["SPEC-*.md", "docs/assets/**", "tests/**"]
+exclude = ["SPEC-*.md", "docs/assets/**", "tests/**", "dist/**", "index.html", ".cargo/**"]
 autotests = false
 autoexamples = false
 
@@ -28,13 +28,22 @@ tiny-skia = "0.11"
 image = { version = "0.25", default-features = false, features = ["png", "gif"] }
 
 [dev-dependencies]
+egui-macview = "0.6.11"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 approx = "0.5"
 arbtest = "0.3"
 rstest = "0.24"
 image = "0.25"
 proptest = "1.6"
 eframe = { version = "0.37.0", features = ["glow", "wgpu"] }
-egui-macview = "0.6.11"
+
+[target.'cfg(target_arch = "wasm32")'.dev-dependencies]
+eframe = { version = "0.37.0", default-features = false, features = ["glow", "default_fonts"] }
+getrandom = { version = "0.4", features = ["wasm_js"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+web-sys = { version = "0.3", features = ["Document", "Element", "HtmlCanvasElement", "Window"] }
 
 [[test]]
 name = "architecture_guard_tests"
@@ -151,6 +160,18 @@ path = "tests/v091_senior_maturity_tests.rs"
 [[test]]
 name = "reference_oracle_differential_tests"
 path = "tests/reference_oracle_differential_tests.rs"
+
+[[test]]
+name = "v0100_complete_tests"
+path = "tests/v0100_complete_tests.rs"
+
+[[test]]
+name = "v0110_complete_tests"
+path = "tests/v0110_complete_tests.rs"
+
+[[test]]
+name = "v0120_complete_tests"
+path = "tests/v0120_complete_tests.rs"
 
 [[example]]
 name = "vector_canvas_demo"

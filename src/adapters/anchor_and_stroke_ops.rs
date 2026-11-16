@@ -39,6 +39,14 @@ impl GrafiaCanvasState {
             }
         }
         if found {
+            let closed_flags = self.closed_flags();
+            crate::core::enforce_genius_or_g3_on_handle_move(
+                &mut self.contours,
+                &closed_flags,
+                node_id,
+                &self.curve_harmony.genius_nodes,
+                &self.curve_harmony.g3_nodes,
+            );
             self.sync_paths_from_contours();
             self.record_mutation("Translate Node", before);
             self.assert_invariants();
@@ -233,7 +241,8 @@ impl GrafiaCanvasState {
             .rev()
             .find(|c| hit_test_component_upm(c, pt))
         {
-            self.host_requests
+            self.drag_transients
+                .host_requests
                 .push(CanvasHostRequest::OpenComponentSource {
                     id: comp.id,
                     component_name: comp.component_name.clone(),
@@ -281,7 +290,7 @@ impl GrafiaCanvasState {
 
     /// Drains all pending `CanvasHostRequest` events (`SPEC-008 §2.3.2`).
     pub fn drain_host_requests(&mut self) -> Vec<CanvasHostRequest> {
-        std::mem::take(&mut self.host_requests)
+        std::mem::take(&mut self.drag_transients.host_requests)
     }
 
     /// Applies column `col` (`0..=7`) of the 8-step Fit Curve ladder (`Ctrl+Opt+1..8`, `SPEC-008 §2.4.2`).

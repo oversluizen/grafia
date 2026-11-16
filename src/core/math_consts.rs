@@ -350,3 +350,7 @@ pub const HOI_GAP_LEN_DP: f32 = 3.0;
 pub const PIXEL_PREVIEW_MAX_CELLS_PER_AXIS: i32 = 96;
 pub const PIXEL_PREVIEW_SAMPLE_OFFSET: f64 = 0.5;
 pub const MAX_INTERACTIVE_DRAG_PIXMAP_DIM: u32 = 512;
+
+#[path = "math_consts_cagd.rs"]
+mod cagd;
+pub use cagd::*;

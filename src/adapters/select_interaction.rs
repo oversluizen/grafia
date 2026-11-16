@@ -1,6 +1,8 @@
 //! Select tool (`V` / `SelectTool`) interaction handlers for `GrafiaCanvasState` (`SPEC-002 §3`).
 
-pub use crate::adapters::select_drag_ops::duplicate_selected_contours_for_alt_drag;
+pub use crate::adapters::select_drag_ops::{
+    apply_segment_click_selection, duplicate_selected_contours_for_alt_drag,
+};
 use crate::adapters::state::GrafiaCanvasState;
 use crate::core::{
     convert_line_segment_to_cubic_with_grid, hit_test_segments, ContourSegment, FontPoint, NodeId,
@@ -36,7 +38,9 @@ pub fn handle_select_press(
         return true;
     }
 
-    if is_double && handle_select_double_click(state, scr_pt, font_pt, is_shift) {
+    if (is_double && handle_select_double_click(state, scr_pt, font_pt, is_shift))
+        || state.try_begin_tunni_press(font_pt, false)
+    {
         return true;
     }
 
@@ -62,11 +66,9 @@ pub fn handle_select_press(
         return true;
     }
 
-    if handle_select_segment_hit(state, scr_pt, font_pt, mods, before) {
-        return true;
-    }
-
-    if state.try_select_anchor_or_component_on_press(font_pt, is_shift) {
+    if handle_select_segment_hit(state, scr_pt, font_pt, mods, before)
+        || state.try_select_anchor_or_component_on_press(font_pt, is_shift)
+    {
         return true;
     }
 
@@ -108,15 +110,17 @@ fn handle_select_double_click(
     is_shift: bool,
 ) -> bool {
     let hit_node = state.hit_test_node(scr_pt);
-    if let Some(node_id) = hit_node {
-        if state
-            .find_node(node_id)
+    if let Some(node_id) = hit_node.filter(|&id| {
+        state
+            .find_node(id)
             .is_some_and(|n| n.node_type != NodeType::OffCurve)
-        {
-            state.toggle_node_smooth_corner(node_id);
-            state.drag_transients.active_drag_before_snapshot = None;
-            return true;
-        }
+    }) {
+        state.toggle_node_smooth_corner(node_id);
+        state.drag_transients.active_drag_before_snapshot = None;
+        return true;
+    }
+    if state.try_begin_tunni_press(font_pt, true) {
+        return true;
     }
     let tol_font = (DOUBLE_CLICK_MAX_DIST_DP as f64) / (state.viewport.zoom as f64);
     let closed_flags = state.closed_flags();
@@ -149,8 +153,10 @@ fn handle_select_double_click(
         } else {
             state.selected_nodes = contour_ids;
         }
-        state.select_state = SelectToolState::Idle;
-        state.drag_transients.active_drag_before_snapshot = None;
+        (
+            state.select_state,
+            state.drag_transients.active_drag_before_snapshot,
+        ) = (SelectToolState::Idle, None);
         return true;
     }
     if state.double_click_component_at_upm(font_pt) {
@@ -367,49 +373,4 @@ fn update_slanted_marquee_selection(
         return true;
     }
     false
-}
-
-pub fn apply_segment_click_selection(
-    state: &mut GrafiaCanvasState,
-    c_idx: usize,
-    seg: ContourSegment,
-    mods: Modifiers,
-) {
-    let Some(contour) = state.contours.get(c_idx) else {
-        return;
-    };
-    let target_ids: Vec<NodeId> = match seg {
-        ContourSegment::Line {
-            start_idx, end_idx, ..
-        } => vec![contour[start_idx].id, contour[end_idx].id],
-        ContourSegment::Cubic {
-            start_idx,
-            h1_idx,
-            h2_idx,
-            end_idx,
-            ..
-        } => {
-            vec![
-                contour[start_idx].id,
-                contour[h1_idx].id,
-                contour[h2_idx].id,
-                contour[end_idx].id,
-            ]
-        }
-    };
-    if mods.shift {
-        let mut sel = state.drag_transients.marquee_pre_selection.clone();
-        if target_ids.iter().all(|id| sel.contains(id)) {
-            sel.retain(|id| !target_ids.contains(id));
-        } else {
-            for id in target_ids {
-                if !sel.contains(&id) {
-                    sel.push(id);
-                }
-            }
-        }
-        state.selected_nodes = sel;
-    } else {
-        state.selected_nodes = target_ids;
-    }
 }

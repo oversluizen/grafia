@@ -128,6 +128,17 @@ impl GrafiaCanvasState {
         if tool == CanvasTool::Text && self.active_tool != CanvasTool::Text {
             self.text_transients.last_select_tool = self.active_tool;
         }
+        if matches!(
+            tool,
+            CanvasTool::Pen
+                | CanvasTool::Pencil
+                | CanvasTool::Pixel
+                | CanvasTool::Primitives
+                | CanvasTool::Trowel
+                | CanvasTool::Cleaner
+        ) {
+            self.drawing_tool_state.controller_ports.last_drawing_tool = tool;
+        }
         let was_transform = matches!(self.active_tool, CanvasTool::Rotate | CanvasTool::Scale);
         let is_transform = matches!(tool, CanvasTool::Rotate | CanvasTool::Scale);
         self.active_tool = tool;

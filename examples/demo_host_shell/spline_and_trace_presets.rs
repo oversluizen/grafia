@@ -97,4 +97,99 @@ impl MockFontHost {
             ));
         }
     }
+
+    pub fn render_tablet_and_harmony_bar(ui: &mut egui::Ui, state: &mut GrafiaCanvasState) {
+        ui.horizontal_wrapped(|ui| {
+            ui.strong("Tablet & Harmony:");
+            let ts = &mut state.drag_transients.touch_state;
+            if ui
+                .selectable_label(ts.touch_shift_latched, "[Shift]")
+                .clicked()
+            {
+                ts.touch_shift_latched = !ts.touch_shift_latched;
+            }
+            if ui
+                .selectable_label(ts.touch_alt_latched, "[Alt/Opt]")
+                .clicked()
+            {
+                ts.touch_alt_latched = !ts.touch_alt_latched;
+            }
+            if ui
+                .selectable_label(ts.touch_cmd_latched, "[Cmd/Ctrl]")
+                .clicked()
+            {
+                ts.touch_cmd_latched = !ts.touch_cmd_latched;
+            }
+            if ui
+                .selectable_label(ts.touch_space_pan_latched, "[Pan (Space)]")
+                .clicked()
+            {
+                ts.touch_space_pan_latched = !ts.touch_space_pan_latched;
+            }
+            let loupe_on = state.preferences.show_touch_precision_loupe;
+            if ui.selectable_label(loupe_on, "[Touch Loupe]").clicked() {
+                let mut prefs = state.preferences.clone();
+                prefs.show_touch_precision_loupe = !loupe_on;
+                prefs.touch_finger_offset_dp = if prefs.show_touch_precision_loupe {
+                    44.0
+                } else {
+                    0.0
+                };
+                state.apply_preferences(&prefs);
+            }
+            ui.separator();
+            if ui
+                .selectable_label(state.show_tunni_lines, "[Tunni Lines]")
+                .clicked()
+            {
+                state.toggle_show_tunni_lines();
+            }
+            if ui
+                .selectable_label(state.curve_harmony.show_curvature_comb, "[Curvature Comb]")
+                .clicked()
+            {
+                state.toggle_show_curvature_comb();
+            }
+            if ui
+                .selectable_label(state.curve_harmony.show_outline_audit, "[Audit Red Arrows]")
+                .clicked()
+            {
+                state.curve_harmony.show_outline_audit = !state.curve_harmony.show_outline_audit;
+            }
+            if ui.button("[Harmonize G2]").clicked() {
+                state.harmonize_selected_nodes();
+            }
+            if ui.button("[Harmonize G3]").clicked() {
+                state.harmonize_selected_nodes_g3();
+            }
+            if ui
+                .selectable_label(state.power_nudge_enabled, "[Power Nudge (C)]")
+                .clicked()
+            {
+                state.toggle_power_nudge();
+            }
+            if ui.button("[Auto-Match Master]").clicked() {
+                let _ = state.auto_match_master_compatibility(1);
+            }
+        });
+    }
+
+    pub fn render_status_bar_contents(ui: &mut egui::Ui, state: &GrafiaCanvasState) {
+        ui.horizontal(|ui| {
+            let tool_str = super::toolbar_specs::TOOL_ICON_SPECS
+                .iter()
+                .find(|(t, _, _)| *t == state.active_tool)
+                .map_or("", |(_, _, tip)| *tip);
+            ui.label(tool_str);
+            ui.add(egui::Separator::default().vertical());
+            let total_nodes: usize = state.contours.iter().map(Vec::len).sum();
+            ui.label(format!(
+                "Contours: {} | Nodes: {total_nodes} (Selected: {}) | Anchors: {} | Components: {}",
+                state.contours.len(),
+                state.selected_nodes.len(),
+                state.anchors.len(),
+                state.components.len()
+            ));
+        });
+    }
 }

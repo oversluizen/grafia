@@ -5,10 +5,13 @@ use crate::adapters::contour_join::{
     alloc_off_curve, join_open_contours_in_pen, lerp_one_third, sync_pen_drag_handles_into_contour,
 };
 pub use crate::adapters::cursor_overlay::find_open_contour_close_or_resume_target;
-use crate::adapters::state::{CanvasTool, GrafiaCanvasState};
+use crate::adapters::smart_corners_and_stem_ops::{
+    other_open_contour, snap_extremum_if_shift, update_pen_idle_hover,
+};
+use crate::adapters::state::GrafiaCanvasState;
 use crate::core::{
-    find_nearest_cubic_extremum, hit_test_segments, snap_vector_45_degrees, split_contour_segment,
-    ContourSegment, FontPoint, Node, NodeId, NodeType, ScreenPoint,
+    hit_test_segments, snap_vector_45_degrees, split_contour_segment, FontPoint, Node, NodeId,
+    NodeType, ScreenPoint,
 };
 use crate::interaction::PenToolState;
 use crate::tokens::DRAG_THRESHOLD_DP;
@@ -22,16 +25,6 @@ impl GrafiaCanvasState {
     #[must_use]
     pub fn pen_hover_node_hit(&self, screen_pt: ScreenPoint) -> Option<NodeId> {
         self.hit_test_pen_node(screen_pt)
-    }
-}
-
-fn snap_extremum_if_shift(hit: &mut crate::core::SegmentHit, is_shift: bool) {
-    if is_shift {
-        if let ContourSegment::Cubic { cubic, .. } = hit.segment {
-            let (ext_t, ext_pt) = find_nearest_cubic_extremum(cubic, hit.t);
-            hit.t = ext_t;
-            hit.point = ext_pt;
-        }
     }
 }
 
@@ -101,15 +94,6 @@ pub fn handle_pen_press(
     append_new_pen_anchor_node(state, font_pt)
 }
 
-fn other_open_contour(state: &GrafiaCanvasState, c_idx: usize) -> Option<usize> {
-    state.active_open_contour.filter(|&a| {
-        a != c_idx
-            && a < state.contours.len()
-            && !state.is_contour_closed(a)
-            && !state.contours[a].is_empty()
-    })
-}
-
 fn offset_pt(pt: FontPoint, d: (f64, f64)) -> FontPoint {
     FontPoint::new(pt.x.0 + d.0, pt.y.0 + d.1)
 }
@@ -148,6 +132,10 @@ fn handle_pen_close_or_resume_press(
             state.contours[c_idx][0].node_type = NodeType::Corner;
         }
         state.set_contour_closed(c_idx, true);
+        state
+            .drawing_tool_state
+            .controller_ports
+            .push_haptic(crate::core::CanvasHapticEvent::ContourClosed);
         state.pen_transients.alt_frozen_bcp_in = opt_first_in.or(Some(target_node.point));
     } else {
         if opt_prev_out.is_none() {
@@ -385,37 +373,4 @@ fn handle_pen_handle_drag(
     state.pen_transients.drag_last_pt = Some(font_pt);
     state.sync_paths_from_contours();
     true
-}
-
-fn update_pen_idle_hover(
-    state: &mut GrafiaCanvasState,
-    scr_pt: ScreenPoint,
-    font_pt: FontPoint,
-    is_shift: bool,
-    canvas_rect: egui::Rect,
-) {
-    state.hovered_pen_close_target = None;
-    state.hovered_segment_hit = None;
-    if state.active_tool == CanvasTool::Pen
-        && state.select_state == crate::interaction::SelectToolState::Idle
-        && canvas_rect.contains(egui::pos2(scr_pt.x.0, scr_pt.y.0))
-    {
-        let close_or_join_hit = find_open_contour_close_or_resume_target(state, scr_pt).filter(
-            |&(c_idx, _, is_closing_start)| {
-                is_closing_start || other_open_contour(state, c_idx).is_some()
-            },
-        );
-        if let Some((c_idx, target_node, _)) = close_or_join_hit {
-            state.hovered_pen_close_target = Some((c_idx, target_node.id));
-        } else if state.hit_test_pen_node(scr_pt).is_none() {
-            let tol_font = f64::from(state.effective_segment_hit_tolerance_dp())
-                / f64::from(state.viewport.zoom);
-            let closed_flags = state.closed_flags();
-            let mut hit_opt = hit_test_segments(&state.contours, &closed_flags, font_pt, tol_font);
-            if let Some(ref mut hit) = hit_opt {
-                snap_extremum_if_shift(hit, is_shift);
-            }
-            state.hovered_segment_hit = hit_opt;
-        }
-    }
 }

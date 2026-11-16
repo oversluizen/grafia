@@ -253,8 +253,7 @@ fn find_best_endpoint_snap_match(state: &GrafiaCanvasState) -> Option<EndpointSn
             continue;
         }
         let a_contour = &state.contours[a_idx];
-        let a_first = &a_contour[0];
-        let a_last = &a_contour[a_contour.len() - 1];
+        let (a_first, a_last) = (&a_contour[0], &a_contour[a_contour.len() - 1]);
         let mut a_candidates = Vec::with_capacity(2);
         if a_first.node_type != NodeType::OffCurve && state.selected_nodes.contains(&a_first.id) {
             a_candidates.push((true, a_first.id, a_first.point));
@@ -282,8 +281,7 @@ fn find_best_endpoint_snap_match(state: &GrafiaCanvasState) -> Option<EndpointSn
                     continue;
                 }
                 let b_contour = &state.contours[b_idx];
-                let b_first = &b_contour[0];
-                let b_last = &b_contour[b_contour.len() - 1];
+                let (b_first, b_last) = (&b_contour[0], &b_contour[b_contour.len() - 1]);
                 let mut b_candidates = vec![(true, b_first.id, b_first.point)];
                 if b_contour.len() > 1 {
                     b_candidates.push((false, b_last.id, b_last.point));
@@ -404,6 +402,7 @@ pub fn try_join_or_close_open_contours_on_select_release(state: &mut GrafiaCanva
         }
         let surviving_id = state.contours[m.a_idx][0].id;
         state.set_contour_closed(m.a_idx, true);
+        state.push_haptic_event(crate::core::CanvasHapticEvent::ContourClosed);
         if state.active_open_contour == Some(m.a_idx) {
             state.active_open_contour = None;
         }

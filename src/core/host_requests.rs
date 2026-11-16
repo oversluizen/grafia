@@ -62,6 +62,12 @@ pub enum CanvasHostRequest {
         node_id: crate::core::NodeId,
         new_pos: crate::core::FontPoint,
     },
+    PropagateStemDelta {
+        orientation: crate::core::StemOrientation,
+        old_width_upm: f64,
+        new_width_upm: f64,
+        angle_delta_deg: f64,
+    },
 }
 
 /// Active multi-touch / stylus tracking state for `GrafiaPreferences` touch ergonomics (`SPEC-009 §2.6.3`).
@@ -72,6 +78,10 @@ pub struct TouchInteractionState {
     pub max_contact_excursion_dp: f32,
     pub active_touch_raw_pos: Option<egui::Pos2>,
     pub egui_any_touches_in_frame: bool,
+    pub touch_shift_latched: bool,
+    pub touch_alt_latched: bool,
+    pub touch_cmd_latched: bool,
+    pub touch_space_pan_latched: bool,
 }
 
 /// Binarization mode for bitmap & shadowed-camera auto-tracing (`SPEC-009 §2.5.1`).

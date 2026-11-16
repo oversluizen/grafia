@@ -28,6 +28,7 @@ pub fn handle_smart_handle_pointer_press(
         if let Some(key) = hit_test_extra_nodes(&extras, &vp, scr_pt) {
             state.selected_extra_node = Some(key);
             state
+                .drag_transients
                 .host_requests
                 .push(CanvasHostRequest::SelectOrMutateExtraNode { key });
             state.bump_content_generation();
@@ -48,6 +49,7 @@ pub fn handle_smart_handle_pointer_move(
         let new_val = project_pointer_onto_smart_handle(&handle, font_pt, &vp);
         state.smart_handles[h_idx].current_val = new_val;
         state
+            .drag_transients
             .host_requests
             .push(CanvasHostRequest::UpdateSmartComponentAxis {
                 component_id: handle.component_id,

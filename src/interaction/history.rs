@@ -61,6 +61,7 @@ pub struct SnapshotHintingAndHoiState {
     pub selected_truetype_instruction: Option<u64>,
     pub hoi_layer_sets: Vec<HoiCubicLayerSet>,
     pub hoi_sibling_contours: Option<HoiSiblingContours>,
+    pub curve_harmony: crate::core::CurveHarmonyState,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -78,6 +79,7 @@ pub struct HintingAndHoiSnapshot {
     pub selected_truetype_instruction: Option<u64>,
     pub hoi_layer_sets: Vec<HoiCubicLayerSet>,
     pub hoi_sibling_contours: Option<HoiSiblingContours>,
+    pub curve_harmony: crate::core::CurveHarmonyState,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -299,6 +301,7 @@ impl GlyphSnapshot {
         self.hinting.selected_truetype_instruction = hinting_and_hoi.selected_truetype_instruction;
         self.hinting.hoi_layer_sets = hinting_and_hoi.hoi_layer_sets;
         self.hinting.hoi_sibling_contours = hinting_and_hoi.hoi_sibling_contours;
+        self.hinting.curve_harmony = hinting_and_hoi.curve_harmony;
         self
     }
 
@@ -356,6 +359,7 @@ impl GlyphSnapshot {
             || self.hinting.truetype_instructions != other.hinting.truetype_instructions
             || self.hinting.hoi_layer_sets != other.hinting.hoi_layer_sets
             || self.hinting.hoi_sibling_contours != other.hinting.hoi_sibling_contours
+            || self.hinting.curve_harmony != other.hinting.curve_harmony
     }
 }
 

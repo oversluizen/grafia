@@ -3,8 +3,8 @@
 use super::MockFontHost;
 use grafia::adapters::{CanvasTool, GrafiaCanvasState};
 use grafia::core::{
-    Affine2D, CanvasComponent, CompanionMasterLayer, ComponentId, ContourStrokeStyle, LineCapStyle,
-    LineJoinStyle, StrokePosition,
+    Affine2D, CanvasComponent, ComponentId, ContourStrokeStyle, LineCapStyle, LineJoinStyle,
+    StrokePosition,
 };
 use grafia::tokens::{AppearanceMode, GlyphArchetype, GrafiaTheme, FIT_CURVE_MAX_COLUMN_INDEX};
 
@@ -23,11 +23,15 @@ pub enum DemoPreset {
     ColorLayersColrV1,
     VerticalTextAndRefFrame,
     HintingPixelPreviewAndHoi,
+    CurveHarmonyAndAudit,
+    SmartCornersBrushAndGauge,
+    StemRainbowTrajectoryAndMirror,
+    ControllerRotaryAndHaptics,
     ToggleTheme,
 }
 
 impl DemoPreset {
-    pub const ALL: [(Self, &'static str); 14] = [
+    pub const ALL: [(Self, &'static str); 18] = [
         (Self::ToggleGlyphAO, "[Glyph: A / O]"),
         (Self::TextStreamAova, "[v0.5 Text Stream \"AOVA\" (T)]"),
         (Self::RulersAndBg, "[v0.6 Rulers (Cmd+R) + Bg Layer]"),
@@ -55,6 +59,19 @@ impl DemoPreset {
         (
             Self::HintingPixelPreviewAndHoi,
             "[v0.9 Hinting + 16 PPEM + HOI (I/H)]",
+        ),
+        (Self::CurveHarmonyAndAudit, "[v0.10 G2/G3 + Tunni + Audit]"),
+        (
+            Self::SmartCornersBrushAndGauge,
+            "[v0.11 Smart Corners + Brush + Stem Gauge]",
+        ),
+        (
+            Self::StemRainbowTrajectoryAndMirror,
+            "[v0.12 Stem + Rainbow + Trajectory + Mirror]",
+        ),
+        (
+            Self::ControllerRotaryAndHaptics,
+            "[SPEC-015 Loupedeck / Wacom / PieMenu Bridge]",
         ),
         (Self::ToggleTheme, "[Light / Dark Mode]"),
     ];
@@ -107,6 +124,18 @@ impl MockFontHost {
             }
             DemoPreset::HintingPixelPreviewAndHoi => {
                 self.apply_hinting_pixel_preview_and_hoi_preset(state);
+            }
+            DemoPreset::CurveHarmonyAndAudit => {
+                self.apply_curve_harmony_and_audit_preset(state);
+            }
+            DemoPreset::SmartCornersBrushAndGauge => {
+                self.apply_smart_corners_brush_and_gauge_preset(state);
+            }
+            DemoPreset::StemRainbowTrajectoryAndMirror => {
+                self.apply_stem_rainbow_trajectory_and_mirror_preset(state);
+            }
+            DemoPreset::ControllerRotaryAndHaptics => {
+                self.apply_controller_rotary_and_haptics_preset(state);
             }
             DemoPreset::ToggleTheme => {
                 self.apply_toggle_theme_preset(state, theme);
@@ -245,58 +274,5 @@ impl MockFontHost {
             }
             _ => {}
         }
-    }
-
-    fn apply_master_compat_preset(&mut self, state: &mut GrafiaCanvasState) {
-        let shift_contours = |dx: f64, dy: f64| -> Vec<Vec<grafia::core::Node>> {
-            let mut copy = state.contours.clone();
-            for c in &mut copy {
-                for n in c {
-                    n.point.x.0 += dx;
-                    n.point.y.0 += dy;
-                }
-            }
-            copy
-        };
-        let closed_flags: Vec<bool> = state.glyph.contours.iter().map(|c| c.closed).collect();
-        let make_master = |id, name: &str, color_rgba, contours, editable| CompanionMasterLayer {
-            id,
-            name: name.into(),
-            color_rgba,
-            contours,
-            closed_flags: if editable {
-                closed_flags.clone()
-            } else {
-                Vec::new()
-            },
-            anchors: if editable {
-                state.anchors.clone()
-            } else {
-                Vec::new()
-            },
-            editable,
-        };
-        state.set_companion_master_layers(vec![
-            make_master(
-                1,
-                "Light",
-                [55, 145, 225, 200],
-                shift_contours(-18.0, -10.0),
-                true,
-            ),
-            make_master(
-                2,
-                "Bold",
-                [65, 195, 125, 200],
-                shift_contours(24.0, 14.0),
-                true,
-            ),
-            make_master(3, "BrokenMaster", [225, 55, 55, 215], Vec::new(), false),
-        ]);
-        state.show_master_compatibility = !state.show_master_compatibility;
-        self.push_log(format!(
-            "Preset: Master Compatibility = {}",
-            state.show_master_compatibility
-        ));
     }
 }

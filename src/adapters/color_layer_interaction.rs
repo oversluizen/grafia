@@ -86,7 +86,8 @@ impl GrafiaCanvasState {
         }
         let before = self.snapshot();
         self.color_sublayers[index].visible = visible;
-        self.host_requests
+        self.drag_transients
+            .host_requests
             .push(CanvasHostRequest::MutateColorSublayer {
                 sublayer_index: index,
                 mutation: ColorSublayerMutation::SetVisible(visible),
@@ -155,11 +156,12 @@ impl GrafiaCanvasState {
                 .is_some_and(|(old_s, new_s)| old_s.paint != new_s.paint);
             if changed {
                 if let Some(sub) = self.color_sublayers.get(drag.sublayer_index) {
-                    self.host_requests
-                        .push(CanvasHostRequest::MutateColorSublayer {
+                    self.drag_transients.host_requests.push(
+                        CanvasHostRequest::MutateColorSublayer {
                             sublayer_index: drag.sublayer_index,
                             mutation: ColorSublayerMutation::UpdatePaint(sub.paint.clone()),
-                        });
+                        },
+                    );
                 }
                 self.record_mutation("Change Color Gradient", before);
             }
@@ -203,7 +205,8 @@ impl GrafiaCanvasState {
         if let Some(sub) = self.color_sublayers.get_mut(sub_idx) {
             mutate_gradient_stop_in_paint(&mut sub.paint, stop_idx, new_offset, rgba);
             let updated_paint = sub.paint.clone();
-            self.host_requests
+            self.drag_transients
+                .host_requests
                 .push(CanvasHostRequest::MutateColorSublayer {
                     sublayer_index: sub_idx,
                     mutation: ColorSublayerMutation::UpdatePaint(updated_paint),

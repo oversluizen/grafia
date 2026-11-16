@@ -18,6 +18,7 @@ impl<'a> CanvasPainter<'a> {
         let vp = self.state.active_slot_viewport();
         crate::render::paint_duplicate_warnings_egui(self.painter, self.state, self.theme);
         crate::render::paint_alignment_badges_egui(self.painter, self.state);
+        crate::render::paint_harmony_overlays_egui(self.painter, self.state, self.theme);
         let arrow_color = self.theme.start_node_arrow_color32();
         let sw = self.theme.edit_canvas.contour_stroke_width_dp;
         let open_tick_stroke = Stroke::new(sw, self.theme.open_endpoint_color32());
@@ -68,6 +69,16 @@ impl<'a> CanvasPainter<'a> {
             }
         }
 
+        crate::render::smart_corner_overlays::paint_outline_audit_egui(
+            self.painter,
+            self.state,
+            self.theme,
+            &vp,
+        );
+        self.paint_pen_hover_ghost_node(&vp);
+    }
+
+    fn paint_pen_hover_ghost_node(&self, vp: &crate::core::ViewportTransform) {
         if self.state.active_tool == CanvasTool::Pen {
             if let Some(hit) = self.state.hovered_segment_hit {
                 let ghost_scr = vp.to_screen(hit.point);

@@ -83,6 +83,14 @@ Following the completion of `grafia v0.9.0` (`SPEC-010`) and the 15 static archi
    - `pub fn export_document_scene(&self) -> CanvasDocumentScene` extracts the complete glyph document scene from `GrafiaCanvasState`.
    - `pub fn load_document_scene(&mut self, scene: CanvasDocumentScene)` atomically populates `GrafiaCanvasState`, synchronizes `self.contours` and `self.paths`, bumps `content_generation`, and validates state invariants (`self.assert_invariants()`).
 
+### 2.6 Browser WASM Target (`wasm32-unknown-unknown`) & `grafia_canvas` Entrypoint (`TC-MATURITY-008`)
+
+1. **`#[cfg(target_arch = "wasm32")]` WebRunner Entrypoint (`examples/vector_canvas_demo.rs`)**:
+   - Under `#[cfg(target_arch = "wasm32")]`, `main()` MUST bind `eframe::WebRunner::new().start(...)` inside `wasm_bindgen_futures::spawn_local(...)` targeting the `<canvas id="grafia_canvas">` element via `get_element_by_id("grafia_canvas")`.
+2. **Non-WASM Guarding of Disk & Environment Operations (`examples/demo_host_shell/toolbar_specs.rs`)**:
+   - `install_crash_logger()` and the native disk font probe in `configure_demo_fonts()` MUST guard `std::fs` and `std::env` calls with `#[cfg(not(target_arch = "wasm32"))]` so browser initialization never accesses unavailable host filesystem paths.
+   - `[target.'cfg(target_arch = "wasm32")'.dev-dependencies]` in `Cargo.toml` MUST enable `default_fonts` on `eframe` so embedded proportional and monospace fallback fonts (`epaint_default_fonts`) are available alongside `CUPERTINO_ICONS_FONT_BYTES` in the browser.
+
 ---
 
 ## 3. Verification & Test Case Traceability Matrix
@@ -97,4 +105,5 @@ Following the completion of `grafia v0.9.0` (`SPEC-010`) and the 15 static archi
 | **`TC-MATURITY-005`** | `§2.4` | `tests/v091_senior_maturity_tests.rs` | Verifies `CanvasDocumentScene` builder, `load_document_scene`, and `export_document_scene` roundtrip all glyph contours, metrics, guides, anchors, components, color sublayers, hinting instructions, and reference frames bit-identically. |
 | **`TC-MATURITY-006`** | `§2.5` | `tests/v091_senior_maturity_tests.rs` | Verifies that ruler, text-stream, and kerning visual tokens live in `GrafiaTheme` (`RulerThemeTokens`, `TextStreamThemeTokens`) with backward-compatible defaults and can be customized at runtime. |
 | **`TC-MATURITY-007`** | `§2.5` | `tests/v091_senior_maturity_tests.rs` | Verifies that Pen/Select hit-test radii, segment hit-test tolerances, kerning/spacing keyboard increments, and PostScript ghost-hint widths respect runtime `state.preferences` and custom `width_upm` values instead of hardcoded constants. |
+| **`TC-MATURITY-008`** | `§2.6` | `tests/v091_senior_maturity_tests.rs` | Verifies `examples/vector_canvas_demo.rs` binds `get_element_by_id("grafia_canvas")`, `examples/demo_host_shell/toolbar_specs.rs` guards `std::fs` under `#[cfg(not(target_arch = "wasm32"))]`, and `Cargo.toml` enables `default_fonts` for `wasm32` `eframe`. |
 

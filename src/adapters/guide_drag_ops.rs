@@ -124,10 +124,12 @@ impl GrafiaCanvasState {
     ) -> (f64, f64) {
         if shift_snap || alt_for_move || ctrl_for_move || ctrl_snap_bypass {
             self.active_snappers.clear();
+            self.curve_harmony.active_tangent_snap = None;
             return (raw_dx, raw_dy);
         }
         let Some(&lead_id) = self.selected_nodes.first() else {
             self.active_snappers.clear();
+            self.curve_harmony.active_tangent_snap = None;
             return (raw_dx, raw_dy);
         };
         let Some(&(_, lead_start)) = self
@@ -137,18 +139,71 @@ impl GrafiaCanvasState {
             .find(|&&(id, _)| id == lead_id)
         else {
             self.active_snappers.clear();
+            self.curve_harmony.active_tangent_snap = None;
             return (raw_dx, raw_dy);
         };
+        let query = FontPoint::new(lead_start.x.0 + raw_dx, lead_start.y.0 + raw_dy);
+        if self.selected_nodes.len() == 1 && self.preferences.snap_targets.nodes {
+            let zoom = self.viewport.zoom.max(crate::tokens::MIN_VIEWPORT_ZOOM);
+            let snap_radius_upm = f64::from(self.preferences.snap_radius_dp / zoom);
+            let ref_contours = self.build_drag_reference_contours();
+            if let Some(tsnap) = crate::core::compute_drag_tangent_extension_snap(
+                &ref_contours,
+                query,
+                snap_radius_upm,
+                lead_id,
+                lead_start,
+            ) {
+                self.active_snappers.clear();
+                self.curve_harmony.active_tangent_snap = Some(tsnap);
+                self.drawing_tool_state.controller_ports.push_haptic(
+                    crate::core::CanvasHapticEvent::SnapAlignment {
+                        kind: crate::core::SnapTargetKind::Guide,
+                    },
+                );
+                return (
+                    tsnap.snap_point.x.0 - lead_start.x.0,
+                    tsnap.snap_point.y.0 - lead_start.y.0,
+                );
+            }
+        }
+        self.curve_harmony.active_tangent_snap = None;
         let excluded: Vec<crate::core::NodeId> = self
             .drag_transients
             .drag_start_font_positions
             .iter()
             .map(|&(id, _)| id)
             .collect();
-        let query = FontPoint::new(lead_start.x.0 + raw_dx, lead_start.y.0 + raw_dy);
         let res = self.evaluate_magnetic_snap(query, &excluded, false);
+        if let Some(first_snap) = res.active_snappers.first() {
+            self.drawing_tool_state.controller_ports.push_haptic(
+                crate::core::CanvasHapticEvent::SnapAlignment {
+                    kind: first_snap
+                        .target_kind
+                        .unwrap_or(crate::core::SnapTargetKind::Guide),
+                },
+            );
+        }
         self.active_snappers = res.active_snappers;
         (raw_dx + res.delta.0, raw_dy + res.delta.1)
+    }
+
+    pub(crate) fn build_drag_reference_contours(&self) -> Vec<crate::core::GlyphContour> {
+        if !self.drag_transients.drag_start_contours.is_empty() {
+            self.drag_transients
+                .drag_start_contours
+                .iter()
+                .enumerate()
+                .map(|(idx, nodes)| {
+                    let mut gc =
+                        crate::core::GlyphContour::new(crate::core::ContourId(idx), nodes.clone());
+                    gc.closed = self.is_contour_closed(idx);
+                    gc
+                })
+                .collect()
+        } else {
+            self.glyph.contours.clone()
+        }
     }
 
     pub fn update_guide_drag(

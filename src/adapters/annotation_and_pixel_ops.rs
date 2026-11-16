@@ -229,7 +229,19 @@ impl GrafiaCanvasState {
         self.contours.push(nodes.clone());
         let mut gc = GlyphContour::new(ContourId(c_idx), nodes);
         gc.closed = closed;
+        let mut next_id = self.next_safe_node_id_seed_ext();
+        let mirrored_opt = crate::core::reflect_contour_across_mirror_axis(
+            &gc,
+            self.curve_harmony.active_mirror_axis,
+            &mut next_id,
+        );
+        self.next_node_id = next_id;
         self.glyph.contours.push(gc);
+        if let Some(mut mirrored) = mirrored_opt {
+            mirrored.id = ContourId(self.glyph.contours.len());
+            self.contours.push(mirrored.nodes.clone());
+            self.glyph.contours.push(mirrored);
+        }
         self.active_contour_closed = closed;
         self.sync_paths_from_contours();
         self.record_mutation("Draw Freehand Path", before);

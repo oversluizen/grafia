@@ -39,6 +39,7 @@ impl MockFontHost {
                 }
             }
         });
+        Self::render_tablet_and_harmony_bar(ui, state);
     }
 
     pub fn render_host_inspector(&mut self, ui: &mut Ui, state: &mut GrafiaCanvasState) {
@@ -71,6 +72,8 @@ impl MockFontHost {
                 self.poll_host_ports(state);
             }
         });
+        Self::render_harmony_controls(ui, state);
+        Self::render_controller_simulator_section(ui, state);
         if let Some(a) = state.selected_anchor_info() {
             ui.label(
                 RichText::new(format!(
@@ -107,6 +110,75 @@ impl MockFontHost {
         ScrollArea::vertical().max_height(110.0).show(ui, |ui| {
             for line in &self.event_log {
                 ui.monospace(line);
+            }
+        });
+    }
+
+    fn render_harmony_controls(ui: &mut Ui, state: &mut GrafiaCanvasState) {
+        ui.horizontal_wrapped(|ui| {
+            if ui.button("G2 Harmonize").clicked() {
+                state.harmonize_selected_nodes();
+            }
+            if ui
+                .selectable_label(state.show_tunni_lines, "Tunni")
+                .clicked()
+            {
+                state.toggle_show_tunni_lines();
+            }
+            if ui
+                .selectable_label(state.power_nudge_enabled, "Power Nudge")
+                .clicked()
+            {
+                state.toggle_power_nudge();
+            }
+            if ui
+                .selectable_label(state.curve_harmony.show_curvature_comb, "Comb")
+                .clicked()
+            {
+                state.toggle_show_curvature_comb();
+            }
+            if !state.smart_corners.is_empty() && ui.button("Bake Corners").clicked() {
+                state.bake_smart_corners();
+            }
+            let sym_on =
+                state.curve_harmony.symmetry_overlay_mode != grafia::SymmetryOverlayMode::Off;
+            if ui.selectable_label(sym_on, "Symmetry").clicked() {
+                let next = if sym_on {
+                    grafia::SymmetryOverlayMode::Off
+                } else {
+                    grafia::SymmetryOverlayMode::VerticalAxis
+                };
+                state.set_symmetry_overlay_mode(next);
+            }
+            if ui
+                .selectable_label(state.curve_harmony.show_measurement_rainbow, "Rainbow")
+                .clicked()
+            {
+                state.toggle_show_measurement_rainbow();
+            }
+            if ui
+                .selectable_label(state.curve_harmony.quick_preview_on_drag, "QuickPrev")
+                .clicked()
+            {
+                state.toggle_quick_preview_on_drag();
+            }
+            if ui
+                .selectable_label(state.curve_harmony.show_optical_rhythm_fill, "Rhythm")
+                .clicked()
+            {
+                state.toggle_show_optical_rhythm_fill();
+            }
+            if ui
+                .selectable_label(state.curve_harmony.show_stem_gauge, "StemGauge")
+                .clicked()
+            {
+                state.toggle_show_stem_gauge();
+            }
+            if ui
+                .selectable_label(state.curve_harmony.show_visual_centroid, "Centroid ⊕")
+                .clicked()
+            {
+                state.toggle_show_visual_centroid();
             }
         });
     }

@@ -11,9 +11,11 @@ pub mod edit_canvas;
 pub mod guide_and_zone_overlays;
 pub mod guide_band_and_loupe_overlays;
 pub mod guides_pixmap_pass;
+pub mod harmony_overlays;
 pub mod hinting_and_hoi_pass;
 pub mod hinting_and_hoi_pixmap_pass;
 pub mod loupe_pixmap_pass;
+pub mod preview_bands;
 pub mod preview_canvas;
 pub mod preview_panel_pixmap;
 pub mod preview_strip_cache;
@@ -25,8 +27,10 @@ pub mod selection_info_hud;
 pub mod selection_info_hud_format;
 pub mod shape_canvas;
 pub mod shared_geom;
+pub mod smart_corner_overlays;
 pub mod spline_and_handle_overlays;
 pub mod splines_pixmap_pass;
+pub mod stem_gauge_and_audit_overlays;
 pub mod tessellation;
 pub mod text_strip_overlays;
 pub mod text_strip_pixmap_pass;
@@ -67,9 +71,16 @@ pub use guide_band_and_loupe_overlays::{
     render_edit_active_fill_tiny_skia, render_guide_band_tiny_skia,
     render_offcurve_handle_tiny_skia, render_top_cursor_and_loupe_overlays_tiny_skia,
 };
+pub use harmony_overlays::{paint_harmony_overlays_egui, render_harmony_overlays_tiny_skia};
 pub use hinting_and_hoi_pass::{paint_hinting_and_hoi_pass, paint_pixel_preview_and_ghost_pass};
 pub use hinting_and_hoi_pixmap_pass::{
     paint_hinting_and_hoi_pixmap_pass, paint_pixel_preview_and_ghost_pixmap_pass,
+};
+pub use preview_bands::{
+    paint_curved_trajectories_egui, paint_measurement_rainbow_egui, paint_optical_rhythm_fill_egui,
+    paint_overshoot_ribbons_egui, render_curved_trajectories_tiny_skia,
+    render_measurement_rainbow_tiny_skia, render_optical_rhythm_fill_tiny_skia,
+    render_overshoot_ribbons_tiny_skia,
 };
 pub use preview_canvas::{
     rasterize_preview_panel, render_preview_panel_into_rect, GrafiaPreviewWidget,

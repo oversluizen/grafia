@@ -129,6 +129,67 @@ pub fn white_tint_with_alpha_color32(alpha: f32) -> egui::Color32 {
     egui::Color32::from_rgba_unmultiplied(u8::MAX, u8::MAX, u8::MAX, a)
 }
 
+#[must_use]
+pub fn measurement_rainbow_color32(ratio: f64, is_dark: bool) -> egui::Color32 {
+    let t = ratio.clamp(0.0, 1.0);
+    let (r, g, b) = if t < 0.5 {
+        let u = t * 2.0;
+        (
+            (48.0 + u * 8.0).round() as u8,
+            (132.0 + u * 64.0).round() as u8,
+            (242.0 - u * 134.0).round() as u8,
+        )
+    } else {
+        let u = (t - 0.5) * 2.0;
+        (
+            (56.0 + u * 186.0).round() as u8,
+            (196.0 - u * 88.0).round() as u8,
+            (108.0 - u * 60.0).round() as u8,
+        )
+    };
+    let a = if is_dark { 125 } else { 110 };
+    egui::Color32::from_rgba_unmultiplied(r, g, b, a)
+}
+
+#[must_use]
+pub fn overshoot_ribbon_fill_color32(is_dark: bool) -> egui::Color32 {
+    if is_dark {
+        egui::Color32::from_rgba_unmultiplied(218, 180, 136, 20)
+    } else {
+        egui::Color32::from_rgba_unmultiplied(206, 167, 124, 18)
+    }
+}
+
+#[must_use]
+pub fn optical_rhythm_fill_color32(is_dark: bool) -> egui::Color32 {
+    if is_dark {
+        egui::Color32::from_rgba_unmultiplied(76, 172, 250, 84)
+    } else {
+        egui::Color32::from_rgba_unmultiplied(56, 152, 236, 72)
+    }
+}
+
+#[must_use]
+pub fn curvature_heatmap_color32(intensity: f64, polarity: i8, is_dark: bool) -> egui::Color32 {
+    let t = intensity.clamp(0.0, 1.0);
+    let (r, g, b) = if polarity >= 0 {
+        (
+            (110.0 + t * 145.0).round() as u8,
+            (165.0 - t * 115.0).round() as u8,
+            (95.0 - t * 45.0).round() as u8,
+        )
+    } else {
+        (
+            (60.0 - t * 35.0).round() as u8,
+            (130.0 + t * 90.0).round() as u8,
+            (175.0 + t * 75.0).round() as u8,
+        )
+    };
+    let base_a = if is_dark { 75.0 } else { 65.0 };
+    let a = (base_a + t * 95.0).round() as u8;
+    egui::Color32::from_rgba_unmultiplied(r, g, b, a)
+}
+
 impl GrafiaTheme {
     #[must_use]
     pub fn hobby_star_node_color32(&self) -> egui::Color32 {

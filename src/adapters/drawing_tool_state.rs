@@ -108,6 +108,10 @@ pub struct DrawingToolState {
     pub pixel: PixelDragState,
     pub last_pixel_cell: Option<(i64, i64)>,
     pub pixel_size_upm: f64,
+    pub controller_ports: crate::core::ControllerPortState,
+    pub brush_stroke_active: bool,
+    pub active_trajectory_drag: Option<(NodeId, usize)>,
+    pub active_trajectory_drag_is_control2: bool,
 }
 
 impl Default for DrawingToolState {
@@ -128,6 +132,10 @@ impl Default for DrawingToolState {
             pixel: PixelDragState::default(),
             last_pixel_cell: None,
             pixel_size_upm: PIXEL_DEFAULT_STEP_UPM,
+            controller_ports: crate::core::ControllerPortState::default(),
+            brush_stroke_active: false,
+            active_trajectory_drag: None,
+            active_trajectory_drag_is_control2: false,
         }
     }
 }
@@ -140,6 +148,9 @@ impl DrawingToolState {
         self.annotation_drag = AnnotationDragMode::Idle;
         self.pencil = PencilDragState::default();
         self.pixel = PixelDragState::default();
+        self.brush_stroke_active = false;
+        self.active_trajectory_drag = None;
+        self.active_trajectory_drag_is_control2 = false;
     }
 }
 
@@ -172,9 +183,20 @@ impl GrafiaCanvasState {
         self.selected_nodes = nodes.iter().map(|n| n.id).collect();
         let c_idx = self.contours.len();
         self.contours.push(nodes.clone());
-        self.glyph
-            .contours
-            .push(GlyphContour::new(ContourId(c_idx), nodes));
+        let gc = GlyphContour::new(ContourId(c_idx), nodes);
+        let mut next_id = self.next_safe_node_id_seed_ext();
+        let mirrored_opt = crate::core::reflect_contour_across_mirror_axis(
+            &gc,
+            self.curve_harmony.active_mirror_axis,
+            &mut next_id,
+        );
+        self.next_node_id = next_id;
+        self.glyph.contours.push(gc);
+        if let Some(mut mirrored) = mirrored_opt {
+            mirrored.id = ContourId(self.glyph.contours.len());
+            self.contours.push(mirrored.nodes.clone());
+            self.glyph.contours.push(mirrored);
+        }
         self.active_contour_closed = true;
         self.sync_paths_from_contours();
         self.record_mutation("Add Primitive", before);

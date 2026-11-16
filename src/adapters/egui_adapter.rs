@@ -93,10 +93,14 @@ impl<'a> GrafiaCanvasWidget<'a> {
             | CanvasTool::Primitives
             | CanvasTool::Measurement
             | CanvasTool::Pencil
-            | CanvasTool::Pixel => CursorIcon::Crosshair,
-            CanvasTool::Annotation | CanvasTool::TrueTypeInstructor | CanvasTool::Hoi => {
-                CursorIcon::Default
-            }
+            | CanvasTool::Pixel
+            | CanvasTool::Trowel
+            | CanvasTool::Cleaner => CursorIcon::Crosshair,
+            CanvasTool::Annotation
+            | CanvasTool::TrueTypeInstructor
+            | CanvasTool::Hoi
+            | CanvasTool::Stem
+            | CanvasTool::CurvedTrajectory => CursorIcon::Default,
             CanvasTool::Text => CursorIcon::Text,
         }
     }

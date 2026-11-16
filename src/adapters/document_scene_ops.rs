@@ -58,6 +58,7 @@ pub struct DragSessionTransients {
     pub keymap: crate::tokens::GrafiaKeymap,
     pub fit_curve_config: crate::core::FitCurveConfig,
     pub preview_config: crate::render::PreviewRenderConfig,
+    pub host_requests: Vec<crate::core::CanvasHostRequest>,
 }
 
 impl Default for DragSessionTransients {
@@ -96,6 +97,7 @@ impl Default for DragSessionTransients {
             keymap: crate::tokens::GrafiaKeymap::default(),
             fit_curve_config: crate::core::FitCurveConfig::default(),
             preview_config: crate::render::PreviewRenderConfig::default(),
+            host_requests: Vec::new(),
         }
     }
 }
@@ -130,7 +132,9 @@ impl GrafiaCanvasState {
     pub fn is_interactive_drag_active(&self) -> bool {
         matches!(
             self.select_state,
-            SelectToolState::DraggingNodes { .. } | SelectToolState::DraggingSegment { .. }
+            SelectToolState::DraggingNodes { .. }
+                | SelectToolState::DraggingSegment { .. }
+                | SelectToolState::DraggingTunniLine { .. }
         ) || matches!(self.pen_state, PenToolState::DraggingHandles { .. })
             || self.bbox_drag != BBoxDragState::Idle
             || self.drag_transients.guide_drag != GuideDragState::Idle

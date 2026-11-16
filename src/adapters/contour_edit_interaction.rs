@@ -102,7 +102,7 @@ impl GrafiaCanvasState {
     }
     #[must_use]
     pub fn hit_test_node(&self, screen_pt: ScreenPoint) -> Option<NodeId> {
-        self.hit_test_node_with_radius(screen_pt, self.preferences.hit_test_radius_dp)
+        self.hit_test_node_with_radius(screen_pt, self.effective_hit_radius_dp())
     }
 }
 
@@ -136,6 +136,14 @@ pub fn dispatch_transform_and_clipboard_shortcut(
         }
         Key::Z if !cmd_active && !shift_active => {
             state.activate_tool(CanvasTool::Zoom);
+            true
+        }
+        Key::C if !cmd_active && !shift_active && !alt_active => {
+            state.toggle_power_nudge();
+            true
+        }
+        Key::H if cmd_active && shift_active && !alt_active => {
+            state.harmonize_selected_nodes();
             true
         }
         Key::C if cmd_active && !shift_active => state.copy_selection(),

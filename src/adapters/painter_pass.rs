@@ -71,6 +71,14 @@ impl<'a> CanvasPainter<'a> {
         self.pass_1_metrics();
         crate::render::paint_background_image_egui(self.painter, self.state, self.theme);
         crate::render::paint_color_layers_pass(self.painter, self.state, self.canvas_rect);
+        crate::render::paint_measurement_rainbow_egui(self.painter, self.state);
+        let quick_preview = self.state.curve_harmony.quick_preview_on_drag
+            && self.state.is_interactive_drag_active();
+        if quick_preview {
+            self.pass_2_silhouette_fill();
+            crate::render::paint_text_strip_overlays_egui(self.painter, self.state);
+            return;
+        }
         if !(self.state.active_tool == CanvasTool::Text && !self.state.text_stream.slots.is_empty())
         {
             if self.state.preferences.fill_active_glyph_while_editing {
@@ -144,6 +152,8 @@ impl<'a> CanvasPainter<'a> {
             self.canvas_rect,
         );
         crate::render::paint_pixel_preview_and_ghost_pass(self.painter, self.state, self.theme);
+        crate::render::paint_overshoot_ribbons_egui(self.painter, self.state);
+        crate::render::paint_optical_rhythm_fill_egui(self.painter, self.state);
         if !self.state.show_metrics {
             return;
         }

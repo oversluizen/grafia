@@ -1,0 +1,282 @@
+---
+type: specification
+id: SPEC-015
+version: 0.13.0
+status: normative
+parent: SPEC-001
+---
+
+# SPEC-015: `grafia v0.13.0` — 100% System-Agnostic Controller, Semantic Intent, Rotary Encoder, OLED/HUD Telemetry, Haptic Feedback & Mobile/Stylus Precision Ports ("Stekkers")
+
+> **Normative References**:
+> - `SPEC-001`..`SPEC-013`: `grafia v0.1.0`..`v0.12.0` Architecture, Coordinate Pipeline, Tools, Splines, Harmonization, Smart Corners & Stem/Brush Engine
+> - `SPEC-014`: Senior Architectural Maturity & Host Scene API
+> - Standards: `ISO 9241-9:2000` / `ISO/TS 9241-411` (Ergonomics of Human-System Interaction — Non-Keyboard Input Devices), `W3C Pointer Events Level 3` (`pointerType`, `twist`, `tangentialPressure`, barrel button / squeeze states), `USB HID Usage Tables 1.5` (Rotary Dials, Tactile Haptics & Auxiliary OLED Displays), Apple Human Interface Guidelines (*Haptic Feedback, Touch Targets $\ge 44\times 44\;\text{pt}$, Pencil Interactions*)
+> - HCI Literature: Gordon Kurtenbach & William Buxton (*Marking Menus & Rehearsal into Muscle Memory*, 1993), Yves Guiard (*Asymmetric Division of Labor in Human Skilled Bimanual Action — The Kinematic Chain Model*, 1987)
+
+---
+
+## 1. Architectural Principle: 100% UI-Widget-Agnostic & Hardware-Driver-Agnostic Controller Ports
+
+To preserve `grafia` as a pure, zero-bloat 2D vector and typography canvas engine, **`grafia` contains zero radial pie-menu widget geometry, zero North/East/South/West screen-slot layouts, and zero vendor-specific USB/HID drivers**.
+
+Instead, `GrafiaCanvasState` exposes **5 Universal System-Agnostic Controller Ports ("Stekkers")**:
+
+| Port # | Port Name ("Stekker") | Direction | Purpose & Connected Peripherals |
+| :--- | :--- | :--- | :--- |
+| **1. Semantic Intent Port** | `CanvasIntent` & `CanvasIntentMask` | **Data-In** (`Host` $\rightarrow$ `GrafiaCanvasState`) | Replaces blind `Shift`/`Alt`/`Ctrl`/`Space` key-code coupling with explicit geometric intents (`ConstrainAngle`, `LockAspectRatio`, `OriginFromCenter`, `BreakCuspHandle`, `SlideAlongCurve`, `DuplicateOnDrag`, `ShearTransform`, `KnifeAddNodesOnly`, `MoveOriginOrPan`). Driven by `egui-macview` PieMenu/ThumbHUD, Wacom ExpressKeys, Loupedeck buttons, or Stream Deck keys. |
+| **2. Continuous Rotary Encoder Port** | `CanvasRotaryChannel` (`step_rotary_encoder`) | **Data-In** (`Host` $\rightarrow$ `GrafiaCanvasState`) | Maps physical or virtual dial ticks (`delta_ticks: f64`) onto `ContextPrimary` (auto-routing to Smart Corner radius, Hobby spline tension, Tunni/Fit-Curve ratio `[0.20, 0.95]`, `Stem` width, or `Trowel`/`Cleaner` brush radius), `ViewportZoom`, `CanvasRotationOrSlant`, `HistoryScrub` (`Undo`/`Redo` per tick), `CurveTensionOrRadius`, and `KerningOrSpacing`. Driven by Loupedeck CT dials, Wacom Intuos 4 Touch Ring, Surface Dial, or on-screen dials. |
+| **3. Controller Telemetry Port** | `ControllerTelemetryDescriptor` (`controller_telemetry`) | **Data-Out** (`GrafiaCanvasState` $\rightarrow$ `Host`) | Exports live, context-sensitive labels (`short_label` like `"∧ Cusp"`, `"1:1"`, `"⊙ Center"`, `"↝ Slide"`, `"⇄ Shear"`, `"⊕ Nodes"`), `shortcut_hint`, active state, and `RotaryTelemetryInfo` (`parameter_name`, `formatted_value`, `normalized_ratio`) for Wacom Intuos 4 OLED displays, Loupedeck CT wheel screens, and `egui-macview` PieMenu segments. |
+| **4. Haptic Feedback Event Port** | `CanvasHapticEvent` (`drain_haptic_events`) | **Event-Out** (`GrafiaCanvasState` $\rightarrow$ `Host`) | Emits semantic tactile feedback events (`RotaryDetentTick`, `IntentLatchToggled`, `SnapAlignment`, `ContourClosed`, `BoundaryClamped`) for iOS/iPadOS Taptic Engine, Apple Pencil Pro `UICanvasFeedbackGenerator`, Android `HapticFeedbackConstants`, macOS Force Touch Trackpad, and Loupedeck CT vibration motors. |
+| **5. Mobile & Stylus Precision Port** | `InputDeviceKind`, `StylusAccessoryEvent`, `PrecisionLoupeGeometry` | **Data-In / Data-Out** | Provides pointer-type-aware finger offset (`TouchFinger` vs. `Stylus`/`Mouse`), `1.6x` touch hit-radius inflation, edge-flipping magnification loupe (`compute_precision_loupe_overlay`), graceful 1-to-2 finger multi-touch promotion without stray points (`promote_to_multitouch_gesture`), and stylus `DoubleTap` / `Squeeze` / `BarrelHold` routing. |
+
+```mermaid
+flowchart LR
+    subgraph Peripherals["Host UI & Hardware Adapters (Outside grafia)"]
+        Pie["egui-macview PieMenu / Radial HUD"]
+        LD["Loupedeck CT (6 Dials + Wheel Screen + Haptics)"]
+        Wacom["Wacom Intuos 4 (Touch Ring + 8 ExpressKeys + OLEDs)"]
+        Mobile["iOS / Android Touch, Pencil Pro & Taptic Engine"]
+    end
+
+    subgraph Grafia["GrafiaCanvasState (5 Universal Controller Ports)"]
+        P1["1. Semantic Intent Port<br/>set_external_intents / set_intent_latched"]
+        P2["2. Rotary Encoder Port<br/>step_rotary_encoder(channel, delta_ticks)"]
+        P3["3. Telemetry Port<br/>controller_telemetry()"]
+        P4["4. Haptic Event Port<br/>drain_haptic_events()"]
+        P5["5. Mobile & Stylus Port<br/>InputDeviceKind / StylusAccessoryEvent / Loupe"]
+    end
+
+    Pie & LD & Wacom --> P1
+    LD & Wacom & Pie --> P2
+    P3 --> Pie & LD & Wacom
+    P4 --> LD & Mobile
+    Mobile & Wacom --> P5
+```
+
+---
+
+## 2. Port 1: Semantic Intent Flags (`CanvasIntent` & `CanvasIntentMask`)
+
+Rather than forcing external controllers or touch HUDs to synthesize fake keyboard scancodes, `grafia` defines nine domain-meaningful geometric intents:
+
+| `CanvasIntent` Variant | Geometric Meaning on Canvas | Default Hardware Keyboard Mapping | Primary Tools Affected |
+| :--- | :--- | :--- | :--- |
+| **`ConstrainAngle`** | Snaps drag vectors, handles, and cuts to $45^\circ$ / $15^\circ$ / italic axes | `Shift` (`⇧`) | `Pen`, `Select`, `Rotate`, `Knife`, `Measurement` |
+| **`LockAspectRatio`** | Locks primitive creation and bounding-box scaling to $1:1$ aspect ratio | `Shift` (`⇧`) | `Primitives`, `Scale`, `Select` (BBox) |
+| **`OriginFromCenter`** | Expands primitives or scales selection symmetrically from center $\odot$ | `Alt / Option` (`⌥`) | `Primitives`, `Scale`, `Select` (BBox) |
+| **`BreakCuspHandle`** | Breaks smooth $G^1$ handle collinearity into an independent `Corner` cusp $\wedge$ | `Alt / Option` (`⌥`) | `Pen`, `Select` |
+| **`SlideAlongCurve`** | Slides an on-curve node smoothly along its adjacent curve/line trajectory $\leadsto$ | `Ctrl / Cmd` (`⌘`) | `Select` |
+| **`DuplicateOnDrag`** | Clones selected contours at the start of a multi-node drag | `Alt / Option` (`⌥`) | `Select` |
+| **`ShearTransform`** | Switches bounding-box side handles from scaling to slant/shear transformation $\rightleftarrows$ | `Ctrl + Alt` (`⌃⌥`) | `Select` (BBox), `Scale` |
+| **`KnifeAddNodesOnly`** | Inserts on-curve intersections along the knife cut line without splitting contours $\oplus$ | `Alt / Option` (`⌥`) | `Knife` |
+| **`MoveOriginOrPan`** | Translates the in-flight anchor/primitive origin or pans the canvas viewport | `Space` (`␣`) | `Pen`, `Primitives`, `Select` |
+
+### Normative Intent Resolution Rules
+1. `set_external_intents(&mut self, intents: CanvasIntentMask)` sets the momentary (held) external intent mask.
+2. `set_intent_latched(&mut self, intent: CanvasIntent, latched: bool)` sets or clears a sticky one-handed latch for `intent` and emits `CanvasHapticEvent::IntentLatchToggled { intent, latched }` whenever the latch state changes.
+3. `clear_external_intents(&mut self)` clears both momentary and latched external intents.
+4. `effective_intents(&self, hw_modifiers: Modifiers, hw_space: bool) -> CanvasIntentMask` returns the union of:
+   - Momentary external intents (`external_intents`),
+   - Latched external intents (`latched_intents`),
+   - Stylus barrel-button hold (`BreakCuspHandle` when `BarrelHold(true)` is active), and
+   - Physical keyboard modifiers (`hw_modifiers`, `hw_space`) mapped to the active `CanvasTool`.
+
+---
+
+## 3. Port 2: Continuous Rotary Encoder Channels (`CanvasRotaryChannel`)
+
+Physical dials (Loupedeck CT, Wacom Intuos 4 Touch Ring, Surface Dial) and virtual on-screen jog wheels call `state.step_rotary_encoder(channel, delta_ticks) -> bool`:
+
+| `CanvasRotaryChannel` Variant | Normative Behavior per `delta_ticks: f64` | Clamping & Haptic Contract |
+| :--- | :--- | :--- |
+| **`ContextPrimary`** | Automatically routes to the most specific active selection/tool parameter:<br/>1. `CanvasTool::Stem`: adjusts active/first detected structural stem width by `delta_ticks * 2.0 UPM`.<br/>2. `CanvasTool::Trowel` / `Cleaner`: adjusts brush radius by `delta_ticks * 2.0 dp` in `[8.0, 160.0] dp`.<br/>3. Selected node with `SmartCornerSpec` (or selected `Corner` node): adjusts `radius_upm` by `delta_ticks * 2.0 UPM` in `[-120.0, 200.0] UPM`.<br/>4. Selected `NodeType::HobbyStar` node: adjusts `tension_in` / `tension_out` by `delta_ticks * 0.05` in `[0.75, 4.0]`.<br/>5. Selected cubic segment (or active Tunni segment): adjusts Tunni/Fit-Curve ratio by `delta_ticks * 0.02` in `[0.20, 0.95]`.<br/>6. Fallback: steps `ViewportZoom`. | Emits `RotaryDetentTick { channel }` on change and `BoundaryClamped` when clamped at min/max bounds. |
+| **`ViewportZoom`** | Scales `viewport.zoom` by `(1.0 + delta_ticks * 0.05)` around the active pointer or viewport center. | Clamps to `[MIN_VIEWPORT_ZOOM, MAX_VIEWPORT_ZOOM]`; emits `BoundaryClamped` at bounds. |
+| **`CanvasRotationOrSlant`** | Rotates selected nodes by `delta_ticks * 1.0°` around `transform_origin` (or adjusts `italic_angle_deg` in `[-45°, 45°]` when no nodes are selected). | Emits `RotaryDetentTick`; clamps italic angle to `[-45°, 45°]`. |
+| **`HistoryScrub`** | Steps `state.undo()` for negative ticks (`delta_ticks < 0.0`) or `state.redo()` for positive ticks (`delta_ticks > 0.0`). | Emits `RotaryDetentTick` on each Undo/Redo step, or `BoundaryClamped` when history stack end is reached. |
+| **`CurveTensionOrRadius`** | Directly targets Smart Corner `radius_upm`, Hobby `tension` `[0.75, 4.0]`, or cubic Tunni ratio `[0.20, 0.95]`. | Clamps to domain bounds and emits `BoundaryClamped` when saturated. |
+| **`KerningOrSpacing`** | Adjusts active `Text` slot pair kerning (or active glyph `advance_width` / `RSB`) by `delta_ticks * effective_kerning_step_upm(false)`. | Emits `RotaryDetentTick` and records `KerningDelta` / `SpacingDelta`. |
+
+---
+
+## 4. Port 3: Controller Telemetry Descriptor (`controller_telemetry`)
+
+Hardware controllers with built-in displays (Wacom Intuos 4 OLEDs, Loupedeck CT LCD keys/wheel display) and on-screen HUD widgets (`egui-macview` `PieMenu`) query `state.controller_telemetry() -> ControllerTelemetryDescriptor` to render self-revealing labels without hardcoding tool rules:
+
+- `active_tool: CanvasTool`
+- `available_intents: Vec<IntentTelemetryItem>` — ordered list of context-relevant `CanvasIntent` items for `active_tool`, each providing:
+  - `intent: CanvasIntent`
+  - `short_label: &'static str` (e.g. `"∠ 45°"`, `"∧ Cusp"`, `"1:1"`, `"⊙ Center"`, `"↝ Slide"`, `"⧉ Clone"`, `"⇄ Shear"`, `"⊕ Nodes"`, `"✋ Pan"`, `"✥ Move Pt"`)
+  - `shortcut_hint: &'static str` (`"Shift"`, `"Alt"`, `"Ctrl"`, `"Ctrl+Alt"`, `"Space"`)
+  - `active: bool` (true when currently held or latched)
+- `primary_rotary: RotaryTelemetryInfo` — describes the parameter currently controlled by `CanvasRotaryChannel::ContextPrimary`:
+  - `parameter_name: &'static str` (e.g. `"Corner Radius"`, `"Hobby Tension"`, `"Tunni Ratio"`, `"Stem Width"`, `"Brush Radius"`, `"Zoom"`)
+  - `formatted_value: String` (e.g. `"+24 UPM"`, `"1.25"`, `"65%"`, `"80 UPM"`, `"40 dp"`, `"100%"`)
+  - `normalized_ratio: f64` in `[0.0, 1.0]` for rendering circular dial progress arcs on Loupedeck CT or `egui-macview`.
+
+---
+
+## 5. Port 4: Haptic Feedback Event Queue (`drain_haptic_events`)
+
+`state.drain_haptic_events() -> Vec<CanvasHapticEvent>` drains pending tactile feedback events generated during interaction:
+
+1. `CanvasHapticEvent::RotaryDetentTick { channel: CanvasRotaryChannel }` — emitted when a rotary encoder step mutates a canvas parameter.
+2. `CanvasHapticEvent::IntentLatchToggled { intent: CanvasIntent, latched: bool }` — emitted when a sticky intent latch is toggled on or off.
+3. `CanvasHapticEvent::SnapAlignment { kind: SnapTargetKind }` — emitted when a dragged node or tool snaps onto a metric line, guide, node, or virtual apex.
+4. `CanvasHapticEvent::ContourClosed` — emitted when an open contour is closed in `Pen` or `Select`.
+5. `CanvasHapticEvent::BoundaryClamped` — emitted when a rotary dial or parameter reaches its minimum or maximum allowed value (`[0.20, 0.95]` Tunni ratio, `[0.75, 4.0]` Hobby tension, zoom limits, or empty Undo/Redo stack).
+
+---
+
+## 6. Port 5: Mobile & Stylus Precision Ergonomics
+
+1. **Pointer-Type Aware Finger Offset (`InputDeviceKind::{ Mouse, Stylus, TouchFinger }`)**:
+   - Configured via `state.set_active_input_device(device: InputDeviceKind)`.
+   - `state.resolve_effective_pointer_screen_pos(raw_pos: ScreenPoint) -> ScreenPoint` offsets `raw_pos.y` upward by `preferences.touch_finger_offset_dp` when `active_input_device == InputDeviceKind::TouchFinger` (or during active touch contacts), and returns exact `raw_pos` for `Mouse` and `Stylus`.
+2. **Adaptive Touch Hit-Target Inflation (`effective_hit_radius_dp`)**:
+   - When `active_input_device == InputDeviceKind::TouchFinger`, node and handle hit-testing inflates `preferences.hit_test_radius_dp` by `TOUCH_HIT_RADIUS_MULTIPLIER = 1.6` with a minimum floor of `14.0 dp`.
+3. **Edge-Flipping Magnification Loupe (`compute_precision_loupe_overlay`)**:
+   - Returns `Option<PrecisionLoupeGeometry>` centered `78.0 dp` above the active pointer (`lens_radius_dp = 48.0`, `zoom_factor = 2.5`), automatically flipping below/laterally (`flipped_from_top_edge = true`) when approaching within `110.0 dp` of `canvas_rect.top()` so the lens circle never protrudes outside `canvas_rect`.
+4. **Graceful 1-to-2 Finger Multi-Touch Promotion (`promote_to_multitouch_gesture`)**:
+   - Cleanly rolls back any uncommitted single-finger drag or tentative `Pen` placement to `active_drag_before_snapshot` without polluting the `CommandHistory` Undo stack.
+5. **Stylus Barrel, Squeeze & Double-Tap Actions (`dispatch_stylus_accessory_event`)**:
+   - `StylusAccessoryEvent::DoubleTap`: swaps `active_tool` between `CanvasTool::Select` and the last active drawing tool (default `CanvasTool::Pen`).
+   - `StylusAccessoryEvent::BarrelHold(bool)`: activates/deactivates `CanvasIntent::BreakCuspHandle` (`Alt`).
+   - `StylusAccessoryEvent::Squeeze { pos }`: updates `cursor_screen_pos` to `pos` for instant radial menu invocation at the stylus tip.
+
+---
+
+## 7. Rust Data Structures & Public API Contracts (`SPEC-015`)
+
+```rust
+/// Semantic geometric modifier intents decoupled from physical keyboard scancodes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+pub enum CanvasIntent {
+    ConstrainAngle,
+    LockAspectRatio,
+    OriginFromCenter,
+    BreakCuspHandle,
+    SlideAlongCurve,
+    DuplicateOnDrag,
+    ShearTransform,
+    KnifeAddNodesOnly,
+    MoveOriginOrPan,
+}
+
+/// Bitmask set of active `CanvasIntent` flags.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub struct CanvasIntentMask(pub u16);
+
+/// Universal rotary encoder channels for hardware dials (Loupedeck CT, Wacom Touch Ring) and virtual wheels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize, serde::Deserialize)]
+pub enum CanvasRotaryChannel {
+    ContextPrimary,
+    ViewportZoom,
+    CanvasRotationOrSlant,
+    HistoryScrub,
+    CurveTensionOrRadius,
+    KerningOrSpacing,
+}
+
+/// Single semantic intent entry in `ControllerTelemetryDescriptor`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct IntentTelemetryItem {
+    pub intent: CanvasIntent,
+    pub short_label: &'static str,
+    pub shortcut_hint: &'static str,
+    pub active: bool,
+}
+
+/// Live rotary parameter readout for OLED/LCD dial screens and radial HUDs.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct RotaryTelemetryInfo {
+    pub parameter_name: &'static str,
+    pub formatted_value: String,
+    pub normalized_ratio: f64,
+}
+
+/// Complete telemetry snapshot exported by `GrafiaCanvasState::controller_telemetry()`.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ControllerTelemetryDescriptor {
+    pub active_tool: CanvasTool,
+    pub available_intents: Vec<IntentTelemetryItem>,
+    pub primary_rotary: RotaryTelemetryInfo,
+}
+
+/// Semantic haptic feedback events emitted by `GrafiaCanvasState`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum CanvasHapticEvent {
+    RotaryDetentTick { channel: CanvasRotaryChannel },
+    IntentLatchToggled { intent: CanvasIntent, latched: bool },
+    SnapAlignment { kind: SnapTargetKind },
+    ContourClosed,
+    BoundaryClamped,
+}
+
+/// Physical input device classification for adaptive touch offsets and hit radii.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub enum InputDeviceKind {
+    #[default]
+    Mouse,
+    Stylus,
+    TouchFinger,
+}
+
+/// Stylus hardware events (Apple Pencil Pro double-tap / squeeze, Wacom barrel button).
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum StylusAccessoryEvent {
+    DoubleTap,
+    Squeeze { pos: ScreenPoint },
+    BarrelHold(bool),
+}
+
+/// Computed screen-space geometry for the edge-flipping magnification loupe.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PrecisionLoupeGeometry {
+    pub target_screen_pos: ScreenPoint,
+    pub target_upm_pos: FontPoint,
+    pub lens_center_screen_pos: ScreenPoint,
+    pub lens_radius_dp: f32,
+    pub zoom_factor: f32,
+    pub flipped_from_top_edge: bool,
+}
+
+impl GrafiaCanvasState {
+    // 1. Semantic Intent Port
+    pub fn set_external_intents(&mut self, intents: CanvasIntentMask);
+    pub fn set_intent_latched(&mut self, intent: CanvasIntent, latched: bool);
+    pub fn clear_external_intents(&mut self);
+    pub fn effective_intents(&self, hw_modifiers: Modifiers, hw_space: bool) -> CanvasIntentMask;
+
+    // 2. Continuous Rotary Encoder Port
+    pub fn step_rotary_encoder(&mut self, channel: CanvasRotaryChannel, delta_ticks: f64) -> bool;
+
+    // 3. Controller Telemetry Port
+    pub fn controller_telemetry(&self) -> ControllerTelemetryDescriptor;
+
+    // 4. Haptic Feedback Event Port
+    pub fn drain_haptic_events(&mut self) -> Vec<CanvasHapticEvent>;
+
+    // 5. Mobile & Stylus Precision Port
+    pub fn set_active_input_device(&mut self, device: InputDeviceKind);
+    pub fn resolve_effective_pointer_screen_pos(&self, raw_pos: ScreenPoint) -> ScreenPoint;
+    pub fn compute_precision_loupe_overlay(&self, canvas_rect: egui::Rect) -> Option<PrecisionLoupeGeometry>;
+    pub fn promote_to_multitouch_gesture(&mut self) -> bool;
+    pub fn dispatch_stylus_accessory_event(&mut self, event: StylusAccessoryEvent) -> bool;
+}
+```
+
+---
+
+## 8. Complete Normative Test Matrix (`TC-V0130-001` .. `TC-V0130-008`)
+
+| Test Case ID | Requirement / Controller Port Contract | Input / Action | Expected Normative Outcome |
+| :--- | :--- | :--- | :--- |
+| **`TC-V0130-001`** | Semantic `CanvasIntent` & `CanvasIntentMask` Resolution Across Tools | Latch/hold `BreakCuspHandle` in `Pen`, `SlideAlongCurve` in `Select`, `LockAspectRatio \| OriginFromCenter` in `Primitives`, and `KnifeAddNodesOnly` in `Knife`. | `effective_intents` and canvas tool interactions execute cusp breaking, curve sliding, centered 1:1 square creation, and node-only knife insertion without physical keyboard modifiers. |
+| **`TC-V0130-002`** | `CanvasRotaryChannel::ContextPrimary` Auto-Routing (Smart Corner, Hobby, Tunni, Stem, Brush) | Step `ContextPrimary` with `+2.0` ticks under a selected Smart Corner, a selected `HobbyStar` node, a cubic segment, `CanvasTool::Stem`, and `CanvasTool::Trowel`. | Automatically increments Smart Corner `radius_upm`, Hobby `tension`, Tunni ratio, structural stem width, and brush radius respectively. |
+| **`TC-V0130-003`** | `CanvasRotaryChannel` Dedicated Channels (`ViewportZoom`, `CanvasRotationOrSlant`, `HistoryScrub`, `KerningOrSpacing`) | Step `ViewportZoom`, `CanvasRotationOrSlant`, `HistoryScrub` (`-1.0` Undo / `+1.0` Redo), and `KerningOrSpacing`. | Zooms viewport, rotates selection / slants italic angle, scrubs Undo/Redo history per tick, and adjusts kerning/spacing. |
+| **`TC-V0130-004`** | `ControllerTelemetryDescriptor` Context-Sensitive OLED/PieMenu Labels & Rotary Readout | Inspect `controller_telemetry()` across `Pen`, `Select`, `Primitives`, `Knife`, and `Stem` with latched intents and active parameters. | Reports tool-appropriate `available_intents` (`"∧ Cusp"`, `"↝ Slide"`, `"1:1"`, `"⊙ Center"`, `"⊕ Nodes"`) with `active == true` for latched intents and accurate `primary_rotary` telemetry. |
+| **`TC-V0130-005`** | `CanvasHapticEvent` Queue (`RotaryDetentTick`, `IntentLatchToggled`, `SnapAlignment`, `ContourClosed`, `BoundaryClamped`) | Toggle an intent latch, step a rotary dial into its `[0.20, 0.95]` clamp boundary, snap a node, and close a contour; call `drain_haptic_events()`. | Emits all 5 `CanvasHapticEvent` variants in deterministic order and empties the queue on drain. |
+| **`TC-V0130-006`** | Mobile Finger Offset (`InputDeviceKind::TouchFinger`), `1.6x` Hit Inflation & Edge-Flipping `PrecisionLoupeGeometry` | Set `TouchFinger` with `touch_finger_offset_dp = 36.0`, test `hit_test_node` at `11.0 dp`, and compute loupe at `y = 250.0` vs. `y = 40.0`. | `TouchFinger` offsets pointer by `-36.0 dp`, captures node at `11.0 dp` (where `Mouse` misses), and flips the `48.0 dp` loupe inside `canvas_rect` near the top edge. |
+| **`TC-V0130-007`** | Graceful Multi-Touch Promotion (`promote_to_multitouch_gesture`) & `StylusAccessoryEvent` (`DoubleTap`, `BarrelHold`, `Squeeze`) | Start a tentative 1-finger `Pen` node placement, call `promote_to_multitouch_gesture()`, and dispatch stylus `DoubleTap` twice + `BarrelHold(true)`. | Rolls back tentative `Pen` node with zero Undo pollution; `DoubleTap` swaps `Pen <-> Select`; `BarrelHold(true)` activates `BreakCuspHandle`. |
+| **`TC-V0130-008`** | Property-Based & Stateful `arbtest` Controller Port Fuzzing | Fuzz arbitrary intent masks, rotary encoder ticks across all 6 channels, device switches, and `Undo`/`Redo`. | `state.validate_invariants()` holds after every operation and all coordinates/parameters remain finite. |

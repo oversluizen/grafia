@@ -6,14 +6,15 @@ pub use crate::adapters::document_scene_ops::{
 };
 use crate::adapters::drawing_tool_state::DrawingToolState;
 use crate::core::{
-    CanvasColorSublayer, ClipboardContour, CustomReferenceFrame, FontPoint, GlyphContour, Node,
-    NodeId, PostScriptHint, ScreenPoint, SegmentHit, TransformGridAnchor, TransformOriginSpec,
-    TrueTypeVisualInstruction, ViewportTransform,
+    CanvasColorSublayer, ClipboardContour, ContourId, ContourStrokeStyle, CustomReferenceFrame,
+    FontPoint, GlyphContour, Node, NodeId, PostScriptHint, ScreenPoint, SegmentHit,
+    TransformGridAnchor, TransformOriginSpec, TrueTypeVisualInstruction, ViewportTransform,
 };
 use crate::interaction::{CommandHistory, PenToolState, SelectToolState};
 use crate::snapping::{ActiveSnapper, GlyphMetrics, Guide, SelectedGuideRef};
 use crate::tokens::{GlyphArchetype, GrafiaTheme};
 use kurbo::BezPath;
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT_CONTENT_GENERATION: AtomicU64 = AtomicU64::new(1);
@@ -40,6 +41,10 @@ pub enum CanvasTool {
     Text,
     TrueTypeInstructor,
     Hoi,
+    Stem,
+    CurvedTrajectory,
+    Trowel,
+    Cleaner,
 }
 
 #[allow(non_upper_case_globals)]
@@ -59,6 +64,10 @@ impl CanvasTool {
     pub const TextTool: CanvasTool = CanvasTool::Text;
     pub const TrueTypeInstructorTool: CanvasTool = CanvasTool::TrueTypeInstructor;
     pub const HoiTool: CanvasTool = CanvasTool::Hoi;
+    pub const StemTool: CanvasTool = CanvasTool::Stem;
+    pub const CurvedTrajectoryTool: CanvasTool = CanvasTool::CurvedTrajectory;
+    pub const TrowelTool: CanvasTool = CanvasTool::Trowel;
+    pub const CleanerTool: CanvasTool = CanvasTool::Cleaner;
     #[must_use]
     pub const fn allows_path_segment_interaction(self) -> bool {
         matches!(self, Self::Select | Self::Pen)
@@ -153,9 +162,7 @@ pub struct GrafiaCanvasState {
     pub ghost_paths: Vec<crate::core::GhostMarkPath>,
     pub show_mark_cloud: bool,
     pub components: Vec<crate::core::CanvasComponent>,
-    pub host_requests: Vec<crate::core::CanvasHostRequest>,
-    pub contour_strokes:
-        std::collections::BTreeMap<crate::core::ContourId, crate::core::ContourStrokeStyle>,
+    pub contour_strokes: BTreeMap<ContourId, ContourStrokeStyle>,
     pub companion_master_layers: Vec<crate::core::CompanionMasterLayer>,
     pub show_master_compatibility: bool,
     pub select_all_layers_mode: bool,
@@ -169,6 +176,7 @@ pub struct GrafiaCanvasState {
     pub show_background_nodes: bool,
     pub show_component_piece_frames: bool,
     pub active_bbox_rotation_deg: Option<f64>,
+    pub smart_corners: Vec<crate::core::SmartCornerSpec>,
     pub preferences: crate::tokens::GrafiaPreferences,
     pub color_sublayers: Vec<CanvasColorSublayer>,
     pub custom_reference_frame: Option<CustomReferenceFrame>,
@@ -180,6 +188,9 @@ pub struct GrafiaCanvasState {
     pub show_hoi_diamonds: bool,
     pub show_pixel_preview_ppem: Option<u16>,
     pub backdrop_ghost_contours: Vec<GlyphContour>,
+    pub show_tunni_lines: bool,
+    pub power_nudge_enabled: bool,
+    pub curve_harmony: crate::core::CurveHarmonyState,
     pub content_generation: u64,
     pub pen_transients: PenInteractionTransients,
     pub drag_transients: DragSessionTransients,
@@ -251,7 +262,6 @@ macro_rules! construct_default_canvas_state {
             ghost_paths: Vec::new(),
             show_mark_cloud: true,
             components: Vec::new(),
-            host_requests: Vec::new(),
             contour_strokes: std::collections::BTreeMap::new(),
             companion_master_layers: Vec::new(),
             show_master_compatibility: false,
@@ -266,6 +276,7 @@ macro_rules! construct_default_canvas_state {
             show_background_nodes: false,
             show_component_piece_frames: false,
             active_bbox_rotation_deg: None,
+            smart_corners: Vec::new(),
             preferences: crate::tokens::GrafiaPreferences {
                 round_to_grid: false,
                 snap_radius_dp: crate::tokens::DEFAULT_SNAP_THRESHOLD_DP,
@@ -284,6 +295,9 @@ macro_rules! construct_default_canvas_state {
             show_hoi_diamonds: false,
             show_pixel_preview_ppem: None,
             backdrop_ghost_contours: Vec::new(),
+            show_tunni_lines: false,
+            power_nudge_enabled: false,
+            curve_harmony: crate::core::CurveHarmonyState::default(),
             content_generation: next_content_generation(),
             pen_transients: PenInteractionTransients::default(),
             drag_transients: DragSessionTransients::default(),

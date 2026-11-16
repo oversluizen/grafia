@@ -57,7 +57,12 @@ impl CanvasActionId {
             CanvasTool::Pencil => Self::PencilTool,
             CanvasTool::Pixel => Self::PixelTool,
             CanvasTool::Text => Self::TextTool,
-            CanvasTool::TrueTypeInstructor | CanvasTool::Hoi => Self::SelectTool,
+            CanvasTool::TrueTypeInstructor
+            | CanvasTool::Hoi
+            | CanvasTool::Stem
+            | CanvasTool::CurvedTrajectory
+            | CanvasTool::Trowel
+            | CanvasTool::Cleaner => Self::SelectTool,
         }
     }
 

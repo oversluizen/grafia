@@ -27,6 +27,10 @@ impl GrafiaCanvasState {
                 | CanvasTool::Annotation
                 | CanvasTool::Pencil
                 | CanvasTool::Pixel
+                | CanvasTool::Trowel
+                | CanvasTool::Cleaner
+                | CanvasTool::Stem
+                | CanvasTool::CurvedTrajectory
         )
     }
 
@@ -36,6 +40,9 @@ impl GrafiaCanvasState {
         font_pt: FontPoint,
         mods: Modifiers,
     ) -> bool {
+        if let Some(handled) = self.on_stem_brush_or_trajectory_press(scr_pt, font_pt, mods) {
+            return handled;
+        }
         match self.active_tool {
             CanvasTool::Knife => {
                 self.drawing_tool_state.knife = KnifeDragState {
@@ -159,8 +166,39 @@ impl GrafiaCanvasState {
             CanvasTool::Pixel if self.drawing_tool_state.pixel.active => {
                 self.on_pixel_move(font_pt)
             }
+            CanvasTool::Trowel | CanvasTool::Cleaner | CanvasTool::CurvedTrajectory => {
+                self.on_brush_or_trajectory_pointer_move(font_pt)
+            }
             _ => false,
         }
+    }
+
+    fn on_brush_or_trajectory_pointer_move(&mut self, font_pt: FontPoint) -> bool {
+        if matches!(self.active_tool, CanvasTool::Trowel | CanvasTool::Cleaner)
+            && self.drawing_tool_state.brush_stroke_active
+        {
+            let zoom = self.viewport.zoom.max(MIN_VIEWPORT_ZOOM);
+            let r_upm = f64::from(self.effective_brush_radius_dp()) / f64::from(zoom);
+            return self.step_brush_stroke_in_place(font_pt, r_upm);
+        }
+        if let Some((nid, comp_idx)) = self.drawing_tool_state.active_trajectory_drag {
+            let is_c2 = self.drawing_tool_state.active_trajectory_drag_is_control2;
+            if let Some(link) = self
+                .curve_harmony
+                .curved_trajectories
+                .iter_mut()
+                .find(|l| l.node_id == nid && l.companion_layer_index == comp_idx)
+            {
+                if is_c2 {
+                    link.control2 = Some(font_pt);
+                } else {
+                    link.control1 = font_pt;
+                }
+                self.bump_content_generation();
+                return true;
+            }
+        }
+        false
     }
 
     pub fn on_drawing_tool_pointer_release(&mut self, font_pt: FontPoint, mods: Modifiers) -> bool {
@@ -192,6 +230,36 @@ impl GrafiaCanvasState {
                 if let Some(before) = self.drag_transients.active_drag_before_snapshot.take() {
                     self.record_mutation("Pixel Tool", before);
                 }
+                true
+            }
+            CanvasTool::Trowel | CanvasTool::Cleaner
+                if self.drawing_tool_state.brush_stroke_active =>
+            {
+                self.drawing_tool_state.brush_stroke_active = false;
+                if let Some(before) = self.drag_transients.active_drag_before_snapshot.take() {
+                    if self.snapshot() != before {
+                        let label = if self.active_tool == CanvasTool::Trowel {
+                            "Trowel Smooth"
+                        } else {
+                            "Clean Contour"
+                        };
+                        self.record_mutation(label, before);
+                    }
+                }
+                self.assert_invariants();
+                true
+            }
+            CanvasTool::CurvedTrajectory
+                if self.drawing_tool_state.active_trajectory_drag.is_some() =>
+            {
+                self.drawing_tool_state.active_trajectory_drag = None;
+                self.drawing_tool_state.active_trajectory_drag_is_control2 = false;
+                if let Some(before) = self.drag_transients.active_drag_before_snapshot.take() {
+                    if self.snapshot() != before {
+                        self.record_mutation("Edit Master Trajectory", before);
+                    }
+                }
+                self.assert_invariants();
                 true
             }
             _ => false,
