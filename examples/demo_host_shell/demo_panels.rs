@@ -2,10 +2,10 @@
 
 use super::super::VIEW_MODE_SPECS;
 use super::toolbar_specs::{
-    DEMO_CENTRAL_CANVAS_H_DP, DEMO_CENTRAL_CANVAS_W_DP, DEMO_GUIDE_X_UPM, DEMO_GUIDE_Y_UPM,
-    DEMO_ROTATE_STEP_DEG, DEMO_SCALE_UP_FACTOR, DEMO_SLANT_STEP_DEG, GRID_SPACING_DP,
-    MAX_VIEWPORT_ZOOM, METRICS_ORIGIN_SPECS, MIN_VIEWPORT_ZOOM, ORIGIN_ANCHOR_GRID_ROWS,
-    SIDEBAR_TOP_SPACE_DP, TOOL_ICON_SPECS, ZOOM_IN_FACTOR, ZOOM_OUT_FACTOR, ZOOM_PERCENT_BASE,
+    fit_demo_canvas_viewport, DEMO_GUIDE_X_UPM, DEMO_GUIDE_Y_UPM, DEMO_ROTATE_STEP_DEG,
+    DEMO_SCALE_UP_FACTOR, DEMO_SLANT_STEP_DEG, GRID_SPACING_DP, MAX_VIEWPORT_ZOOM,
+    METRICS_ORIGIN_SPECS, MIN_VIEWPORT_ZOOM, ORIGIN_ANCHOR_GRID_ROWS, SIDEBAR_TOP_SPACE_DP,
+    TOOL_ICON_SPECS, ZOOM_IN_FACTOR, ZOOM_OUT_FACTOR, ZOOM_PERCENT_BASE,
 };
 use super::{DemoPreset, MockFontHost};
 use egui::{Grid, Separator, Ui};
@@ -92,14 +92,14 @@ fn render_top_toolbar_zoom_and_history(ui: &mut Ui, state: &mut GrafiaCanvasStat
         state.viewport.zoom = (state.viewport.zoom * ZOOM_IN_FACTOR).min(MAX_VIEWPORT_ZOOM);
     }
     if tip_btn(ui, "\u{f37d}", "Fit Glyph in Viewport [Cmd+0]") {
-        state.fit_viewport_to_glyph(DEMO_CENTRAL_CANVAS_W_DP, DEMO_CENTRAL_CANVAS_H_DP);
+        fit_demo_canvas_viewport(state);
     }
     ui.add(Separator::default().vertical());
     for arch in GlyphArchetype::all() {
         let lbl = arch.button_label();
         if tip_toggle(ui, state.active_archetype == arch, lbl, lbl) {
             state.load_glyph_archetype(arch);
-            state.fit_viewport_to_glyph(DEMO_CENTRAL_CANVAS_W_DP, DEMO_CENTRAL_CANVAS_H_DP);
+            fit_demo_canvas_viewport(state);
         }
     }
     ui.add(Separator::default().vertical());
@@ -123,7 +123,7 @@ fn render_top_toolbar_zoom_and_history(ui: &mut Ui, state: &mut GrafiaCanvasStat
         "Reset Canvas to Golden Master /A",
     ) {
         *state = GrafiaCanvasState::init_glyph_a();
-        state.fit_viewport_to_glyph(DEMO_CENTRAL_CANVAS_W_DP, DEMO_CENTRAL_CANVAS_H_DP);
+        fit_demo_canvas_viewport(state);
     }
 }
 

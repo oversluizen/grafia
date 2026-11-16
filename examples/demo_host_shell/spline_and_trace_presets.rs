@@ -29,6 +29,7 @@ impl MockFontHost {
     pub fn apply_hobby_and_smart_handles_preset(&mut self, state: &mut GrafiaCanvasState) {
         if state.active_archetype != GlyphArchetype::O {
             state.load_glyph_archetype(GlyphArchetype::O);
+            super::toolbar_specs::fit_demo_canvas_viewport(state);
             state.glyph.name = "O".into();
         }
         let converted = if state.convert_selected_cubic_nodes_to_hobby() {

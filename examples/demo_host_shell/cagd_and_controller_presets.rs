@@ -95,6 +95,7 @@ impl MockFontHost {
     pub fn apply_curve_harmony_and_audit_preset(&mut self, state: &mut GrafiaCanvasState) {
         if state.active_archetype != GlyphArchetype::O {
             state.load_glyph_archetype(GlyphArchetype::O);
+            super::toolbar_specs::fit_demo_canvas_viewport(state);
             state.glyph.name = "O".into();
         }
         state.select_all_nodes();
@@ -118,6 +119,7 @@ impl MockFontHost {
     pub fn apply_smart_corners_brush_and_gauge_preset(&mut self, state: &mut GrafiaCanvasState) {
         if state.active_archetype != GlyphArchetype::A {
             state.load_glyph_archetype(GlyphArchetype::A);
+            super::toolbar_specs::fit_demo_canvas_viewport(state);
             state.glyph.name = "A".into();
         }
         state.set_smart_corner(SmartCornerSpec {
@@ -174,6 +176,7 @@ impl MockFontHost {
     ) {
         if state.active_archetype != GlyphArchetype::O {
             state.load_glyph_archetype(GlyphArchetype::O);
+            super::toolbar_specs::fit_demo_canvas_viewport(state);
             state.glyph.name = "O".into();
         }
         state.set_show_measurement_rainbow(true);

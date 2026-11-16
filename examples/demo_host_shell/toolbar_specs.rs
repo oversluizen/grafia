@@ -8,8 +8,20 @@ pub const WINDOW_WIDTH_DP: f32 = 1280.0;
 pub const WINDOW_HEIGHT_DP: f32 = 840.0;
 pub const MIN_WINDOW_WIDTH_DP: f32 = 640.0;
 pub const MIN_WINDOW_HEIGHT_DP: f32 = 480.0;
-pub const DEMO_CENTRAL_CANVAS_W_DP: f32 = 760.0;
-pub const DEMO_CENTRAL_CANVAS_H_DP: f32 = 520.0;
+pub const DEMO_CANVAS_CENTER_X_DP: f32 = 544.0;
+pub const DEMO_CANVAS_CENTER_Y_DP: f32 = 382.0;
+pub const DEMO_DEFAULT_ZOOM: f32 = 0.42;
+
+/// Centers the active glyph inside the central canvas panel of the 1280x840 demo layout.
+pub fn fit_demo_canvas_viewport(state: &mut grafia::adapters::GrafiaCanvasState) {
+    let glyph_h = (state.glyph.height as f32).max(1.0);
+    let glyph_w = (state.glyph.width as f32).max(1.0);
+    let zoom = DEMO_DEFAULT_ZOOM;
+    let pan_x = DEMO_CANVAS_CENTER_X_DP - (glyph_w * zoom) * 0.5;
+    let pan_y = DEMO_CANVAS_CENTER_Y_DP + (glyph_h * zoom) * 0.5;
+    state.viewport.zoom = zoom;
+    state.viewport.pan_offset = grafia::core::ScreenPoint::new(pan_x, pan_y);
+}
 pub const ZOOM_IN_FACTOR: f32 = 1.25;
 pub const ZOOM_OUT_FACTOR: f32 = 0.8;
 pub const ZOOM_PERCENT_BASE: f32 = 100.0;

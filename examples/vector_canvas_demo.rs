@@ -8,10 +8,10 @@
 pub mod demo_host_shell;
 
 pub use demo_host_shell::toolbar_specs::{
-    configure_demo_fonts, install_crash_logger, ALL_ACTION_ICONS, APP_TITLE,
-    DEMO_CENTRAL_CANVAS_H_DP, DEMO_CENTRAL_CANVAS_W_DP, DEMO_GUIDE_X_UPM, DEMO_GUIDE_Y_UPM,
-    METRICS_ORIGIN_SPECS, MIN_WINDOW_HEIGHT_DP, MIN_WINDOW_WIDTH_DP, ORIGIN_ANCHOR_GRID_ROWS,
-    TOOL_ICON_SPECS, WINDOW_HEIGHT_DP, WINDOW_WIDTH_DP,
+    configure_demo_fonts, fit_demo_canvas_viewport, install_crash_logger, ALL_ACTION_ICONS,
+    APP_TITLE, DEMO_GUIDE_X_UPM, DEMO_GUIDE_Y_UPM, METRICS_ORIGIN_SPECS, MIN_WINDOW_HEIGHT_DP,
+    MIN_WINDOW_WIDTH_DP, ORIGIN_ANCHOR_GRID_ROWS, TOOL_ICON_SPECS, WINDOW_HEIGHT_DP,
+    WINDOW_WIDTH_DP,
 };
 use demo_host_shell::{
     demo_panels::{render_left_sidebar, render_top_toolbar},
@@ -61,7 +61,7 @@ impl GrafiaVectorCanvasDemo {
     #[must_use]
     pub fn new() -> Self {
         let mut state = GrafiaCanvasState::init_glyph_a();
-        state.fit_viewport_to_glyph(DEMO_CENTRAL_CANVAS_W_DP, DEMO_CENTRAL_CANVAS_H_DP);
+        fit_demo_canvas_viewport(&mut state);
         Self {
             state,
             theme: GrafiaTheme::sonoma_default(),

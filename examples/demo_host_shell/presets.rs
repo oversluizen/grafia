@@ -150,10 +150,7 @@ impl MockFontHost {
             GlyphArchetype::A
         };
         state.load_glyph_archetype(next);
-        state.fit_viewport_to_glyph(
-            super::toolbar_specs::DEMO_CENTRAL_CANVAS_W_DP,
-            super::toolbar_specs::DEMO_CENTRAL_CANVAS_H_DP,
-        );
+        super::toolbar_specs::fit_demo_canvas_viewport(state);
         state.glyph.name = if next == GlyphArchetype::A {
             "A".into()
         } else {
@@ -242,6 +239,7 @@ impl MockFontHost {
             DemoPreset::FitCurveStep => {
                 if state.active_archetype != GlyphArchetype::O {
                     state.load_glyph_archetype(GlyphArchetype::O);
+                    super::toolbar_specs::fit_demo_canvas_viewport(state);
                     state.glyph.name = "O".into();
                 }
                 state.select_all_nodes();
