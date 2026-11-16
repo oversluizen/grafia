@@ -238,7 +238,9 @@ fn start_rotate_or_scale_press(
     mods: Modifiers,
 ) {
     let origin_scr = state.viewport.to_screen(state.transform_origin);
-    if scr_pt.distance_to(origin_scr) < TRANSFORM_ORIGIN_HIT_RADIUS_DP {
+    if scr_pt.distance_to(origin_scr)
+        < state.scale_touch_hit_radius_dp(TRANSFORM_ORIGIN_HIT_RADIUS_DP)
+    {
         let step = state.effective_grid_step();
         state.transform_origin = if !mods.control && step > 0.0 {
             font_pt.round_to_grid_step(step)

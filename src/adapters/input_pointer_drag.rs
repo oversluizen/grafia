@@ -67,17 +67,12 @@ impl<'a> InputDispatcher<'a> {
                 current_screen: scr_pt,
             };
         }
-        if matches!(
-            self.state.select_state,
-            SelectToolState::PanningViewport { .. }
-        ) {
-            if let SelectToolState::PanningViewport { last_screen } = self.state.select_state {
-                self.state.viewport.pan_offset.x.0 += scr_pt.x.0 - last_screen.x.0;
-                self.state.viewport.pan_offset.y.0 += scr_pt.y.0 - last_screen.y.0;
-                self.state.select_state = SelectToolState::PanningViewport {
-                    last_screen: scr_pt,
-                };
-            }
+        if let SelectToolState::PanningViewport { last_screen } = self.state.select_state {
+            self.state.viewport.pan_offset.x.0 += scr_pt.x.0 - last_screen.x.0;
+            self.state.viewport.pan_offset.y.0 += scr_pt.y.0 - last_screen.y.0;
+            self.state.select_state = SelectToolState::PanningViewport {
+                last_screen: scr_pt,
+            };
             return true;
         }
         let mut moved_changed = self.handle_select_state_pointer_move(scr_pt, font_pt, mods);
@@ -169,6 +164,12 @@ impl<'a> InputDispatcher<'a> {
         modifiers: Modifiers,
     ) {
         let (dx, dy) = (font_pt.x.0 - start_pt.x.0, font_pt.y.0 - start_pt.y.0);
+        if self
+            .state
+            .is_pending_touch_segment_tap_within_slop(dx.hypot(dy))
+        {
+            return;
+        }
         self.state.select_state = SelectToolState::DraggingNodes {
             selected,
             start_pt,
@@ -227,10 +228,9 @@ impl<'a> InputDispatcher<'a> {
         let raw_dx = font_pt.x.0 - start_pt.x.0;
         let raw_dy = font_pt.y.0 - start_pt.y.0;
         let dist_font = raw_dx.hypot(raw_dy);
-        if self.state.active_input_device() == crate::core::InputDeviceKind::TouchFinger
-            && self.state.drag_transients.pending_segment_click.is_some()
-            && dist_font * f64::from(self.state.viewport.zoom)
-                <= f64::from(self.state.effective_tap_drag_slop_dp())
+        if self
+            .state
+            .is_pending_touch_segment_tap_within_slop(dist_font)
         {
             return;
         }

@@ -142,6 +142,7 @@ Hardware controllers with built-in displays (Wacom Intuos 4 OLEDs, Loupedeck CT 
      - `hit_test_tunni_line_at_upm` & `try_begin_tunni_press` (never stealing hits from nodes within `hit_test_node`),
      - `select_anchor_at_upm` (`CanvasAnchor` hit-testing),
      - `hit_test_guides` (`Guide` knob and line hit-testing),
+     - `hit_test_bbox_knob` (selection bounding-box scale/rotate/slant knobs and transform origin),
      - `hit_test_smart_handles_with_radius` (`CanvasSmartHandle` hit-testing).
 3. **Touch Tap-Slop Tolerance, Segment Selection & Double-Tap Line-to-Cubic Handle Creation (`TC-V0130-012`)**:
    - **Touch Double-Tap Slop (`effective_double_click_slop_dp`)**: Uses `TOUCH_DOUBLE_TAP_MAX_DIST_DP = 20.0 dp` when `active_input_device == InputDeviceKind::TouchFinger` (vs. `DOUBLE_CLICK_MAX_DIST_DP = 8.0 dp` for mouse).

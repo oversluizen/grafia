@@ -395,14 +395,14 @@ impl GrafiaCanvasState {
         let zoom = self.viewport.zoom.max(MIN_VIEWPORT_ZOOM);
         let hit_dp = self.scale_touch_hit_radius_dp(TUNNI_HIT_RADIUS_DP);
         let tol_upm = f64::from(hit_dp / zoom);
-        let mut best: Option<((ContourId, usize), f64)> = None;
+        let mut best: Option<((ContourId, usize), f64, FontPoint)> = None;
         for ov in self.compute_tunni_overlays() {
             let d = point_to_segment_distance_upm(font_pt, ov.p1, ov.p2);
-            if d <= tol_upm && best.is_none_or(|(_, bd)| d < bd) {
-                best = Some(((ov.contour_id, ov.segment_index), d));
+            if d <= tol_upm && best.is_none_or(|(_, bd, _)| d < bd) {
+                best = Some(((ov.contour_id, ov.segment_index), d, ov.tunni_point));
             }
         }
-        let Some(((contour_id, segment_index), tunni_d)) = best else {
+        let Some(((contour_id, segment_index), tunni_d, tunni_pt)) = best else {
             return false;
         };
         let min_node_d = self
@@ -411,7 +411,10 @@ impl GrafiaCanvasState {
             .flatten()
             .map(|n| n.point.distance_to(font_pt))
             .fold(f64::INFINITY, f64::min);
-        if min_node_d <= tunni_d {
+        let node_hit_upm = f64::from(self.effective_hit_radius_dp() / zoom);
+        if min_node_d <= tunni_d
+            || (min_node_d <= node_hit_upm && min_node_d < font_pt.distance_to(tunni_pt))
+        {
             return false;
         }
         if is_double {

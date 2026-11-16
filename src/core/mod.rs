@@ -275,8 +275,8 @@ pub use tidy_align_connect::{
 };
 pub use transform_ops::{
     compute_bbox_rotate_or_slant_affine, compute_bbox_scale_affine, compute_layer_bounds,
-    compute_selection_bounds, hit_test_bbox_knobs, slant_point, unslant_point, BBoxAction,
-    SelectionBounds, TransformGridAnchor,
+    compute_selection_bounds, hit_test_bbox_knobs, hit_test_bbox_knobs_with_extent, slant_point,
+    unslant_point, BBoxAction, SelectionBounds, TransformGridAnchor,
 };
 pub use tunni_and_comb::{
     balance_tunni_in_contour, compute_curvature_combs_for_contours,

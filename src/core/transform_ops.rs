@@ -254,12 +254,30 @@ pub fn hit_test_bbox_knobs(
     is_ctrl: bool,
     is_alt: bool,
 ) -> Option<BBoxAction> {
+    hit_test_bbox_knobs_with_extent(
+        bounds,
+        viewport,
+        cursor_scr,
+        is_ctrl,
+        is_alt,
+        BBOX_KNOB_HIT_HALF_EXTENT_DP * 2.0,
+    )
+}
+
+#[must_use]
+pub fn hit_test_bbox_knobs_with_extent(
+    bounds: &SelectionBounds,
+    viewport: &ViewportTransform,
+    cursor_scr: ScreenPoint,
+    is_ctrl: bool,
+    is_alt: bool,
+    half_box: f32,
+) -> Option<BBoxAction> {
     if let Some(rot_k) = crate::core::bbox_rotate_shear_ops::hit_test_bbox_outer_corner_rotation(
         bounds, viewport, cursor_scr,
     ) {
         return Some(BBoxAction::Rotate(rot_k));
     }
-    let half_box = BBOX_KNOB_HIT_HALF_EXTENT_DP * 2.0;
     for k in bounds.active_knobs(viewport.zoom) {
         let p_box = bounds.box_screen_point(k, viewport);
         let p_knob = bounds.knob_screen_center(k, viewport);

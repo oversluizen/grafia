@@ -10,7 +10,7 @@ pub const MIN_WINDOW_WIDTH_DP: f32 = 640.0;
 pub const MIN_WINDOW_HEIGHT_DP: f32 = 480.0;
 pub const DEMO_CANVAS_CENTER_X_DP: f32 = 544.0;
 pub const DEMO_CANVAS_CENTER_Y_DP: f32 = 382.0;
-pub const DEMO_DEFAULT_ZOOM: f32 = 0.42;
+pub const DEMO_DEFAULT_ZOOM: f32 = 0.48;
 
 /// Centers the active glyph inside the central canvas panel of the 1280x840 demo layout.
 pub fn fit_demo_canvas_viewport(state: &mut grafia::adapters::GrafiaCanvasState) {

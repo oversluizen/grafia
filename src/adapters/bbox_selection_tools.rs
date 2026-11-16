@@ -6,7 +6,7 @@ use crate::core::{
     add_extremes_to_contours, add_inflection_points_to_contours, align_selected_nodes,
     close_open_contours_in_layer, compute_layer_bounds, compute_selection_bounds,
     connect_selected_open_endpoints_in_contours, correct_path_direction_layer,
-    cut_open_delete_nodes_in_contour, extract_clipboard_contours, hit_test_bbox_knobs,
+    cut_open_delete_nodes_in_contour, extract_clipboard_contours, hit_test_bbox_knobs_with_extent,
     make_node_first_or_reverse_open, paste_clipboard_into_contours, tidy_up_contours, BBoxAction,
     FontPoint, GlyphContour, MetricsOrigin, NodeId, NodeType, ScreenPoint, SelectionBounds,
     TransformGridAnchor, TransformOriginSpec,
@@ -121,7 +121,10 @@ impl GrafiaCanvasState {
             return None;
         }
         let b = self.selection_bounds()?;
-        hit_test_bbox_knobs(&b, &self.viewport, cursor_scr, is_ctrl, is_alt)
+        let half_box = self.scale_touch_hit_radius_dp(
+            crate::core::math_consts::BBOX_KNOB_HIT_HALF_EXTENT_DP * 2.0,
+        );
+        hit_test_bbox_knobs_with_extent(&b, &self.viewport, cursor_scr, is_ctrl, is_alt, half_box)
     }
 
     pub fn activate_tool(&mut self, tool: CanvasTool) {

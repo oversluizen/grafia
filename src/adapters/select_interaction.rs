@@ -133,21 +133,12 @@ fn handle_select_double_click(
     is_shift: bool,
 ) -> bool {
     let is_touch = state.active_input_device() == crate::core::InputDeviceKind::TouchFinger;
-    let oncurve_r = if is_touch {
-        state.preferences.hit_test_radius_dp
-    } else {
-        state.effective_hit_radius_dp()
-    };
-    let hit_node = state.hit_test_node_with_radius(scr_pt, oncurve_r);
-    if let Some(node_id) = hit_node.filter(|&id| {
-        state
-            .find_node(id)
-            .is_some_and(|n| n.node_type != NodeType::OffCurve)
-    }) {
+    if let Some(node_id) = state.hit_test_oncurve_node_for_double_click(scr_pt) {
         state.toggle_node_smooth_corner(node_id);
         state.drag_transients.active_drag_before_snapshot = None;
         return true;
     }
+    let hit_node = state.hit_test_node(scr_pt);
     if state.try_begin_tunni_press(font_pt, true) {
         return true;
     }

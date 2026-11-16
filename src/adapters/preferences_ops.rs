@@ -311,7 +311,7 @@ impl GrafiaCanvasState {
             TouchPhase::End | TouchPhase::Cancel => {
                 self.drag_transients.touch_state.contacts.remove(&key);
                 if self.drag_transients.touch_state.contacts.is_empty() {
-                    self.drag_transients.touch_state.active_touch_raw_pos = Some(*pos);
+                    self.drag_transients.touch_state.active_touch_raw_pos = None;
                     let was_tap = *phase == TouchPhase::End
                         && self.drag_transients.touch_state.two_finger_peak
                         && self.drag_transients.touch_state.max_contact_excursion_dp

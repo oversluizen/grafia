@@ -105,21 +105,23 @@ impl GrafiaCanvasState {
         hw_modifiers: Modifiers,
         hw_space: bool,
     ) -> Modifiers {
-        let eff = self.effective_intents(hw_modifiers, hw_space);
+        let cp = &self.drawing_tool_state.controller_ports;
+        let ext = cp.external_intents.union(cp.latched_intents);
         let shift = hw_modifiers.shift
-            || eff.contains(CanvasIntent::ConstrainAngle)
-            || eff.contains(CanvasIntent::LockAspectRatio);
+            || ext.contains(CanvasIntent::ConstrainAngle)
+            || ext.contains(CanvasIntent::LockAspectRatio);
         let option = hw_modifiers.option
-            || eff.contains(CanvasIntent::OriginFromCenter)
-            || eff.contains(CanvasIntent::BreakCuspHandle)
-            || eff.contains(CanvasIntent::DuplicateOnDrag)
-            || eff.contains(CanvasIntent::KnifeAddNodesOnly)
-            || eff.contains(CanvasIntent::ShearTransform);
+            || cp.barrel_hold_active
+            || ext.contains(CanvasIntent::OriginFromCenter)
+            || ext.contains(CanvasIntent::BreakCuspHandle)
+            || ext.contains(CanvasIntent::DuplicateOnDrag)
+            || ext.contains(CanvasIntent::KnifeAddNodesOnly)
+            || ext.contains(CanvasIntent::ShearTransform);
         let control = hw_modifiers.control
-            || eff.contains(CanvasIntent::SlideAlongCurve)
-            || eff.contains(CanvasIntent::ShearTransform);
+            || ext.contains(CanvasIntent::SlideAlongCurve)
+            || ext.contains(CanvasIntent::ShearTransform);
         let command = hw_modifiers.command;
-        let space = hw_space || hw_modifiers.space || eff.contains(CanvasIntent::MoveOriginOrPan);
+        let space = hw_space || hw_modifiers.space || ext.contains(CanvasIntent::MoveOriginOrPan);
         Modifiers {
             shift,
             option,
@@ -248,6 +250,39 @@ impl GrafiaCanvasState {
         } else {
             1.0
         }
+    }
+
+    #[must_use]
+    pub(crate) fn is_pending_touch_segment_tap_within_slop(&self, dist_font: f64) -> bool {
+        self.active_input_device() == InputDeviceKind::TouchFinger
+            && self.drag_transients.pending_segment_click.is_some()
+            && dist_font * f64::from(self.viewport.zoom)
+                <= f64::from(self.effective_tap_drag_slop_dp())
+    }
+
+    #[must_use]
+    pub(crate) fn hit_test_oncurve_node_for_double_click(
+        &self,
+        screen_pt: ScreenPoint,
+    ) -> Option<crate::core::NodeId> {
+        if !self.show_nodes_oncurve {
+            return None;
+        }
+        let vp = self.active_slot_viewport();
+        let radius_dp = self.effective_hit_radius_dp();
+        let mut best: Option<(f32, crate::core::NodeId)> = None;
+        for contour in &self.contours {
+            for node in contour {
+                if node.node_type == crate::core::NodeType::OffCurve {
+                    continue;
+                }
+                let dist = vp.to_screen(node.point).distance_to(screen_pt);
+                if dist < radius_dp && best.is_none_or(|(bd, _)| dist < bd) {
+                    best = Some((dist, node.id));
+                }
+            }
+        }
+        best.map(|(_, id)| id)
     }
 
     /// Resolves the effective pointer screen coordinate with finger-offset applied when `TouchFinger` is active (`SPEC-015 §6`).
