@@ -84,48 +84,58 @@
   </div>
   <div id="error_banner"></div>
   <script type="module">
-    import init from './vector_canvas_demo.js?v=20261123_2135';
+    import init from './vector_canvas_demo.js?v=20261123_2320';
 
-    // W3C PointerEvent ("pen") & WebKit Touch ("stylus") capture-phase palm filter:
-    // Ensures resting palm touch contacts never interfere with an active or hovering stylus.
-    let lastPenPointerTime = -10000;
-    let penPointerDown = false;
+    // Tablet Touch & Stylus Bridge for eframe-0.37:
+    // 1. eframe-0.37's touchstart/touchmove/touchend listeners already emit PointerButton + PointerMoved + Touch.
+    //    Suppressing redundant pointerdown/pointerup for pointerType === 'touch' prevents double-PointerButton
+    //    presses from triggering accidental double-clicks when touching a handle.
+    // 2. eframe-0.37 installs mousemove/pointerdown/pointerup but has NO pointermove or pointercancel listener.
+    //    Forwarding stylus (pointerType === 'pen') pointermove -> document mousemove and pointercancel -> pointerup
+    //    enables smooth 120Hz/240Hz stylus handle dragging across iPadOS, Android, and Windows tablets.
+    const hasTouchEvents = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
     window.addEventListener('pointerdown', (ev) => {
-      if (ev.pointerType === 'pen') {
-        penPointerDown = true;
-        lastPenPointerTime = performance.now();
-      } else if (ev.pointerType === 'touch' && (penPointerDown || (performance.now() - lastPenPointerTime) < 600)) {
+      if (hasTouchEvents && ev.pointerType === 'touch') {
+        ev.stopImmediatePropagation();
+      }
+    }, { capture: true });
+    window.addEventListener('pointerup', (ev) => {
+      if (hasTouchEvents && ev.pointerType === 'touch') {
         ev.stopImmediatePropagation();
       }
     }, { capture: true });
     window.addEventListener('pointermove', (ev) => {
       if (ev.pointerType === 'pen') {
-        lastPenPointerTime = performance.now();
-      } else if (ev.pointerType === 'touch' && (penPointerDown || (performance.now() - lastPenPointerTime) < 600)) {
-        ev.stopImmediatePropagation();
+        document.dispatchEvent(new MouseEvent('mousemove', {
+          clientX: ev.clientX,
+          clientY: ev.clientY,
+          screenX: ev.screenX,
+          screenY: ev.screenY,
+          button: ev.button,
+          buttons: ev.buttons,
+          ctrlKey: ev.ctrlKey,
+          shiftKey: ev.shiftKey,
+          altKey: ev.altKey,
+          metaKey: ev.metaKey,
+          bubbles: true,
+          cancelable: true,
+        }));
       }
-    }, { capture: true });
-    window.addEventListener('pointerup', (ev) => {
+    }, { passive: true });
+    window.addEventListener('pointercancel', (ev) => {
       if (ev.pointerType === 'pen') {
-        penPointerDown = false;
-        lastPenPointerTime = performance.now();
+        document.dispatchEvent(new PointerEvent('pointerup', {
+          clientX: ev.clientX,
+          clientY: ev.clientY,
+          pointerId: ev.pointerId,
+          pointerType: 'pen',
+          button: 0,
+          buttons: 0,
+          bubbles: true,
+          cancelable: true,
+        }));
       }
-    }, { capture: true });
-    for (const touchEvtName of ['touchstart', 'touchmove', 'touchend', 'touchcancel']) {
-      window.addEventListener(touchEvtName, (ev) => {
-        const changed = Array.from(ev.changedTouches || []);
-        const hasStylusTouch = changed.some((t) => t.touchType === 'stylus');
-        if (hasStylusTouch) {
-          lastPenPointerTime = performance.now();
-          return;
-        }
-        const isPenRecent = penPointerDown || (performance.now() - lastPenPointerTime) < 600;
-        const isDirectWhileStylus = isPenRecent && changed.every((t) => t.touchType !== 'stylus');
-        if (isDirectWhileStylus) {
-          ev.stopImmediatePropagation();
-        }
-      }, { capture: true, passive: false });
-    }
+    }, { passive: true });
 
     const loadingEl = document.getElementById('loading_overlay');
     const errorEl = document.getElementById('error_banner');
@@ -150,7 +160,7 @@
     if (!gl2) {
       showError('WebGL2 / WebGL is not available in this browser.');
     } else {
-      init({ module_or_path: './vector_canvas_demo_bg.wasm?v=20261117_2315' })
+      init({ module_or_path: './vector_canvas_demo_bg.wasm?v=20261123_2320' })
         .then(() => {
           if (loadingEl) {
             loadingEl.style.opacity = '0';
