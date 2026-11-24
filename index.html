@@ -84,7 +84,7 @@
   </div>
   <div id="error_banner"></div>
   <script type="module">
-    import init from './vector_canvas_demo.js?v=20261124_1818';
+    import init from './vector_canvas_demo.js?v=20261124_2332';
 
     // Tablet Touch & Stylus Bridge for eframe-0.37:
     // 1. eframe-0.37's touchstart/touchmove/touchend listeners already emit PointerButton + PointerMoved + Touch.
@@ -171,7 +171,7 @@
     if (!gl2) {
       showError('WebGL2 / WebGL is not available in this browser.');
     } else {
-      init({ module_or_path: './vector_canvas_demo_bg.wasm?v=20261124_1818' })
+      init({ module_or_path: './vector_canvas_demo_bg.wasm?v=20261124_2332' })
         .then(() => {
           if (loadingEl) {
             loadingEl.style.opacity = '0';
