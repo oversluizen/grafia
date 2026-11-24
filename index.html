@@ -84,7 +84,7 @@
   </div>
   <div id="error_banner"></div>
   <script type="module">
-    import init from './vector_canvas_demo.js?v=20261124_1039';
+    import init from './vector_canvas_demo.js?v=20261124_1048';
 
     // Tablet Touch & Stylus Bridge for eframe-0.37:
     // 1. eframe-0.37's touchstart/touchmove/touchend listeners already emit PointerButton + PointerMoved + Touch.
@@ -139,12 +139,23 @@
 
     const loadingEl = document.getElementById('loading_overlay');
     const errorEl = document.getElementById('error_banner');
+    let lastRustPanicMsg = null;
+
+    const origConsoleError = console.error.bind(console);
+    console.error = (...args) => {
+      origConsoleError(...args);
+      const joined = args.map((a) => String(a)).join(' ');
+      if (joined.includes('panicked at')) {
+        lastRustPanicMsg = joined.split('\n')[0];
+      }
+    };
 
     function showError(msg) {
       if (loadingEl) loadingEl.style.display = 'none';
       if (errorEl) {
         errorEl.style.display = 'block';
-        errorEl.textContent = 'Grafia WASM initialization error: ' + msg;
+        const detail = lastRustPanicMsg ? `${msg} (${lastRustPanicMsg})` : msg;
+        errorEl.textContent = 'Grafia WASM initialization error: ' + detail;
       }
     }
 
@@ -160,7 +171,7 @@
     if (!gl2) {
       showError('WebGL2 / WebGL is not available in this browser.');
     } else {
-      init({ module_or_path: './vector_canvas_demo_bg.wasm?v=20261124_1039' })
+      init({ module_or_path: './vector_canvas_demo_bg.wasm?v=20261124_1048' })
         .then(() => {
           if (loadingEl) {
             loadingEl.style.opacity = '0';
