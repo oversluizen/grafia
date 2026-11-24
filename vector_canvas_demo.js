@@ -1,3 +1,4 @@
+/* @ts-self-types="./vector_canvas_demo.d.ts" */
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
