@@ -77,17 +77,35 @@
       line-height: 1.45;
       box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
     }
+    #fs_toggle_btn {
+      position: fixed;
+      bottom: 8px;
+      right: 8px;
+      z-index: 15;
+      background: rgba(47, 51, 59, 0.86);
+      color: #eceef2;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      border-radius: 6px;
+      padding: 5px 9px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      user-select: none;
+    }
   </style>
 </head>
 <body>
   <canvas id="grafia_canvas"></canvas>
+  <button id="fs_toggle_btn" title="Volledig scherm (Fullscreen)">⛶ Full</button>
   <div id="loading_overlay">
     <div class="spinner"></div>
     <div>Loading Grafia v0.15.0 Vector &amp; Icon Studio WASM…</div>
   </div>
   <div id="error_banner"></div>
   <script type="module">
-    import init from './vector_canvas_demo.js?v=20261125_2318';
+    import init from './vector_canvas_demo.js?v=20261127_1328';
 
     // Tablet Touch & Stylus Bridge for eframe-0.37:
     // 1. eframe-0.37's touchstart/touchmove/touchend listeners already emit PointerButton + PointerMoved + Touch.
@@ -142,6 +160,24 @@
 
     const loadingEl = document.getElementById('loading_overlay');
     const errorEl = document.getElementById('error_banner');
+    const fsBtn = document.getElementById('fs_toggle_btn');
+    if (fsBtn) {
+      const toggleFs = () => {
+        const doc = document;
+        const el = doc.documentElement;
+        if (doc.fullscreenElement || doc.webkitFullscreenElement) {
+          if (doc.exitFullscreen) doc.exitFullscreen();
+          else if (doc.webkitExitFullscreen) doc.webkitExitFullscreen();
+        } else {
+          if (el.requestFullscreen) el.requestFullscreen();
+          else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+        }
+      };
+      fsBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleFs();
+      });
+    }
     let lastRustPanicMsg = null;
 
     const origConsoleError = console.error.bind(console);
@@ -174,7 +210,7 @@
     if (!gl2) {
       showError('WebGL2 / WebGL is not available in this browser.');
     } else {
-      init({ module_or_path: './vector_canvas_demo_bg.wasm?v=20261125_2318' })
+      init({ module_or_path: './vector_canvas_demo_bg.wasm?v=20261127_1328' })
         .then(() => {
           if (loadingEl) {
             loadingEl.style.opacity = '0';
