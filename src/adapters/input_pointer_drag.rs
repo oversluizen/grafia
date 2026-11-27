@@ -33,10 +33,16 @@ impl<'a> InputDispatcher<'a> {
         font_pt: FontPoint,
         mods: Modifiers,
     ) -> bool {
-        if self.state.try_update_gradient_handle_drag(font_pt) {
+        if self.state.try_update_gradient_handle_drag(font_pt)
+            || self.state.try_update_variable_width_pin_drag(font_pt)
+            || self.state.try_update_smart_corner_pin_drag(font_pt)
+            || self.state.try_update_anchor_drag(font_pt, mods.control)
+        {
             return true;
         }
-        if self.state.is_drawing_or_measurement_tool() {
+        if self.state.is_drawing_or_measurement_tool()
+            && matches!(self.state.select_state, SelectToolState::Idle)
+        {
             return self
                 .state
                 .on_drawing_tool_pointer_move(scr_pt, font_pt, mods);
@@ -270,8 +276,45 @@ impl<'a> InputDispatcher<'a> {
         is_alt: bool,
         is_ctrl: bool,
     ) -> bool {
+        let res = self.handle_pointer_release_inner(font_pt, is_shift, is_alt, is_ctrl);
+        let ts = &mut self.state.drag_transients.touch_state;
+        if ts.contacts.is_empty() {
+            ts.touch_shift_latched = false;
+            ts.touch_alt_latched = false;
+            ts.touch_cmd_latched = false;
+            ts.touch_space_pan_latched = false;
+        }
+        res
+    }
+
+    fn handle_pointer_release_inner(
+        &mut self,
+        font_pt: FontPoint,
+        is_shift: bool,
+        is_alt: bool,
+        is_ctrl: bool,
+    ) -> bool {
         self.state.drag_transients.touch_state.primary_press_active = false;
-        if self.state.try_finish_gradient_handle_release() {
+        self.state
+            .drag_transients
+            .touch_state
+            .native_pointer_drag_active = false;
+        self.state
+            .drag_transients
+            .touch_state
+            .native_pointer_raw_pos = None;
+        if self.state.drag_transients.touch_state.contacts.is_empty() {
+            self.state
+                .drag_transients
+                .touch_state
+                .rejected_palm_contacts
+                .clear();
+        }
+        if self.state.try_finish_gradient_handle_release()
+            || self.state.try_finish_variable_width_pin_release()
+            || self.state.try_finish_smart_corner_pin_release()
+            || self.state.try_finish_anchor_drag_release()
+        {
             return true;
         }
         let scr_pt = self
@@ -288,7 +331,9 @@ impl<'a> InputDispatcher<'a> {
         {
             return handled;
         }
-        if self.state.is_drawing_or_measurement_tool() {
+        if self.state.is_drawing_or_measurement_tool()
+            && matches!(self.state.select_state, SelectToolState::Idle)
+        {
             let mods = Modifiers {
                 shift: is_shift,
                 option: is_alt,
@@ -337,6 +382,7 @@ impl<'a> InputDispatcher<'a> {
         if let SelectToolState::MarqueeSelecting { .. } = self.state.select_state {
             apply_marquee_selection(self.state, is_alt);
             self.state.drag_transients.marquee_modifiers.space = false;
+            self.state.drag_transients.active_drag_before_snapshot = None;
             self.state.select_state = SelectToolState::Idle;
             self.state.assert_invariants();
             return true;
@@ -373,37 +419,8 @@ impl<'a> InputDispatcher<'a> {
             self.state.pen_state,
             PenToolState::DraggingHandles { .. } | PenToolState::PlacingAnchor { .. }
         ) {
-            return self.finish_pen_pointer_release();
+            return self.state.finish_pen_pointer_release();
         }
         false
-    }
-
-    fn finish_pen_pointer_release(&mut self) -> bool {
-        self.state.pen_state = PenToolState::Idle;
-        self.state.active_snappers.clear();
-        self.state.pen_transients.drag_last_pt = None;
-        self.state.pen_transients.handle_delta = (0.0, 0.0);
-        self.state.pen_transients.resuming_corner_line_end = false;
-        self.state.pen_transients.join_b_had_out_handles = false;
-        self.state.pen_transients.join_b_was_smooth = false;
-        if self
-            .state
-            .active_open_contour
-            .is_some_and(|c| self.state.is_contour_closed(c))
-        {
-            if let Some(c_idx) = self.state.active_open_contour.take() {
-                self.state.try_reflect_contour_at_index(c_idx);
-            }
-        }
-        if let Some(before) = self
-            .state
-            .drag_transients
-            .active_drag_before_snapshot
-            .take()
-        {
-            self.state.record_mutation("Pen Draw", before);
-        }
-        self.state.assert_invariants();
-        true
     }
 }

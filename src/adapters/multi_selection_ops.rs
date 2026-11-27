@@ -7,9 +7,11 @@ use crate::adapters::contour_edit_interaction::{
     TransformReleaseFlags,
 };
 use crate::adapters::state::GrafiaCanvasState;
+use crate::core::math_consts::{DEFAULT_PALETTE_COLORS_RGBA, RADIAL_SYMMETRY_MAX_FOLDS};
 use crate::core::{
-    compute_selection_bounds, expanded_nodes_with_attached_handles, select_nodes_in_lasso_polygon,
-    BBoxAction, FontPoint, NodeId, TransformGridAnchor,
+    compute_selection_bounds, expanded_nodes_with_attached_handles, gradient_stops_slice,
+    select_nodes_in_lasso_polygon, BBoxAction, CanvasColorSublayer, ColorLayerPaint, FontPoint,
+    GlyphContour, NodeId, SymbolLayerTag, TransformGridAnchor,
 };
 use crate::tokens::MULTI_SCALE_SPAN_EPS_UPM;
 use egui::Rect;
@@ -153,6 +155,159 @@ impl GrafiaCanvasState {
         self.sync_paths_from_contours();
         self.record_mutation("Scale Selection", before);
         self.assert_invariants();
+    }
+
+    /// Auto-adopts newly drawn `contours` into `self.color_sublayers` + `self.icon_studio.symbol_layer_tags`
+    /// when `self.color_sublayers` is active or when the Icon Keyline Artboard is active (`SPEC-017 §2.8b & §2.9`).
+    pub fn try_auto_adopt_drawn_contours_into_sublayers(&mut self, contours: &[GlyphContour]) {
+        let is_icon_artboard = self
+            .custom_reference_frame
+            .as_ref()
+            .is_some_and(|f| f.show_diagonals);
+        if (self.color_sublayers.is_empty() && !is_icon_artboard) || contours.is_empty() {
+            return;
+        }
+        let mut next_sub_id = self.color_sublayers.iter().map(|s| s.id).max().unwrap_or(0) + 1;
+        for gc in contours {
+            let already_present = self.color_sublayers.iter().any(|s| {
+                s.contours.iter().any(|sc| {
+                    sc.id == gc.id
+                        || (!sc.nodes.is_empty()
+                            && sc
+                                .nodes
+                                .iter()
+                                .any(|sn| gc.nodes.iter().any(|gn| gn.id == sn.id)))
+                })
+            });
+            if already_present {
+                continue;
+            }
+            let new_idx = self.color_sublayers.len();
+            let rgba = DEFAULT_PALETTE_COLORS_RGBA[new_idx % DEFAULT_PALETTE_COLORS_RGBA.len()];
+            self.color_sublayers.push(CanvasColorSublayer {
+                id: next_sub_id,
+                name: format!("Layer{}", new_idx + 1),
+                contours: vec![gc.clone()],
+                paint: ColorLayerPaint::Solid { rgba },
+                opacity: 1.0,
+                visible: true,
+                locked: false,
+            });
+            next_sub_id += 1;
+            while self.icon_studio.symbol_layer_tags.len() <= new_idx {
+                let grp = ((self.icon_studio.symbol_layer_tags.len() as u8) + 1)
+                    .clamp(1, RADIAL_SYMMETRY_MAX_FOLDS);
+                self.icon_studio.symbol_layer_tags.push(SymbolLayerTag {
+                    layer_group: grp,
+                    ..Default::default()
+                });
+            }
+            self.drag_transients.selected_color_sublayer = Some(new_idx);
+        }
+    }
+
+    /// Prunes color sublayers whose contour nodes were all deleted from `self.glyph.contours` (`SPEC-017 §2.8b`).
+    pub fn prune_deleted_contours_from_color_sublayers(&mut self) {
+        if self.color_sublayers.is_empty() {
+            return;
+        }
+        let live_nids: HashSet<NodeId> = self
+            .glyph
+            .contours
+            .iter()
+            .flat_map(|c| c.nodes.iter().map(|n| n.id))
+            .collect();
+        for sub in &mut self.color_sublayers {
+            sub.contours
+                .retain(|sc| sc.nodes.iter().any(|n| live_nids.contains(&n.id)));
+        }
+        let mut idx = 0;
+        while idx < self.color_sublayers.len() {
+            let is_mask = matches!(
+                self.color_sublayers[idx].paint,
+                ColorLayerPaint::ClippingMask
+            );
+            if self.color_sublayers[idx].contours.is_empty() && !is_mask {
+                self.color_sublayers.remove(idx);
+                if idx < self.icon_studio.symbol_layer_tags.len() {
+                    self.icon_studio.symbol_layer_tags.remove(idx);
+                }
+            } else {
+                idx += 1;
+            }
+        }
+        if self
+            .drag_transients
+            .selected_color_sublayer
+            .is_some_and(|i| i >= self.color_sublayers.len())
+        {
+            self.drag_transients.selected_color_sublayer =
+                (!self.color_sublayers.is_empty()).then_some(self.color_sublayers.len() - 1);
+        }
+        if self
+            .drag_transients
+            .selected_gradient_stop
+            .is_some_and(|(s_idx, st_idx)| {
+                self.color_sublayers
+                    .get(s_idx)
+                    .and_then(|s| gradient_stops_slice(&s.paint))
+                    .is_none_or(|stops| st_idx >= stops.len())
+            })
+        {
+            self.drag_transients.selected_gradient_stop = None;
+        }
+    }
+
+    /// Reconciles `self.color_sublayers` and `self.icon_studio.symbol_layer_tags` after topological contour
+    /// edits (`ShapeBuilder`, `Remove Overlap`, `Knife`, `SPEC-017 §2.8b.4`).
+    pub fn reconcile_color_sublayers_after_contour_topology_edit(&mut self) {
+        if self.color_sublayers.is_empty() {
+            return;
+        }
+        let live_nids: HashSet<NodeId> = self
+            .glyph
+            .contours
+            .iter()
+            .flat_map(|c| c.nodes.iter().map(|n| n.id))
+            .collect();
+        let mut claimed_cids: HashSet<crate::core::ContourId> = HashSet::new();
+        for sub in &self.color_sublayers {
+            for sc in &sub.contours {
+                if sc.nodes.iter().any(|n| live_nids.contains(&n.id)) {
+                    claimed_cids.insert(sc.id);
+                }
+            }
+        }
+        let mut unowned: std::collections::VecDeque<GlyphContour> = self
+            .glyph
+            .contours
+            .iter()
+            .filter(|c| !claimed_cids.contains(&c.id))
+            .cloned()
+            .collect();
+        for sub in &mut self.color_sublayers {
+            let has_surviving = sub
+                .contours
+                .iter()
+                .any(|sc| sc.nodes.iter().any(|n| live_nids.contains(&n.id)));
+            if !has_surviving {
+                if let Some(fresh_c) = unowned.pop_front() {
+                    claimed_cids.insert(fresh_c.id);
+                    sub.contours = vec![fresh_c];
+                }
+            }
+        }
+        let mut seen_cids: HashSet<crate::core::ContourId> = HashSet::new();
+        for sub in &mut self.color_sublayers {
+            sub.contours.retain(|sc| {
+                sc.nodes.iter().any(|n| live_nids.contains(&n.id)) && seen_cids.insert(sc.id)
+            });
+        }
+        self.prune_deleted_contours_from_color_sublayers();
+        let remaining_unowned: Vec<GlyphContour> = unowned.into_iter().collect();
+        if !remaining_unowned.is_empty() {
+            self.try_auto_adopt_drawn_contours_into_sublayers(&remaining_unowned);
+        }
     }
 }
 

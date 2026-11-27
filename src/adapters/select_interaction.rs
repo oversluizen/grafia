@@ -20,7 +20,16 @@ pub fn handle_select_press(
     is_double: bool,
     is_triple: bool,
 ) -> bool {
-    if state.try_begin_alt_select_node_press(scr_pt, font_pt, mods) {
+    let hit_offcurve = state.hit_test_node(scr_pt).is_some_and(|id| {
+        state
+            .find_node(id)
+            .is_some_and(|n| n.node_type == NodeType::OffCurve)
+    });
+    if !hit_offcurve
+        && (state.try_begin_alt_select_node_press(scr_pt, font_pt, mods)
+            || state.try_begin_variable_width_pin_drag(scr_pt, font_pt)
+            || state.try_begin_smart_corner_pin_drag(scr_pt, font_pt))
+    {
         return true;
     }
     let (is_shift, is_alt) = (mods.shift, mods.option);
@@ -77,20 +86,31 @@ pub fn handle_select_press(
 
     if state.try_click_select_postscript_hint(scr_pt)
         || state.try_click_select_truetype_instruction(scr_pt)
+        || state.try_select_color_sublayer_at_upm(font_pt)
     {
         state.select_state = SelectToolState::Idle;
         state.drag_transients.active_drag_before_snapshot = None;
         return true;
     }
+    begin_empty_marquee_or_alt_select(state, scr_pt, mods, is_shift, is_alt)
+}
 
+fn begin_empty_marquee_or_alt_select(
+    state: &mut GrafiaCanvasState,
+    scr_pt: ScreenPoint,
+    mods: Modifiers,
+    is_shift: bool,
+    is_alt: bool,
+) -> bool {
     if !is_shift {
         state.selected_nodes.clear();
         state.clear_anchor_and_component_selections();
     }
     state.drag_transients.marquee_pre_selection = state.selected_nodes.clone();
     state.drag_transients.marquee_modifiers = mods;
-    state.drag_transients.active_drag_before_snapshot = None;
     state.drag_transients.alt_marquee_pending_start = is_alt.then_some(scr_pt);
+    state.show_bounding_box_slanted = false;
+    state.selection_angle_deg = 0.0;
     state.select_state = if is_alt {
         SelectToolState::Idle
     } else {
@@ -138,7 +158,9 @@ fn handle_select_double_click(
         state.drag_transients.active_drag_before_snapshot = None;
         return true;
     }
-    let hit_node = state.hit_test_node(scr_pt);
+    if state.hit_test_node(scr_pt).is_some() {
+        return false;
+    }
     if state.try_begin_tunni_press(font_pt, true) {
         return true;
     }
@@ -159,29 +181,15 @@ fn handle_select_double_click(
             }
         }
     }
-    let target_contour = hit_node
-        .and_then(|nid| {
-            state
-                .contours
-                .iter()
-                .position(|c| c.iter().any(|n| n.id == nid))
-        })
-        .or_else(|| seg_hit.map(|h| h.contour_idx));
-    if let Some(c_idx) = target_contour {
-        let contour_ids: Vec<NodeId> = state.contours[c_idx].iter().map(|n| n.id).collect();
+    if let Some(c_idx) = seg_hit.map(|h| h.contour_idx) {
+        let mut c_ids: Vec<NodeId> = state.contours[c_idx].iter().map(|n| n.id).collect();
         if !is_shift {
-            state.selected_nodes = contour_ids;
-        } else if contour_ids
-            .iter()
-            .all(|id| state.selected_nodes.contains(id))
-        {
-            state.selected_nodes.retain(|id| !contour_ids.contains(id));
+            state.selected_nodes = c_ids;
+        } else if c_ids.iter().all(|id| state.selected_nodes.contains(id)) {
+            state.selected_nodes.retain(|id| !c_ids.contains(id));
         } else {
-            for id in contour_ids {
-                if !state.selected_nodes.contains(&id) {
-                    state.selected_nodes.push(id);
-                }
-            }
+            c_ids.retain(|id| !state.selected_nodes.contains(id));
+            state.selected_nodes.extend(c_ids);
         }
         state.select_state = SelectToolState::Idle;
         state.drag_transients.active_drag_before_snapshot = None;
@@ -261,6 +269,8 @@ fn start_segment_or_line_marquee_drag(
     match hit.segment {
         ContourSegment::Line { .. } => {
             state.drag_transients.active_drag_before_snapshot = None;
+            state.show_bounding_box_slanted = false;
+            state.selection_angle_deg = 0.0;
             state.select_state = SelectToolState::MarqueeSelecting {
                 start_screen: scr_pt,
                 current_screen: scr_pt,
@@ -285,7 +295,16 @@ fn start_segment_or_line_marquee_drag(
 pub fn apply_marquee_selection(state: &mut GrafiaCanvasState, is_alt_now: bool) {
     let only_on_curve = state.drag_transients.marquee_modifiers.option || is_alt_now;
     let xor_toggle = state.drag_transients.marquee_modifiers.shift;
-    let ctrl_slant = state.drag_transients.marquee_modifiers.control
+    let ext = state
+        .controller_ports
+        .external_intents
+        .union(state.controller_ports.latched_intents);
+    let ctrl_slant = state.active_input_device() == crate::core::InputDeviceKind::Mouse
+        && state.drag_transients.touch_state.contacts.is_empty()
+        && !state.drag_transients.touch_state.egui_any_touches_in_frame
+        && !ext.contains(crate::core::CanvasIntent::SlideAlongCurve)
+        && !ext.contains(crate::core::CanvasIntent::ShearTransform)
+        && state.drag_transients.marquee_modifiers.control
         && !state.drag_transients.marquee_modifiers.command;
     if update_slanted_marquee_selection(state, ctrl_slant, only_on_curve, xor_toggle) {
         return;
@@ -293,6 +312,7 @@ pub fn apply_marquee_selection(state: &mut GrafiaCanvasState, is_alt_now: bool) 
     let Some(rect) = state.select_state.marquee_rect() else {
         return;
     };
+    let active_vp = state.active_slot_viewport();
     let mut hits: Vec<NodeId> = Vec::new();
     for contour in &state.contours {
         for node in contour {
@@ -303,7 +323,7 @@ pub fn apply_marquee_selection(state: &mut GrafiaCanvasState, is_alt_now: bool) 
                 node.point,
                 node.node_type,
                 false,
-                &state.viewport,
+                &active_vp,
                 &state.theme.edit_canvas,
             );
             let center = Point::new(proj.screen_pos.x.0 as f64, proj.screen_pos.y.0 as f64);
@@ -348,11 +368,12 @@ fn update_slanted_marquee_selection(
     else {
         return false;
     };
+    let active_vp = state.active_slot_viewport();
     if ctrl_slant {
         state.show_bounding_box_slanted = true;
         let (p0, p1) = (
-            state.viewport.to_font(start_screen),
-            state.viewport.to_font(current_screen),
+            active_vp.to_font(start_screen),
+            active_vp.to_font(current_screen),
         );
         let mut deg = (p1.x.0 - p0.x.0)
             .atan2((p1.y.0 - p0.y.0).abs().max(1.0))
@@ -377,7 +398,7 @@ fn update_slanted_marquee_selection(
     if (ctrl_slant || only_on_curve) && state.selection_angle_deg.abs() > 0.0 {
         state.selected_nodes = crate::core::select_nodes_in_slanted_marquee(
             &state.contours,
-            &state.viewport,
+            &active_vp,
             start_screen,
             current_screen,
             state.selection_angle_deg,

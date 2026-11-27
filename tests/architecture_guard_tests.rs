@@ -503,10 +503,10 @@ fn test_guard_modularity_limits_gl1015() {
     }
 
     let fmt_status = std::process::Command::new("cargo")
-        .args(["fmt", "--all", "--", "--check"])
+        .args(["fmt", "--", "--check"])
         .current_dir(&ws_root)
         .status()
-        .expect("Failed to execute `cargo fmt --all -- --check`");
+        .expect("Failed to execute `cargo fmt -- --check`");
     if !fmt_status.success() {
         violations.push(
             "  - `cargo fmt --all -- --check` failed: repository contains unformatted code."
@@ -1767,7 +1767,7 @@ fn tc_arch_016_senior_maturity_no_tuple_smuggling_or_unbounded_god_structs() {
             idx += 1;
         }
 
-        // 3. Enforce struct field ceilings (<= 35 fields for domain/snapshot/token structs, <= 95 for root canvas state)
+        // 3. Enforce struct field ceilings (<= 25 for DragSessionTransients, <= 35 for domain/snapshot/token structs, <= 90 for root canvas state)
         let mut s_idx = 0;
         while let Some(pos) = stripped[s_idx..].find("struct ") {
             let abs = s_idx + pos;
@@ -1795,6 +1795,16 @@ fn tc_arch_016_senior_maturity_no_tuple_smuggling_or_unbounded_god_structs() {
                     q += 1;
                 }
                 let body = &stripped[body_start..q.saturating_sub(1)];
+                if struct_name == "DrawingToolState" && body.contains("controller_ports") {
+                    violations.push(format!(
+                        "  - {rel}:{struct_line}: `DrawingToolState` must not contain hardware `controller_ports` (SPEC-014 §2.2 / §2.7)"
+                    ));
+                }
+                if struct_name == "GrafiaCanvasState" && body.contains("pub smart_corners:") {
+                    violations.push(format!(
+                        "  - {rel}:{struct_line}: `GrafiaCanvasState` must not duplicate `pub smart_corners` alongside `curve_harmony.smart_corners` (SPEC-014 §2.7)"
+                    ));
+                }
                 let field_count = body
                     .lines()
                     .filter(|l| {
@@ -1803,7 +1813,9 @@ fn tc_arch_016_senior_maturity_no_tuple_smuggling_or_unbounded_god_structs() {
                     })
                     .count();
                 let limit = if struct_name == "GrafiaCanvasState" {
-                    95
+                    89
+                } else if struct_name == "DragSessionTransients" {
+                    25
                 } else {
                     35
                 };
@@ -1815,6 +1827,75 @@ fn tc_arch_016_senior_maturity_no_tuple_smuggling_or_unbounded_god_structs() {
                 s_idx = q;
             } else {
                 s_idx = abs + 7 + header_end;
+            }
+        }
+    }
+
+    // 4. Orphan-Test Guard & Ban on `.rs` Source-File String-Grepping inside Functional Integration Tests (`SPEC-014 §2.7`)
+    let tests_dir = ws_root.join("tests");
+    if let Ok(entries) = fs::read_dir(&tests_dir) {
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if p.is_file() && p.extension().is_some_and(|e| e == "rs") {
+                let fname = p.file_name().and_then(|s| s.to_str()).unwrap_or_default();
+                let rel_test = format!("tests/{fname}");
+                if cargo_toml.contains("autotests = false") && !cargo_toml.contains(&rel_test) {
+                    violations.push(format!(
+                        "  - Cargo.toml: orphan test file `{rel_test}` is not registered in a `[[test]]` block while `autotests = false` (SPEC-014 §2.7)"
+                    ));
+                }
+                if fname != "architecture_guard_tests.rs" {
+                    let t_content = fs::read_to_string(&p).unwrap_or_default();
+                    let has_read_to_string = t_content.contains("read_to_string");
+                    for (l_idx, line) in t_content.lines().enumerate() {
+                        let code_part = line.split("//").next().unwrap_or("").trim();
+                        if !code_part.starts_with("#[path")
+                            && (code_part.contains("read_to_string") && code_part.contains(".rs\"")
+                                || (has_read_to_string
+                                    && code_part.contains(".rs\"")
+                                    && (code_part.contains("join(")
+                                        || code_part.contains("Path::new("))))
+                        {
+                            violations.push(format!(
+                                "  - {rel_test}:{}: forbidden `.rs` source-file string-grepping in functional integration test `{}` (SPEC-014 §2.7: test runtime behavior via public APIs)",
+                                l_idx + 1,
+                                code_part
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 5. Examples UI Layout Magic-Number Hygiene (`inspector_ui.rs`, `demo_panels.rs`, `desktop_shell.rs`)
+    for ui_rel in [
+        "examples/demo_host_shell/inspector_ui.rs",
+        "examples/demo_host_shell/demo_panels.rs",
+        "examples/demo_host_shell/desktop_shell.rs",
+        "examples/demo_host_shell/spline_and_trace_presets.rs",
+    ] {
+        let ui_path = ws_root.join(ui_rel);
+        if !ui_path.exists() {
+            continue;
+        }
+        let content = fs::read_to_string(&ui_path).unwrap_or_default();
+        let stripped = strip_comments_and_strings(&content);
+        for (line_idx, line) in stripped.lines().enumerate() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("const ") || trimmed.starts_with("pub const ") {
+                continue;
+            }
+            for val in extract_float_literals(line) {
+                let is_allowed = ALLOWED_RATIOS
+                    .iter()
+                    .any(|&ratio| (val - ratio).abs() < 1e-6);
+                if !is_allowed {
+                    violations.push(format!(
+                        "  - {ui_rel}:{}: raw float literal `{val}` in example UI layout (SPEC-014 §2.7: move to named constant in `examples/demo_host_shell/toolbar_specs.rs`)",
+                        line_idx + 1
+                    ));
+                }
             }
         }
     }

@@ -1,12 +1,17 @@
 //! Interactive Spline (`HobbyStar`), `CanvasSmartHandle`, and `CanvasBackgroundImage` Auto-Trace Presets.
 
+use super::toolbar_specs::{
+    CANVAS_RESIZE_EPSILON_SQ_DP, MIN_FIT_CANVAS_DIM_DP, MOBILE_RESPONSIVE_BREAKPOINT_WIDTH_DP,
+    TOUCH_LOUPE_FINGER_OFFSET_DP,
+};
 use super::MockFontHost;
+use egui::ScrollArea;
 use grafia::adapters::GrafiaCanvasState;
 use grafia::core::{
     Affine2D, AutoTraceConfig, CanvasBackgroundImage, CanvasComponent, CanvasSmartHandle,
     ComponentId, FontPoint,
 };
-use grafia::tokens::GlyphArchetype;
+use grafia::tokens::{GlyphArchetype, GrafiaTheme};
 
 const SMART_HANDLE_ANCHOR_X_UPM: f64 = 120.0;
 const SMART_HANDLE_ANCHOR_Y_UPM: f64 = 350.0;
@@ -29,7 +34,7 @@ impl MockFontHost {
     pub fn apply_hobby_and_smart_handles_preset(&mut self, state: &mut GrafiaCanvasState) {
         if state.active_archetype != GlyphArchetype::O {
             state.load_glyph_archetype(GlyphArchetype::O);
-            super::toolbar_specs::fit_demo_canvas_viewport(state);
+            self.fit_canvas_viewport(state);
             state.glyph.name = "O".into();
         }
         let converted = if state.convert_selected_cubic_nodes_to_hobby() {
@@ -99,89 +104,191 @@ impl MockFontHost {
         }
     }
 
+    pub fn update_responsive_layout(
+        &mut self,
+        screen_w: f32,
+        show_preview_panel: &mut bool,
+        state: &mut GrafiaCanvasState,
+    ) {
+        if screen_w > 0.0
+            && screen_w < MOBILE_RESPONSIVE_BREAKPOINT_WIDTH_DP
+            && !self.responsive_layout_initialized
+        {
+            self.responsive_layout_initialized = true;
+            self.show_left_sidebar = false;
+            self.show_right_inspector = false;
+            self.show_coach_banner = false;
+            *show_preview_panel = false;
+            self.set_mobile_thumb_hud_enabled(true, state);
+        }
+    }
+
+    pub fn record_and_fit_canvas_size(&mut self, avail: egui::Vec2, state: &mut GrafiaCanvasState) {
+        if avail.x > MIN_FIT_CANVAS_DIM_DP && avail.y > MIN_FIT_CANVAS_DIM_DP {
+            let drag_busy = state.is_interactive_drag_active()
+                || state.drag_transients.touch_state.primary_press_active
+                || !state.drag_transients.touch_state.contacts.is_empty();
+            if drag_busy && self.initial_canvas_fitted {
+                return;
+            }
+            let resized = self
+                .last_canvas_size
+                .is_some_and(|p| (p - avail).length_sq() > CANVAS_RESIZE_EPSILON_SQ_DP);
+            self.last_canvas_size = Some(avail);
+            if !self.initial_canvas_fitted || resized {
+                state.fit_viewport_to_glyph(avail.x, avail.y);
+                self.initial_canvas_fitted = true;
+            }
+        }
+    }
+
+    pub fn render_preset_bar(
+        &mut self,
+        ui: &mut egui::Ui,
+        state: &mut GrafiaCanvasState,
+        theme: &mut GrafiaTheme,
+        _show_preview_panel: &mut bool,
+    ) {
+        if self.studio_mode == super::StudioWorkspaceMode::LetterStudio {
+            ScrollArea::horizontal()
+                .id_salt("preset_and_harmony_bar_scroll")
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        self.render_chapter_and_preset_buttons(ui, state, theme);
+                        ui.separator();
+                        self.render_active_letter_tab_context_controls(ui, state);
+                    });
+                });
+        } else {
+            self.render_icon_studio_and_kinetic_bar(ui, state);
+        }
+    }
+
+    fn render_active_letter_tab_context_controls(
+        &self,
+        ui: &mut egui::Ui,
+        state: &mut GrafiaCanvasState,
+    ) {
+        use super::ShowcaseChapter as Ch;
+        match self.active_letter_tab() {
+            Ch::BasisTekenen => Self::render_tab_1_tekenen_controls(ui, state),
+            Ch::CurvenEnAudit => Self::render_tablet_and_harmony_bar(ui, state),
+            Ch::KalligrafieEnStems => Self::render_tab_3_stems_controls(ui, state),
+            _ => Self::render_tab_4_tekst_masters_controls(ui, state),
+        }
+    }
+
+    fn render_tab_1_tekenen_controls(ui: &mut egui::Ui, state: &mut GrafiaCanvasState) {
+        if ui.button("Overlap Verwijderen").clicked() {
+            state.remove_overlap();
+        }
+        if ui.button("Extrema Toevoegen").clicked() {
+            state.add_extremes_action();
+        }
+        let loupe_on = state.preferences.show_touch_precision_loupe;
+        if ui.selectable_label(loupe_on, "Precisie-Loep").clicked() {
+            let mut prefs = state.preferences.clone();
+            prefs.show_touch_precision_loupe = !loupe_on;
+            prefs.touch_finger_offset_dp = if !loupe_on {
+                TOUCH_LOUPE_FINGER_OFFSET_DP
+            } else {
+                0.0
+            };
+            state.apply_preferences(&prefs);
+        }
+    }
+
+    fn render_tab_3_stems_controls(ui: &mut egui::Ui, state: &mut GrafiaCanvasState) {
+        use grafia::adapters::CanvasTool as T;
+        for (tool, lbl) in [
+            (T::Stem, "Tool: Stamdikte"),
+            (T::Trowel, "Tool: Troffel"),
+            (T::Cleaner, "Tool: Gum-Borstel"),
+        ] {
+            if ui
+                .selectable_label(state.active_tool == tool, lbl)
+                .clicked()
+            {
+                state.activate_tool(tool);
+            }
+        }
+        let ch = &state.curve_harmony;
+        let (sg, rb, vc) = (
+            ch.show_stem_gauge,
+            ch.show_measurement_rainbow,
+            ch.show_visual_centroid,
+        );
+        if ui.selectable_label(sg, "Diktemeter").clicked() {
+            state.toggle_show_stem_gauge();
+        }
+        if ui.selectable_label(rb, "Regenboog").clicked() {
+            state.toggle_show_measurement_rainbow();
+        }
+        if ui.selectable_label(vc, "Zwaartepunt ⊕").clicked() {
+            state.toggle_show_visual_centroid();
+        }
+        if !state.smart_corners().is_empty() && ui.button("Hoeken Vastbakken").clicked() {
+            state.bake_smart_corners();
+        }
+    }
+
+    fn render_tab_4_tekst_masters_controls(ui: &mut egui::Ui, state: &mut GrafiaCanvasState) {
+        use grafia::adapters::CanvasTool as T;
+        for (tool, lbl) in [
+            (T::Text, "Tool: Tekst (T)"),
+            (T::CurvedTrajectory, "Tool: Master-Baan"),
+            (T::TrueTypeInstructor, "Tool: Hinting (I)"),
+            (T::Hoi, "Tool: HOI (H)"),
+        ] {
+            if ui
+                .selectable_label(state.active_tool == tool, lbl)
+                .clicked()
+            {
+                state.activate_tool(tool);
+            }
+        }
+        if state.show_master_compatibility && ui.button("Match Masters").clicked() {
+            let _ = state.auto_match_master_compatibility(1);
+        }
+    }
+
     pub fn render_tablet_and_harmony_bar(ui: &mut egui::Ui, state: &mut GrafiaCanvasState) {
-        ui.horizontal_wrapped(|ui| {
-            ui.strong("Tablet & Harmony:");
-            let ts = &mut state.drag_transients.touch_state;
-            if ui
-                .selectable_label(ts.touch_shift_latched, "[Shift]")
-                .clicked()
-            {
-                ts.touch_shift_latched = !ts.touch_shift_latched;
-            }
-            if ui
-                .selectable_label(ts.touch_alt_latched, "[Alt/Opt]")
-                .clicked()
-            {
-                ts.touch_alt_latched = !ts.touch_alt_latched;
-            }
-            if ui
-                .selectable_label(ts.touch_cmd_latched, "[Cmd/Ctrl]")
-                .clicked()
-            {
-                ts.touch_cmd_latched = !ts.touch_cmd_latched;
-            }
-            if ui
-                .selectable_label(ts.touch_space_pan_latched, "[Pan (Space)]")
-                .clicked()
-            {
-                ts.touch_space_pan_latched = !ts.touch_space_pan_latched;
-            }
-            let loupe_on = state.preferences.show_touch_precision_loupe;
-            if ui.selectable_label(loupe_on, "[Touch Loupe]").clicked() {
-                let mut prefs = state.preferences.clone();
-                prefs.show_touch_precision_loupe = !loupe_on;
-                prefs.touch_finger_offset_dp = if prefs.show_touch_precision_loupe {
-                    44.0
-                } else {
-                    0.0
-                };
-                state.apply_preferences(&prefs);
-            }
-            ui.separator();
-            if ui
-                .selectable_label(state.show_tunni_lines, "[Tunni Lines]")
-                .clicked()
-            {
-                state.toggle_show_tunni_lines();
-            }
-            if ui
-                .selectable_label(state.curve_harmony.show_curvature_comb, "[Curvature Comb]")
-                .clicked()
-            {
-                state.toggle_show_curvature_comb();
-            }
-            if ui
-                .selectable_label(state.curve_harmony.show_outline_audit, "[Audit Red Arrows]")
-                .clicked()
-            {
-                state.curve_harmony.show_outline_audit = !state.curve_harmony.show_outline_audit;
-            }
-            if ui.button("[Harmonize G2]").clicked() {
-                state.harmonize_selected_nodes();
-            }
-            if ui.button("[Harmonize G3]").clicked() {
-                state.harmonize_selected_nodes_g3();
-            }
-            if ui
-                .selectable_label(state.power_nudge_enabled, "[Power Nudge (C)]")
-                .clicked()
-            {
-                state.toggle_power_nudge();
-            }
-            if ui.button("[Auto-Match Master]").clicked() {
-                let _ = state.auto_match_master_compatibility(1);
-            }
-        });
+        if ui
+            .selectable_label(state.show_tunni_lines, "Tunni-Lijnen")
+            .clicked()
+        {
+            state.toggle_show_tunni_lines();
+        }
+        if ui
+            .selectable_label(state.curve_harmony.show_curvature_comb, "Krommingskam")
+            .clicked()
+        {
+            state.toggle_show_curvature_comb();
+        }
+        if ui
+            .selectable_label(state.curve_harmony.show_outline_audit, "Fout-Audit")
+            .clicked()
+        {
+            state.curve_harmony.show_outline_audit = !state.curve_harmony.show_outline_audit;
+        }
+        if ui.button("G2 Glad").clicked() {
+            state.harmonize_selected_nodes();
+        }
+        if ui.button("G3 Clothoïde").clicked() {
+            state.harmonize_selected_nodes_g3();
+        }
+        if ui
+            .selectable_label(state.power_nudge_enabled, "Power Nudge")
+            .clicked()
+        {
+            state.toggle_power_nudge();
+        }
     }
 
     pub fn render_status_bar_contents(ui: &mut egui::Ui, state: &GrafiaCanvasState) {
         ui.horizontal(|ui| {
-            let tool_str = super::toolbar_specs::TOOL_ICON_SPECS
-                .iter()
-                .find(|(t, _, _)| *t == state.active_tool)
-                .map_or("", |(_, _, tip)| *tip);
-            ui.label(tool_str);
+            let (nl_name, nl_how) = super::tool_dutch_guide(state.active_tool);
+            ui.label(format!("{nl_name} — {nl_how}"));
             ui.add(egui::Separator::default().vertical());
             let total_nodes: usize = state.contours.iter().map(Vec::len).sum();
             ui.label(format!(

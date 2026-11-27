@@ -3,9 +3,10 @@
 //! `GrafiaPreferences` defaults & clamp bounds, and touch precision loupe geometry.
 
 use crate::tokens::{
-    hex_to_color32, GrafiaTheme, RgbaColorToken, DARK_CANVAS_BACKGROUND_HEX,
-    DARK_INFOBOX_BACKGROUND_HEX, DARK_METRICS_GUIDE_HEX, DARK_METRICS_LABEL_HEX,
-    DARK_OPEN_ENDPOINT_HEX, DARK_SIDEBAR_BACKGROUND_HEX, DARK_SPLITTER_HEX,
+    hex_to_color32, GrafiaTheme, RgbaColorToken, ANTHRACITE_CANVAS_BACKGROUND_HEX,
+    ANTHRACITE_INFOBOX_BACKGROUND_HEX, ANTHRACITE_SIDEBAR_BACKGROUND_HEX,
+    DARK_CANVAS_BACKGROUND_HEX, DARK_INFOBOX_BACKGROUND_HEX, DARK_METRICS_GUIDE_HEX,
+    DARK_METRICS_LABEL_HEX, DARK_OPEN_ENDPOINT_HEX, DARK_SIDEBAR_BACKGROUND_HEX, DARK_SPLITTER_HEX,
 };
 
 // ============================================================================
@@ -359,17 +360,29 @@ impl GrafiaTheme {
 
     #[must_use]
     pub fn canvas_background_color32(&self) -> egui::Color32 {
-        self.themed_hex(DARK_CANVAS_BACKGROUND_HEX, "#FFFFFF")
+        if self.is_anthracite() {
+            hex_to_color32(ANTHRACITE_CANVAS_BACKGROUND_HEX)
+        } else {
+            self.themed_hex(DARK_CANVAS_BACKGROUND_HEX, "#FFFFFF")
+        }
     }
 
     #[must_use]
     pub fn sidebar_background_color32(&self) -> egui::Color32 {
-        self.themed_hex(DARK_SIDEBAR_BACKGROUND_HEX, "#F6F6F6")
+        if self.is_anthracite() {
+            hex_to_color32(ANTHRACITE_SIDEBAR_BACKGROUND_HEX)
+        } else {
+            self.themed_hex(DARK_SIDEBAR_BACKGROUND_HEX, "#F6F6F6")
+        }
     }
 
     #[must_use]
     pub fn infobox_background_color32(&self) -> egui::Color32 {
-        self.themed_hex(DARK_INFOBOX_BACKGROUND_HEX, "#ECECEC")
+        if self.is_anthracite() {
+            hex_to_color32(ANTHRACITE_INFOBOX_BACKGROUND_HEX)
+        } else {
+            self.themed_hex(DARK_INFOBOX_BACKGROUND_HEX, "#ECECEC")
+        }
     }
 
     #[must_use]

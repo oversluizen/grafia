@@ -8,6 +8,14 @@ use crate::tokens::{
 };
 use egui::{Event, Key, Rect};
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FramePointerFlags {
+    pub has_ptr_btn: bool,
+    pub has_ptr_move: bool,
+    pub has_touch_start: bool,
+    pub from_touch: bool,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum KeymapDispatchOutcome {
     Handled(bool),
@@ -26,6 +34,156 @@ impl GrafiaCanvasState {
         }
         self.drag_transients.keymap = clean;
         self.bump_content_generation();
+    }
+
+    pub(crate) fn should_ignore_companion_touch_release(
+        &self,
+        time: f64,
+        has_touch_start: bool,
+    ) -> bool {
+        let ts = &self.drag_transients.touch_state;
+        !ts.primary_press_active
+            && !has_touch_start
+            && ts.last_raw_press_was_touch
+            && time > 0.0
+            && ts.last_touch_event_time_sec > 0.0
+            && (time - ts.last_touch_event_time_sec).abs()
+                <= crate::core::math_consts::TOUCH_COMPANION_MOUSE_DEDUP_SEC
+    }
+
+    pub(crate) fn deduplicate_companion_touch_press(
+        &mut self,
+        pos: egui::Pos2,
+        time: f64,
+        from_touch: bool,
+        has_touch_start: bool,
+    ) -> bool {
+        if self.is_palm_companion_pointer_event(pos, Some(true)) {
+            return true;
+        }
+        let now_touch = self.active_input_device() == crate::core::InputDeviceKind::TouchFinger
+            || from_touch
+            || has_touch_start;
+        let ts = &self.drag_transients.touch_state;
+        let (prev_t, prev_touch, active, last_touch_t) = (
+            ts.last_raw_press_time_sec,
+            ts.last_raw_press_was_touch,
+            ts.primary_press_active,
+            ts.last_touch_event_time_sec,
+        );
+        let max_dt = if active {
+            crate::core::math_consts::TOUCH_ACTIVE_PRESS_DEDUP_SEC
+        } else {
+            crate::core::math_consts::TOUCH_SAME_PRESS_DEDUP_SEC
+        };
+        let same_or_active_dup = prev_t > 0.0 && (time - prev_t).abs() <= max_dt;
+        let post_touch_compat_dup = !from_touch
+            && !has_touch_start
+            && prev_touch
+            && last_touch_t > 0.0
+            && (time - last_touch_t).abs()
+                <= crate::core::math_consts::TOUCH_COMPANION_MOUSE_DEDUP_SEC;
+        if now_touch && time > 0.0 && (same_or_active_dup || post_touch_compat_dup) {
+            if prev_touch {
+                return true;
+            }
+            if let Some(before) = self.drag_transients.active_drag_before_snapshot.take() {
+                self.restore_snapshot(&before);
+            }
+            self.drag_transients.last_click_time_pos = None;
+            self.drag_transients.last_double_click_time_pos = None;
+        }
+        let ts_mut = &mut self.drag_transients.touch_state;
+        ts_mut.last_raw_press_time_sec = time;
+        ts_mut.last_raw_press_was_touch = now_touch;
+        ts_mut.primary_press_active = true;
+        ts_mut.native_pointer_drag_active =
+            !from_touch && !has_touch_start && ts_mut.contacts.is_empty();
+        ts_mut.native_pointer_raw_pos = Some(pos);
+        false
+    }
+
+    pub(crate) fn finish_pen_pointer_release(&mut self) -> bool {
+        self.pen_state = crate::interaction::PenToolState::Idle;
+        self.active_snappers.clear();
+        self.pen_transients.drag_last_pt = None;
+        self.pen_transients.handle_delta = (0.0, 0.0);
+        self.pen_transients.resuming_corner_line_end = false;
+        self.pen_transients.join_b_had_out_handles = false;
+        self.pen_transients.join_b_was_smooth = false;
+        if self
+            .active_open_contour
+            .is_some_and(|c| self.is_contour_closed(c))
+        {
+            if let Some(c_idx) = self.active_open_contour.take() {
+                self.try_reflect_contour_at_index(c_idx);
+            }
+        }
+        if let Some(before) = self.drag_transients.active_drag_before_snapshot.take() {
+            self.record_mutation("Pen Draw", before);
+        }
+        self.assert_invariants();
+        true
+    }
+
+    pub(crate) fn sync_frame_touch_and_device_state(
+        &mut self,
+        events: &[Event],
+        ui: &egui::Ui,
+        canvas_rect: Rect,
+        time: f64,
+    ) -> FramePointerFlags {
+        let ui_any_touches = ui.input(|i| i.any_touches());
+        let mut has_touch_ev = false;
+        let mut has_touch_start = false;
+        let mut frame_started_ids = Vec::new();
+        for e in events {
+            if let Event::Touch { id, phase, pos, .. } = e {
+                if *phase == egui::TouchPhase::Start && !canvas_rect.contains(*pos) {
+                    continue;
+                }
+                let is_known_same_frame = frame_started_ids.contains(&id.0);
+                if is_known_same_frame || !self.classify_palm_touch_event(id.0, *phase, *pos) {
+                    has_touch_ev = true;
+                    if *phase == egui::TouchPhase::Start {
+                        has_touch_start = true;
+                        frame_started_ids.push(id.0);
+                    }
+                    if time > 0.0 {
+                        self.drag_transients.touch_state.last_touch_event_time_sec = time;
+                    }
+                }
+            }
+        }
+        let any_touches = (!self.drag_transients.touch_state.native_pointer_drag_active
+            && self
+                .drag_transients
+                .touch_state
+                .rejected_palm_contacts
+                .is_empty()
+            && ui_any_touches)
+            || has_touch_ev;
+        self.drag_transients.touch_state.egui_any_touches_in_frame = any_touches;
+        if any_touches {
+            self.set_active_input_device(crate::core::InputDeviceKind::TouchFinger);
+        }
+        if let Some(pos) = ui.input(|i| i.pointer.latest_pos()) {
+            if canvas_rect.contains(pos) && !self.is_palm_companion_pointer_event(pos, None) {
+                self.last_pointer_screen_pos = Some(ScreenPoint::new(pos.x, pos.y));
+            }
+        }
+        let has_ptr_btn = events.iter().any(|e| {
+            matches!(e, Event::PointerButton { pos, .. } if !self.is_palm_companion_pointer_event(*pos, None))
+        });
+        let has_ptr_move = events.iter().any(|e| {
+            matches!(e, Event::PointerMoved(pos) if !self.is_palm_companion_pointer_event(*pos, None))
+        });
+        FramePointerFlags {
+            has_ptr_btn,
+            has_ptr_move,
+            has_touch_start,
+            from_touch: false,
+        }
     }
 }
 

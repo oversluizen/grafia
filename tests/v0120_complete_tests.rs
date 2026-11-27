@@ -1360,7 +1360,7 @@ fn tc_v0130_001_to_008_system_agnostic_controller_intent_rotary_telemetry_haptic
         radius_upm: 20.0,
     });
     assert!(state.step_rotary_encoder(CanvasRotaryChannel::ContextPrimary, 3.0));
-    assert!(state.smart_corners[0].radius_upm > 20.0);
+    assert!(state.smart_corners()[0].radius_upm > 20.0);
     assert_eq!(
         state.controller_telemetry().primary_rotary.parameter_name,
         "Corner Radius"
@@ -1371,12 +1371,12 @@ fn tc_v0130_001_to_008_system_agnostic_controller_intent_rotary_telemetry_haptic
     assert!(state.viewport.zoom > zoom_before);
 
     // HistoryScrub (-1.0 Undo, +1.0 Redo)
-    let r_after_step = state.smart_corners[0].radius_upm;
+    let r_after_step = state.smart_corners()[0].radius_upm;
     assert!(state.step_rotary_encoder(CanvasRotaryChannel::HistoryScrub, -1.0));
-    assert_relative_eq!(state.smart_corners[0].radius_upm, 20.0, epsilon = 1e-3);
+    assert_relative_eq!(state.smart_corners()[0].radius_upm, 20.0, epsilon = 1e-3);
     assert!(state.step_rotary_encoder(CanvasRotaryChannel::HistoryScrub, 1.0));
     assert_relative_eq!(
-        state.smart_corners[0].radius_upm,
+        state.smart_corners()[0].radius_upm,
         r_after_step,
         epsilon = 1e-3
     );
@@ -1454,7 +1454,10 @@ fn tc_v0130_001_to_008_system_agnostic_controller_intent_rotary_telemetry_haptic
     // 6. Selected Corner node without existing SmartCornerSpec auto-creates SmartCornerSpec on ContextPrimary
     let second_nid = state.contours[0][1].id;
     state.selected_nodes = vec![second_nid];
-    assert!(state.smart_corners.iter().all(|s| s.node_id != second_nid));
+    assert!(state
+        .smart_corners()
+        .iter()
+        .all(|s| s.node_id != second_nid));
     assert_eq!(
         state.controller_telemetry().primary_rotary.parameter_name,
         "Corner Radius"
@@ -1462,7 +1465,7 @@ fn tc_v0130_001_to_008_system_agnostic_controller_intent_rotary_telemetry_haptic
     assert!(state.step_rotary_encoder(CanvasRotaryChannel::ContextPrimary, 4.0));
     assert_relative_eq!(
         state
-            .smart_corners
+            .smart_corners()
             .iter()
             .find(|s| s.node_id == second_nid)
             .expect("auto-created SmartCornerSpec for selected Corner node")

@@ -1,10 +1,13 @@
 //! Host Inspector Sidebar, Stekker Preset Bar, and Cached Bottom Preview Strip Panel for `MockFontHost`.
 
-use super::{DemoPreset, MockFontHost, METRIC_STEP_UPM};
+use super::toolbar_specs::{
+    EVENT_LOG_MAX_HEIGHT_DP, PREVIEW_STRIP_MAX_WIDTH_DP, PREVIEW_STRIP_MIN_WIDTH_DP,
+};
+use super::{MockFontHost, METRIC_STEP_UPM};
 use egui::{Grid, Image, RichText, ScrollArea, Separator, Slider, Ui};
 use grafia::adapters::GrafiaCanvasState;
 use grafia::core::{SelectionInfo, SelectionInfoAction, TransformGridAnchor};
-use grafia::tokens::{GrafiaTheme, PREVIEW_BLUR_MAX_RADIUS_PX, PREVIEW_BLUR_MIN_RADIUS_PX};
+use grafia::tokens::{PREVIEW_BLUR_MAX_RADIUS_PX, PREVIEW_BLUR_MIN_RADIUS_PX};
 
 const PIN_GRID_ROWS: [[TransformGridAnchor; 3]; 3] = [
     [
@@ -25,23 +28,6 @@ const PIN_GRID_ROWS: [[TransformGridAnchor; 3]; 3] = [
 ];
 
 impl MockFontHost {
-    pub fn render_preset_bar(
-        &mut self,
-        ui: &mut Ui,
-        state: &mut GrafiaCanvasState,
-        theme: &mut GrafiaTheme,
-    ) {
-        ui.horizontal_wrapped(|ui| {
-            ui.strong("Stekker Presets:");
-            for (preset, label) in DemoPreset::ALL {
-                if ui.button(label).clicked() {
-                    self.apply_preset(preset, state, theme);
-                }
-            }
-        });
-        Self::render_tablet_and_harmony_bar(ui, state);
-    }
-
     pub fn render_host_inspector(&mut self, ui: &mut Ui, state: &mut GrafiaCanvasState) {
         ui.strong("Host-Port Stekker Inspector");
         ui.add(Separator::default().horizontal());
@@ -107,11 +93,13 @@ impl MockFontHost {
         }
         ui.add(Separator::default().horizontal());
         ui.strong("Live Host-Port Event Log");
-        ScrollArea::vertical().max_height(110.0).show(ui, |ui| {
-            for line in &self.event_log {
-                ui.monospace(line);
-            }
-        });
+        ScrollArea::vertical()
+            .max_height(EVENT_LOG_MAX_HEIGHT_DP)
+            .show(ui, |ui| {
+                for line in &self.event_log {
+                    ui.monospace(line);
+                }
+            });
     }
 
     fn render_harmony_controls(ui: &mut Ui, state: &mut GrafiaCanvasState) {
@@ -137,7 +125,7 @@ impl MockFontHost {
             {
                 state.toggle_show_curvature_comb();
             }
-            if !state.smart_corners.is_empty() && ui.button("Bake Corners").clicked() {
+            if !state.smart_corners().is_empty() && ui.button("Bake Corners").clicked() {
                 state.bake_smart_corners();
             }
             let sym_on =
@@ -274,27 +262,47 @@ impl MockFontHost {
     }
 
     pub fn render_preview_strip_panel(&mut self, ui: &mut Ui, state: &GrafiaCanvasState) {
-        ui.horizontal_wrapped(|ui| {
-            ui.strong("v0.6 Preview Strip (PreviewStripCache)");
-            ui.add(Separator::default().vertical());
-            let _ = ui.add(
-                Slider::new(
-                    &mut self.preview_cfg.blur_radius_px,
-                    PREVIEW_BLUR_MIN_RADIUS_PX..=PREVIEW_BLUR_MAX_RADIUS_PX,
-                )
-                .text("Blur (px)"),
-            );
-            ui.checkbox(&mut self.preview_cfg.flipped, "Flip Vertical");
-            ui.checkbox(&mut self.preview_cfg.inverted, "Invert Polarity");
-        });
+        ScrollArea::horizontal()
+            .id_salt("preview_strip_ctrl_scroll")
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.strong("Preview Venster");
+                    ui.add(Separator::default().vertical());
+                    for (lbl, h_dp) in [("S 120", 120.0), ("M 200", 200.0), ("L 320", 320.0)] {
+                        let is_cur = (self.preview_panel_height_dp - h_dp).abs() < 16.0;
+                        if ui.selectable_label(is_cur, lbl).clicked() {
+                            self.preview_panel_height_dp = h_dp;
+                        }
+                    }
+                    ui.add(Separator::default().vertical());
+                    let _ = ui.add(
+                        Slider::new(
+                            &mut self.preview_cfg.blur_radius_px,
+                            PREVIEW_BLUR_MIN_RADIUS_PX..=PREVIEW_BLUR_MAX_RADIUS_PX,
+                        )
+                        .text("Blur (px)"),
+                    );
+                    ui.checkbox(&mut self.preview_cfg.flipped, "Spiegel V");
+                    ui.checkbox(&mut self.preview_cfg.inverted, "Inverteer");
+                });
+            });
+        let target_w_px =
+            (ui.available_width()
+                .round()
+                .clamp(PREVIEW_STRIP_MIN_WIDTH_DP, PREVIEW_STRIP_MAX_WIDTH_DP)) as u32;
+        let avail_h = ui
+            .available_height()
+            .max(self.preview_panel_height_dp - 28.0);
+        let target_h_px = (avail_h.round().clamp(72.0, 440.0)) as u32;
+        self.preview_cfg.width_px = target_w_px;
+        self.preview_cfg.height_px = target_h_px;
         let (tex, _) = self
             .preview_cache
             .get_or_update_texture(ui.ctx(), state, &self.preview_cfg);
-        let avail_w = ui
-            .available_width()
-            .max(1.0)
-            .min(self.preview_cfg.width_px as f32);
-        let size = egui::Vec2::new(avail_w, self.preview_cfg.height_px as f32);
+        let size = egui::Vec2::new(
+            self.preview_cfg.width_px as f32,
+            self.preview_cfg.height_px as f32,
+        );
         ui.add(Image::from_texture((tex.id(), size)));
     }
 }

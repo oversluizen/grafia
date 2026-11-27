@@ -62,7 +62,8 @@ impl CanvasActionId {
             | CanvasTool::Stem
             | CanvasTool::CurvedTrajectory
             | CanvasTool::Trowel
-            | CanvasTool::Cleaner => Self::SelectTool,
+            | CanvasTool::Cleaner
+            | CanvasTool::ShapeBuilder => Self::SelectTool,
         }
     }
 

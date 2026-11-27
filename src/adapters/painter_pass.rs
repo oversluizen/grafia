@@ -57,6 +57,16 @@ impl<'a> CanvasPainter<'a> {
                 );
             }
             CanvasViewMode::ShapeThumbnail => self.paint_shape_thumbnails(),
+            CanvasViewMode::LiquidGlass => {
+                crate::render::paint_liquid_glass_pass_egui(
+                    self.painter,
+                    self.state,
+                    self.canvas_rect,
+                );
+                self.pass_3_wireframe_and_tangents();
+                self.pass_4_nodes();
+                self.pass_5_marquee();
+            }
         }
         crate::render::paint_top_cursor_and_loupe_overlays_egui(
             self.painter,
@@ -83,12 +93,18 @@ impl<'a> CanvasPainter<'a> {
         {
             if self.state.preferences.fill_active_glyph_while_editing {
                 let vp = self.state.active_slot_viewport();
-                let mesh = crate::render::tessellate_closed_contours_nonzero(
-                    &self.state.contours,
-                    &self.state.closed_flags(),
-                    &vp,
-                    edit_active_fill_color32(self.theme.preview_canvas.fill_color32()),
-                );
+                let fill_col = edit_active_fill_color32(self.theme.preview_canvas.fill_color32());
+                let mesh = if self.state.has_active_non_destructive_preview_effects() {
+                    let expanded = self.state.evaluate_active_filled_preview_contours();
+                    crate::render::tessellate_glyph_contours_nonzero(&expanded, &vp, fill_col)
+                } else {
+                    crate::render::tessellate_closed_contours_nonzero(
+                        &self.state.contours,
+                        &self.state.closed_flags(),
+                        &vp,
+                        fill_col,
+                    )
+                };
                 if !mesh.is_empty() {
                     self.painter.add(Shape::mesh(mesh));
                 }
@@ -226,21 +242,38 @@ impl<'a> CanvasPainter<'a> {
     }
 
     fn pass_2_silhouette_fill(&self) {
-        let vp = self.state.active_slot_viewport();
         let fill_color = self.theme.preview_canvas.fill_color32();
-        let closed_flags = self.state.closed_flags();
-        let mesh = crate::render::tessellate_closed_contours_nonzero(
-            &self.state.contours,
-            &closed_flags,
-            &vp,
-            fill_color,
-        );
+        if self
+            .state
+            .paint_kinetic_silhouette_egui(self.painter, fill_color)
+            || !self.state.color_sublayers.is_empty()
+        {
+            return;
+        }
+        let vp = self.state.active_slot_viewport();
+        let mesh = if self.state.has_active_non_destructive_preview_effects() {
+            let expanded = self.state.evaluate_active_filled_preview_contours();
+            crate::render::tessellate_glyph_contours_nonzero(&expanded, &vp, fill_color)
+        } else {
+            crate::render::tessellate_closed_contours_nonzero(
+                &self.state.contours,
+                &self.state.closed_flags(),
+                &vp,
+                fill_color,
+            )
+        };
         if !mesh.is_empty() {
             self.painter.add(Shape::mesh(mesh));
         }
     }
 
     fn pass_3_wireframe_and_tangents(&self) {
+        if self
+            .state
+            .paint_kinetic_wireframe_egui(self.painter, self.theme)
+        {
+            return;
+        }
         let vp = self.state.active_slot_viewport();
         let contour_stroke = Stroke::new(
             self.theme.edit_canvas.contour_stroke_width_dp,

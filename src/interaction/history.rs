@@ -62,6 +62,7 @@ pub struct SnapshotHintingAndHoiState {
     pub hoi_layer_sets: Vec<HoiCubicLayerSet>,
     pub hoi_sibling_contours: Option<HoiSiblingContours>,
     pub curve_harmony: crate::core::CurveHarmonyState,
+    pub icon_studio: crate::core::CanvasIconStudioScene,
 }
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -80,9 +81,10 @@ pub struct HintingAndHoiSnapshot {
     pub hoi_layer_sets: Vec<HoiCubicLayerSet>,
     pub hoi_sibling_contours: Option<HoiSiblingContours>,
     pub curve_harmony: crate::core::CurveHarmonyState,
+    pub icon_studio: crate::core::CanvasIconStudioScene,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct GlyphSnapshot {
     pub contours: Vec<Vec<Node>>,
     pub closed_flags: Vec<bool>,
@@ -110,39 +112,6 @@ pub struct GlyphSnapshot {
     pub writing_direction: WritingDirection,
     pub layers: SnapshotLayerAttachments,
     pub hinting: SnapshotHintingAndHoiState,
-}
-
-impl Default for GlyphSnapshot {
-    fn default() -> Self {
-        Self {
-            contours: Vec::new(),
-            closed_flags: Vec::new(),
-            contour_meta: Vec::new(),
-            paths: Arc::from([]),
-            selected_nodes: Vec::new(),
-            pending_pen_bcp_out: None,
-            pending_pen_first_bcp_in: None,
-            guides: Vec::new(),
-            global_guides: Vec::new(),
-            selected_guide: None,
-            annotations: Vec::new(),
-            selected_annotations: Vec::new(),
-            has_glyph_metrics: false,
-            glyph_name: String::new(),
-            glyph_width: 0.0,
-            glyph_height: 0.0,
-            text_stream_slots: Vec::new(),
-            active_slot_index: 0,
-            caret_index: 0,
-            selection_range: None,
-            multi_selection_proportional: false,
-            transform_grid_anchor: TransformGridAnchor::Center,
-            show_rulers: false,
-            writing_direction: WritingDirection::default(),
-            layers: SnapshotLayerAttachments::default(),
-            hinting: SnapshotHintingAndHoiState::default(),
-        }
-    }
 }
 
 impl GlyphSnapshot {
@@ -302,6 +271,7 @@ impl GlyphSnapshot {
         self.hinting.hoi_layer_sets = hinting_and_hoi.hoi_layer_sets;
         self.hinting.hoi_sibling_contours = hinting_and_hoi.hoi_sibling_contours;
         self.hinting.curve_harmony = hinting_and_hoi.curve_harmony;
+        self.hinting.icon_studio = hinting_and_hoi.icon_studio;
         self
     }
 
@@ -339,8 +309,8 @@ impl GlyphSnapshot {
             || self.global_guides != other.global_guides
             || self.annotations != other.annotations
             || self.glyph_name != other.glyph_name
-            || self.glyph_width.to_bits() != other.glyph_width.to_bits()
-            || self.glyph_height.to_bits() != other.glyph_height.to_bits()
+            || (self.glyph_width.to_bits(), self.glyph_height.to_bits())
+                != (other.glyph_width.to_bits(), other.glyph_height.to_bits())
             || self.text_stream_slots != other.text_stream_slots
             || self.layers.background_contours != other.layers.background_contours
             || self.layers.editing_background_layer != other.layers.editing_background_layer
@@ -360,6 +330,7 @@ impl GlyphSnapshot {
             || self.hinting.hoi_layer_sets != other.hinting.hoi_layer_sets
             || self.hinting.hoi_sibling_contours != other.hinting.hoi_sibling_contours
             || self.hinting.curve_harmony != other.hinting.curve_harmony
+            || self.hinting.icon_studio != other.hinting.icon_studio
     }
 }
 

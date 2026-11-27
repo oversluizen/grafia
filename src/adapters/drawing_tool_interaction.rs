@@ -31,6 +31,7 @@ impl GrafiaCanvasState {
                 | CanvasTool::Cleaner
                 | CanvasTool::Stem
                 | CanvasTool::CurvedTrajectory
+                | CanvasTool::ShapeBuilder
         )
     }
 
@@ -88,6 +89,7 @@ impl GrafiaCanvasState {
                 true
             }
             CanvasTool::Pixel => self.on_pixel_press(font_pt, mods),
+            CanvasTool::ShapeBuilder => self.on_shape_builder_pointer_press(scr_pt, font_pt, mods),
             _ => false,
         }
     }
@@ -169,6 +171,7 @@ impl GrafiaCanvasState {
             CanvasTool::Trowel | CanvasTool::Cleaner | CanvasTool::CurvedTrajectory => {
                 self.on_brush_or_trajectory_pointer_move(font_pt)
             }
+            CanvasTool::ShapeBuilder => self.on_shape_builder_pointer_move(font_pt, mods.option),
             _ => false,
         }
     }
@@ -262,6 +265,9 @@ impl GrafiaCanvasState {
                 self.assert_invariants();
                 true
             }
+            CanvasTool::ShapeBuilder if self.drawing_tool_state.shape_builder.active => {
+                self.on_shape_builder_pointer_release(font_pt, mods.option)
+            }
             _ => false,
         }
     }
@@ -274,8 +280,9 @@ impl GrafiaCanvasState {
 
     fn try_snap_measurement_node(&self, scr_pt: ScreenPoint) -> Option<FontPoint> {
         let hit_r = f64::from(MEASUREMENT_SNAP_RADIUS_DP);
+        let vp = self.active_slot_viewport();
         for node in self.contours.iter().flatten() {
-            let n_scr = self.viewport.to_screen(node.point);
+            let n_scr = vp.to_screen(node.point);
             if f64::from(scr_pt.x.0 - n_scr.x.0).hypot(f64::from(scr_pt.y.0 - n_scr.y.0)) <= hit_r {
                 return Some(node.point);
             }
@@ -322,6 +329,7 @@ impl GrafiaCanvasState {
                 self.selected_nodes.clear();
                 self.rebuild_glyph_contours(&closed_flags);
                 self.sync_paths_from_contours();
+                self.reconcile_color_sublayers_after_contour_topology_edit();
                 self.record_mutation("Cut Paths", before);
                 self.assert_invariants();
                 return true;

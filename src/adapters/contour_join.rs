@@ -265,8 +265,9 @@ fn find_best_endpoint_snap_match(state: &GrafiaCanvasState) -> Option<EndpointSn
             a_candidates.push((false, a_last.id, a_last.point));
         }
 
+        let vp = state.active_slot_viewport();
         for (dragged_is_start, dragged_id, dragged_pt) in a_candidates {
-            let dragged_scr = state.viewport.to_screen(dragged_pt);
+            let dragged_scr = vp.to_screen(dragged_pt);
             for b_idx in 0..state.contours.len() {
                 if state.is_contour_closed(b_idx) || state.contours[b_idx].is_empty() {
                     continue;
@@ -291,7 +292,7 @@ fn find_best_endpoint_snap_match(state: &GrafiaCanvasState) -> Option<EndpointSn
                     if target_id == dragged_id || state.selected_nodes.contains(&target_id) {
                         continue;
                     }
-                    let dist = dragged_scr.distance_to(state.viewport.to_screen(target_pt));
+                    let dist = dragged_scr.distance_to(vp.to_screen(target_pt));
                     if dist < SELECT_NODE_HIT_RADIUS_DP
                         && best_match.as_ref().is_none_or(|m| dist < m.dist)
                     {

@@ -97,12 +97,22 @@ pub fn render_edit_active_fill_tiny_skia(
     )));
     paint.anti_alias = true;
     let mut pb = PathBuilder::new();
-    for (c_idx, path) in state.paths.iter().enumerate() {
-        if !state.is_contour_closed(c_idx) {
-            continue;
+    if state.has_active_non_destructive_preview_effects() {
+        for gc in state.evaluate_active_filled_preview_contours() {
+            if gc.visible && gc.closed && gc.nodes.len() >= 2 {
+                let bez = crate::core::contour_to_bezpath_with_splines(&gc.nodes, true, 0.0, &[]);
+                let proj = PreviewFilledProjection::compute(&bez, &vp);
+                append_kurbo_to_builder(&mut pb, &proj.screen_path);
+            }
         }
-        let proj = PreviewFilledProjection::compute(path, &vp);
-        append_kurbo_to_builder(&mut pb, &proj.screen_path);
+    } else {
+        for (c_idx, path) in state.paths.iter().enumerate() {
+            if !state.is_contour_closed(c_idx) {
+                continue;
+            }
+            let proj = PreviewFilledProjection::compute(path, &vp);
+            append_kurbo_to_builder(&mut pb, &proj.screen_path);
+        }
     }
     if let Some(compound_path) = pb.finish() {
         pixmap.fill_path(

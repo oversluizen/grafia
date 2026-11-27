@@ -351,8 +351,9 @@ impl GrafiaCanvasState {
         if self.show_pixel_preview_ppem == Some(0) {
             return Err("Invariant violated: show_pixel_preview_ppem == Some(0)".into());
         }
-        let mut seen_smart = std::collections::HashSet::with_capacity(self.smart_corners.len());
-        for spec in &self.smart_corners {
+        let mut seen_smart =
+            std::collections::HashSet::with_capacity(self.curve_harmony.smart_corners.len());
+        for spec in &self.curve_harmony.smart_corners {
             if !spec.radius_upm.is_finite() {
                 return Err("Invariant violated: non-finite SmartCornerSpec radius_upm".into());
             }
@@ -372,7 +373,8 @@ impl GrafiaCanvasState {
         self.validate_selection_and_pen_pointers(&all_ids)?;
         self.validate_guides_and_text_stream()?;
         self.validate_color_layers_and_reference_frame()?;
-        self.validate_hinting_and_hoi()
+        self.validate_hinting_and_hoi()?;
+        self.icon_studio.validate_invariants()
     }
 
     /// Panics with a detailed diagnostic message if any canvas state invariant is violated.

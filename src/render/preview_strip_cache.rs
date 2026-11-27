@@ -229,13 +229,26 @@ fn fill_preview_strip_glyphs(
 ) {
     if state.text_stream.slots.is_empty() {
         let mut compound = BezPath::new();
-        for (c_idx, path) in state.paths.iter().enumerate() {
-            if !state.is_contour_closed(c_idx) {
-                continue;
+        if state.has_active_non_destructive_preview_effects() {
+            for (gc, alpha) in state.evaluate_active_preview_silhouette_contours() {
+                if !gc.visible || !gc.closed || gc.nodes.len() < 2 || alpha <= 0.0 {
+                    continue;
+                }
+                let bez = crate::core::contour_to_bezpath_with_splines(&gc.nodes, true, 0.0, &[]);
+                let proj = PreviewFilledProjection::compute(&bez, vp);
+                for el in proj.screen_path.elements() {
+                    compound.push(*el);
+                }
             }
-            let proj = PreviewFilledProjection::compute(path, vp);
-            for el in proj.screen_path.elements() {
-                compound.push(*el);
+        } else {
+            for (c_idx, path) in state.paths.iter().enumerate() {
+                if !state.is_contour_closed(c_idx) {
+                    continue;
+                }
+                let proj = PreviewFilledProjection::compute(path, vp);
+                for el in proj.screen_path.elements() {
+                    compound.push(*el);
+                }
             }
         }
         if let Some(ts_path) = kurbo_to_tiny_skia_path(&compound) {

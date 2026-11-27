@@ -1325,6 +1325,317 @@ fn tc_v0100_020_tunni_apex_rays_ratio_pills_and_tablet_touch_ergonomics() {
     let restored_n10 = state.find_node(NodeId(10)).expect("NodeId(10)").point;
     assert_relative_eq!(restored_n10.x.0, 40.0, epsilon = 1.5);
 
+    // (a) Realistic 0.20s Touch Tap (Start at t=10.0, End at t=10.20) followed by browser compatibility
+    // PointerButton(pressed: true/false) at t=10.22 on a Corner node (or OffCurve handle) must select ONLY that 1 node, NOT the entire contour!
+    // Also includes eframe's synchronous pointerdown + mousemove before touchstart at the same tap coordinate!
+    let mut tap_state = GrafiaCanvasState::init_glyph_a();
+    tap_state.viewport.zoom = 1.5;
+    tap_state.viewport.pan_offset = grafia::ScreenPoint::new(200.0, 350.0);
+    set_layer_contours(&mut tap_state, vec![make_tunni_arc_contour(60.0, 25.0)]);
+    let h11_scr = tap_state
+        .active_slot_viewport()
+        .to_screen(FontPoint::new(0.0, 60.0));
+    let h11_pos = Pos2::new(h11_scr.x.0, h11_scr.y.0);
+    for raw_step in [
+        RawInput {
+            screen_rect: Some(default_canvas_rect()),
+            time: Some(10.00),
+            events: vec![
+                Event::PointerButton {
+                    pos: h11_pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: EguiModifiers::NONE,
+                },
+                Event::PointerMoved(h11_pos),
+            ],
+            ..Default::default()
+        },
+        RawInput {
+            screen_rect: Some(default_canvas_rect()),
+            time: Some(10.01),
+            events: vec![
+                Event::PointerButton {
+                    pos: h11_pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: EguiModifiers::NONE,
+                },
+                Event::Touch {
+                    device_id: egui::TouchDeviceId(0),
+                    id: egui::TouchId(50),
+                    phase: egui::TouchPhase::Start,
+                    pos: h11_pos,
+                    force: None,
+                },
+            ],
+            ..Default::default()
+        },
+        RawInput {
+            screen_rect: Some(default_canvas_rect()),
+            time: Some(10.20),
+            events: vec![
+                Event::PointerButton {
+                    pos: h11_pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: EguiModifiers::NONE,
+                },
+                Event::Touch {
+                    device_id: egui::TouchDeviceId(0),
+                    id: egui::TouchId(50),
+                    phase: egui::TouchPhase::End,
+                    pos: h11_pos,
+                    force: None,
+                },
+            ],
+            ..Default::default()
+        },
+        RawInput {
+            screen_rect: Some(default_canvas_rect()),
+            time: Some(10.22),
+            events: vec![
+                Event::PointerButton {
+                    pos: h11_pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: EguiModifiers::NONE,
+                },
+                Event::PointerButton {
+                    pos: h11_pos,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: EguiModifiers::NONE,
+                },
+            ],
+            ..Default::default()
+        },
+    ] {
+        let mut out_s = ctx.run_ui(raw_step, |ui| {
+            let ev = ui.input(|i| i.events.clone());
+            let _ = InputDispatcher::new(&mut tap_state, &theme, default_canvas_rect())
+                .dispatch_events(&ev, ui);
+        });
+        out_s.textures_delta.clear();
+    }
+    assert_eq!(
+        tap_state.selected_nodes,
+        vec![NodeId(11)],
+        "Realistic 0.20s touch tap (with pointerdown+mousemove before touchstart) followed by compatibility PointerButton at t=10.22 must select only NodeId(11), not the entire 4-node contour"
+    );
+
+    // (b) Stylus Marquee Drag with Palm Touch Interference (including eframe's companion PointerButton/PointerMoved on touchstart/touchmove/touchend):
+    // Start stylus marquee drag at (50, 50) -> (150, 150), then inject palm Touch + companion PointerButton/PointerMoved at (500, 500) -> (510, 510) -> (520, 520)
+    // while stylus moves to (200, 200). Must stay MarqueeSelecting at current_screen == (200, 200)!
+    let mut stylus_state = GrafiaCanvasState::init_glyph_a();
+    stylus_state.set_active_input_device(grafia::InputDeviceKind::Stylus);
+    stylus_state.set_intent_latched(grafia::CanvasIntent::SlideAlongCurve, true);
+    stylus_state.show_bounding_box_slanted = true;
+    stylus_state.selection_angle_deg = 25.0;
+    for raw_stylus in [
+        RawInput {
+            screen_rect: Some(default_canvas_rect()),
+            time: Some(20.0),
+            events: vec![
+                Event::PointerButton {
+                    pos: Pos2::new(50.0, 50.0),
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: EguiModifiers::NONE,
+                },
+                Event::PointerMoved(Pos2::new(150.0, 150.0)),
+            ],
+            ..Default::default()
+        },
+        RawInput {
+            screen_rect: Some(default_canvas_rect()),
+            time: Some(20.05),
+            events: vec![
+                Event::PointerButton {
+                    pos: Pos2::new(500.0, 500.0),
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers: EguiModifiers::NONE,
+                },
+                Event::Touch {
+                    device_id: egui::TouchDeviceId(0),
+                    id: egui::TouchId(99),
+                    phase: egui::TouchPhase::Start,
+                    pos: Pos2::new(500.0, 500.0),
+                    force: None,
+                },
+                Event::PointerMoved(Pos2::new(510.0, 510.0)),
+                Event::Touch {
+                    device_id: egui::TouchDeviceId(0),
+                    id: egui::TouchId(99),
+                    phase: egui::TouchPhase::Move,
+                    pos: Pos2::new(510.0, 510.0),
+                    force: None,
+                },
+                Event::PointerMoved(Pos2::new(200.0, 200.0)),
+            ],
+            ..Default::default()
+        },
+        RawInput {
+            screen_rect: Some(default_canvas_rect()),
+            time: Some(20.08),
+            events: vec![
+                Event::PointerMoved(Pos2::new(520.0, 520.0)),
+                Event::Touch {
+                    device_id: egui::TouchDeviceId(0),
+                    id: egui::TouchId(99),
+                    phase: egui::TouchPhase::Move,
+                    pos: Pos2::new(520.0, 520.0),
+                    force: None,
+                },
+                Event::PointerButton {
+                    pos: Pos2::new(520.0, 520.0),
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: EguiModifiers::NONE,
+                },
+                Event::Touch {
+                    device_id: egui::TouchDeviceId(0),
+                    id: egui::TouchId(99),
+                    phase: egui::TouchPhase::End,
+                    pos: Pos2::new(520.0, 520.0),
+                    force: None,
+                },
+            ],
+            ..Default::default()
+        },
+    ] {
+        let mut out_st = ctx.run_ui(raw_stylus, |ui| {
+            let ev = ui.input(|i| i.events.clone());
+            let _ = InputDispatcher::new(&mut stylus_state, &theme, default_canvas_rect())
+                .dispatch_events(&ev, ui);
+        });
+        out_st.textures_delta.clear();
+    }
+    assert_eq!(
+        stylus_state.select_state,
+        grafia::SelectToolState::MarqueeSelecting {
+            start_screen: grafia::ScreenPoint::new(50.0, 50.0),
+            current_screen: grafia::ScreenPoint::new(200.0, 200.0),
+        },
+        "Palm touch + companion PointerButton/PointerMoved at (500, 500)->(520, 520) during active stylus marquee drag must not jump current_screen or cancel/release marquee"
+    );
+    assert_eq!(
+        stylus_state.last_pointer_screen_pos,
+        Some(grafia::ScreenPoint::new(200.0, 200.0)),
+        "Palm touch must not overwrite last_pointer_screen_pos"
+    );
+
+    // Also verify when stylus/1-finger drag itself emits Event::Touch(id=1) from (50, 50) -> (150, 150)
+    // and a distant palm Event::Touch(id=99) lands at (500, 500) -> (510, 510) while id=1 moves to (200, 200):
+    let mut touch_stylus_state = GrafiaCanvasState::init_glyph_a();
+    for raw_ts in [
+        RawInput {
+            screen_rect: Some(default_canvas_rect()),
+            time: Some(30.0),
+            events: vec![
+                Event::Touch {
+                    device_id: egui::TouchDeviceId(0),
+                    id: egui::TouchId(1),
+                    phase: egui::TouchPhase::Start,
+                    pos: Pos2::new(50.0, 50.0),
+                    force: None,
+                },
+                Event::Touch {
+                    device_id: egui::TouchDeviceId(0),
+                    id: egui::TouchId(1),
+                    phase: egui::TouchPhase::Move,
+                    pos: Pos2::new(150.0, 150.0),
+                    force: None,
+                },
+            ],
+            ..Default::default()
+        },
+        RawInput {
+            screen_rect: Some(default_canvas_rect()),
+            time: Some(30.05),
+            events: vec![
+                Event::Touch {
+                    device_id: egui::TouchDeviceId(0),
+                    id: egui::TouchId(99),
+                    phase: egui::TouchPhase::Start,
+                    pos: Pos2::new(500.0, 500.0),
+                    force: None,
+                },
+                Event::Touch {
+                    device_id: egui::TouchDeviceId(0),
+                    id: egui::TouchId(99),
+                    phase: egui::TouchPhase::Move,
+                    pos: Pos2::new(510.0, 510.0),
+                    force: None,
+                },
+                Event::Touch {
+                    device_id: egui::TouchDeviceId(0),
+                    id: egui::TouchId(1),
+                    phase: egui::TouchPhase::Move,
+                    pos: Pos2::new(200.0, 200.0),
+                    force: None,
+                },
+            ],
+            ..Default::default()
+        },
+    ] {
+        let mut out_ts = ctx.run_ui(raw_ts, |ui| {
+            let ev = ui.input(|i| i.events.clone());
+            let _ = InputDispatcher::new(&mut touch_stylus_state, &theme, default_canvas_rect())
+                .dispatch_events(&ev, ui);
+        });
+        out_ts.textures_delta.clear();
+    }
+    assert_eq!(
+        touch_stylus_state.select_state,
+        grafia::SelectToolState::MarqueeSelecting {
+            start_screen: grafia::ScreenPoint::new(50.0, 50.0),
+            current_screen: grafia::ScreenPoint::new(200.0, 200.0),
+        },
+        "Distant palm TouchId(99) at (500, 500) after primary TouchId(1) has already committed to a 141 dp marquee drag must not cancel the marquee or trigger 2-finger pan"
+    );
+    // (c) Touch / Stylus / Latched-Intent Marquee Never Skews:
+    assert!(
+        !stylus_state.show_bounding_box_slanted && stylus_state.selection_angle_deg.abs() < 1e-6,
+        "Stylus / Touch / Latched-Intent marquee drag must never skew into a slanted parallelogram"
+    );
+
+    // (d) Concave LassoDragging polygon fill uses NonZero Mesh tessellation (never convex Path fan fill):
+    let mut lasso_state = GrafiaCanvasState::init_glyph_a();
+    lasso_state.activate_tool(grafia::CanvasTool::Lasso);
+    lasso_state.bbox_drag = grafia::BBoxDragState::LassoDragging {
+        points_scr: vec![
+            grafia::ScreenPoint::new(100.0, 100.0),
+            grafia::ScreenPoint::new(300.0, 100.0),
+            grafia::ScreenPoint::new(300.0, 300.0),
+            grafia::ScreenPoint::new(200.0, 150.0),
+            grafia::ScreenPoint::new(100.0, 300.0),
+        ],
+        points_font: vec![
+            FontPoint::new(100.0, 100.0),
+            FontPoint::new(300.0, 100.0),
+            FontPoint::new(300.0, 300.0),
+            FontPoint::new(200.0, 150.0),
+            FontPoint::new(100.0, 300.0),
+        ],
+        initial_selected: Vec::new(),
+    };
+    let mut out_lasso = ctx.run_ui(RawInput::default(), |ui| {
+        let _ = grafia::GrafiaCanvasWidget::new(&mut lasso_state, &theme).show(ui);
+    });
+    out_lasso.textures_delta.clear();
+    let has_convex_fan_lasso_fill = out_lasso.shapes.iter().any(|cs| {
+        matches!(
+            &cs.shape,
+            egui::Shape::Path(p) if p.points.len() == 5 && p.fill != egui::Color32::TRANSPARENT
+        )
+    });
+    assert!(
+        !has_convex_fan_lasso_fill,
+        "Concave LassoDragging must tessellate via Shape::Mesh (FillRule::NonZero), never convex PathShape fill"
+    );
+
     render_v0100_visual_proof_frames();
 }
 

@@ -237,7 +237,9 @@ fn start_rotate_or_scale_press(
     font_pt: FontPoint,
     mods: Modifiers,
 ) {
-    let origin_scr = state.viewport.to_screen(state.transform_origin);
+    let origin_scr = state
+        .active_slot_viewport()
+        .to_screen(state.transform_origin);
     if scr_pt.distance_to(origin_scr)
         < state.scale_touch_hit_radius_dp(TRANSFORM_ORIGIN_HIT_RADIUS_DP)
     {
@@ -268,8 +270,22 @@ fn handle_select_or_lasso_bbox_and_guide_press(
     mods: Modifiers,
     is_double: bool,
 ) -> Option<bool> {
-    if let Some(action) = state.hit_test_bbox_knob(scr_pt, mods.control, mods.option) {
-        if let Some(shadow_bounds) = state.selection_bounds() {
+    let hit_id = state.hit_test_node(scr_pt);
+    let direct_offcurve_hit = hit_id.is_some_and(|id| {
+        state
+            .find_node(id)
+            .is_some_and(|n| n.node_type == crate::core::NodeType::OffCurve)
+    });
+    if !direct_offcurve_hit {
+        if state.try_begin_variable_width_pin_drag(scr_pt, font_pt)
+            || state.try_begin_smart_corner_pin_drag(scr_pt, font_pt)
+        {
+            return Some(true);
+        }
+        if let (Some(action), Some(shadow_bounds)) = (
+            state.hit_test_bbox_knob(scr_pt, mods.control, mods.option),
+            state.selection_bounds(),
+        ) {
             state.drag_transients.active_drag_before_snapshot = Some(state.snapshot());
             state.record_drag_start();
             state.active_bbox_rotation_deg =
@@ -283,13 +299,10 @@ fn handle_select_or_lasso_bbox_and_guide_press(
             return Some(true);
         }
     }
-    if state.hit_test_node(scr_pt).is_none() {
-        if let Some(handled) = state.try_begin_guide_press(scr_pt, font_pt, is_double) {
-            return Some(handled);
-        }
-    } else {
-        state.selected_guide = None;
+    if hit_id.is_none() {
+        return state.try_begin_guide_press(scr_pt, font_pt, is_double);
     }
+    state.selected_guide = None;
     None
 }
 

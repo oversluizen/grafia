@@ -20,34 +20,21 @@ use crate::interaction::{Modifiers, PenToolState, SelectToolState};
 
 impl GrafiaCanvasState {
     pub(crate) fn push_haptic_event(&mut self, event: CanvasHapticEvent) {
-        self.drawing_tool_state
-            .controller_ports
-            .pending_haptic_events
-            .push(event);
+        self.controller_ports.pending_haptic_events.push(event);
     }
 
     /// Sets the momentary (held) external [`CanvasIntentMask`] (`SPEC-015 §2`).
     pub fn set_external_intents(&mut self, intents: CanvasIntentMask) {
-        self.drawing_tool_state.controller_ports.external_intents = intents;
+        self.controller_ports.external_intents = intents;
     }
 
     /// Latches or unlatches a single [`CanvasIntent`] for one-handed or toggle operation (`SPEC-015 §2`).
     pub fn set_intent_latched(&mut self, intent: CanvasIntent, latched: bool) {
-        let was_latched = self
-            .drawing_tool_state
-            .controller_ports
-            .latched_intents
-            .contains(intent);
+        let was_latched = self.controller_ports.latched_intents.contains(intent);
         if latched {
-            self.drawing_tool_state
-                .controller_ports
-                .latched_intents
-                .insert(intent);
+            self.controller_ports.latched_intents.insert(intent);
         } else {
-            self.drawing_tool_state
-                .controller_ports
-                .latched_intents
-                .remove(intent);
+            self.controller_ports.latched_intents.remove(intent);
         }
         if was_latched != latched {
             self.push_haptic_event(CanvasHapticEvent::IntentLatchToggled { intent, latched });
@@ -57,22 +44,19 @@ impl GrafiaCanvasState {
     /// Returns whether `intent` is currently latched (`SPEC-015 §2`).
     #[must_use]
     pub fn is_intent_latched(&self, intent: CanvasIntent) -> bool {
-        self.drawing_tool_state
-            .controller_ports
-            .latched_intents
-            .contains(intent)
+        self.controller_ports.latched_intents.contains(intent)
     }
 
     /// Clears all momentary and latched external [`CanvasIntent`] flags (`SPEC-015 §2`).
     pub fn clear_external_intents(&mut self) {
-        self.drawing_tool_state.controller_ports.external_intents = CanvasIntentMask::NONE;
-        self.drawing_tool_state.controller_ports.latched_intents = CanvasIntentMask::NONE;
+        self.controller_ports.external_intents = CanvasIntentMask::NONE;
+        self.controller_ports.latched_intents = CanvasIntentMask::NONE;
     }
 
     /// Computes the union of external intents, latched intents, stylus barrel hold, and hardware modifiers (`SPEC-015 §2`).
     #[must_use]
     pub fn effective_intents(&self, hw_modifiers: Modifiers, hw_space: bool) -> CanvasIntentMask {
-        let cp = &self.drawing_tool_state.controller_ports;
+        let cp = &self.controller_ports;
         let mut mask = cp.external_intents.union(cp.latched_intents);
         if cp.barrel_hold_active {
             mask.insert(CanvasIntent::BreakCuspHandle);
@@ -105,7 +89,7 @@ impl GrafiaCanvasState {
         hw_modifiers: Modifiers,
         hw_space: bool,
     ) -> Modifiers {
-        let cp = &self.drawing_tool_state.controller_ports;
+        let cp = &self.controller_ports;
         let ext = cp.external_intents.union(cp.latched_intents);
         let shift = hw_modifiers.shift
             || ext.contains(CanvasIntent::ConstrainAngle)
@@ -133,12 +117,7 @@ impl GrafiaCanvasState {
 
     /// Drains all pending [`CanvasHapticEvent`] items emitted since the last poll (`SPEC-015 §5`).
     pub fn drain_haptic_events(&mut self) -> Vec<CanvasHapticEvent> {
-        std::mem::take(
-            &mut self
-                .drawing_tool_state
-                .controller_ports
-                .pending_haptic_events,
-        )
+        std::mem::take(&mut self.controller_ports.pending_haptic_events)
     }
 
     /// Returns a live [`ControllerTelemetryDescriptor`] for OLED displays, LCD buttons, and radial HUDs (`SPEC-015 §4`).
@@ -163,6 +142,10 @@ impl GrafiaCanvasState {
             CanvasTool::Knife => &[
                 (CanvasIntent::ConstrainAngle, "∠ 15°", "Shift"),
                 (CanvasIntent::KnifeAddNodesOnly, "⊕ Nodes", "Alt"),
+                (CanvasIntent::MoveOriginOrPan, "✋ Pan", "Space"),
+            ],
+            CanvasTool::ShapeBuilder => &[
+                (CanvasIntent::BreakCuspHandle, "⊖ Erase", "Alt"),
                 (CanvasIntent::MoveOriginOrPan, "✋ Pan", "Space"),
             ],
             _ => &[
@@ -193,20 +176,19 @@ impl GrafiaCanvasState {
 
     /// Sets the active physical input device classification (`Mouse`, `Stylus`, `TouchFinger`, `SPEC-015 §6`).
     pub fn set_active_input_device(&mut self, device: InputDeviceKind) {
-        self.drawing_tool_state.controller_ports.active_input_device = device;
+        self.controller_ports.active_input_device = device;
     }
 
     /// Returns the active [`InputDeviceKind`] (`SPEC-015 §6`).
     #[must_use]
     pub fn active_input_device(&self) -> InputDeviceKind {
-        self.drawing_tool_state.controller_ports.active_input_device
+        self.controller_ports.active_input_device
     }
 
     /// Returns the effective brush radius in screen `dp` for `Trowel` and `Cleaner`.
     #[must_use]
     pub fn effective_brush_radius_dp(&self) -> f32 {
-        self.drawing_tool_state
-            .controller_ports
+        self.controller_ports
             .brush_radius_dp
             .clamp(BRUSH_MIN_RADIUS_DP, BRUSH_MAX_RADIUS_DP)
     }
@@ -344,6 +326,7 @@ impl GrafiaCanvasState {
         self.restore_snapshot(&before);
         self.select_state = SelectToolState::Idle;
         self.pen_state = PenToolState::Idle;
+        self.drag_transients.active_smart_corner_pin_drag = None;
         self.drawing_tool_state.reset_in_flight_drags();
         self.active_snappers.clear();
         self.curve_harmony.active_tangent_snap = None;
@@ -356,7 +339,7 @@ impl GrafiaCanvasState {
         match event {
             StylusAccessoryEvent::DoubleTap => {
                 if self.active_tool == CanvasTool::Select {
-                    let prev = self.drawing_tool_state.controller_ports.last_drawing_tool;
+                    let prev = self.controller_ports.last_drawing_tool;
                     let target = if prev == CanvasTool::Select {
                         CanvasTool::Pen
                     } else {
@@ -364,7 +347,7 @@ impl GrafiaCanvasState {
                     };
                     self.activate_tool(target);
                 } else {
-                    self.drawing_tool_state.controller_ports.last_drawing_tool = self.active_tool;
+                    self.controller_ports.last_drawing_tool = self.active_tool;
                     self.activate_tool(CanvasTool::Select);
                 }
                 true
@@ -375,7 +358,7 @@ impl GrafiaCanvasState {
                 true
             }
             StylusAccessoryEvent::BarrelHold(held) => {
-                self.drawing_tool_state.controller_ports.barrel_hold_active = held;
+                self.controller_ports.barrel_hold_active = held;
                 true
             }
         }

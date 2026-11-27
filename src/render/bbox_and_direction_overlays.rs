@@ -21,7 +21,6 @@ use crate::tokens::{
     ORIGIN_RETICLE_TICK_INNER_DP, ORIGIN_RETICLE_TICK_OUTER_DP, WARNING_OFFCURVE_RADIUS_EXTRA_DP,
     WARNING_ONCURVE_RADIUS_EXTRA_DP,
 };
-use egui::epaint::{PathShape, PathStroke};
 use egui::{Painter, Pos2, Rect, Shape, Stroke, StrokeKind};
 use tiny_skia::{FillRule, Paint, PathBuilder, Pixmap, Stroke as TsStroke, Transform};
 
@@ -30,10 +29,11 @@ pub fn paint_duplicate_warnings_egui(
     state: &GrafiaCanvasState,
     theme: &GrafiaTheme,
 ) {
+    let vp = state.active_slot_viewport();
     let base_node_r = theme.edit_canvas.node_size_dp * 0.5;
     let base_off_r = theme.edit_canvas.bcp_handle_size_dp * 0.5;
     for (_id, pt, kind) in state.duplicate_warning_nodes() {
-        let scr = state.viewport.to_screen(pt);
+        let scr = vp.to_screen(pt);
         let (col, r) = match kind {
             DuplicateWarningKind::CoincidentOnCurve => (
                 duplicate_line_node_color32(),
@@ -55,10 +55,11 @@ pub fn render_duplicate_warnings_tiny_skia(
     state: &GrafiaCanvasState,
     theme: &GrafiaTheme,
 ) {
+    let vp = state.active_slot_viewport();
     let base_node_r = theme.edit_canvas.node_size_dp * 0.5;
     let base_off_r = theme.edit_canvas.bcp_handle_size_dp * 0.5;
     for (_id, pt, kind) in state.duplicate_warning_nodes() {
-        let scr = state.viewport.to_screen(pt);
+        let scr = vp.to_screen(pt);
         let (col, r) = match kind {
             DuplicateWarningKind::CoincidentOnCurve => (
                 duplicate_line_node_color32(),
@@ -93,12 +94,29 @@ pub fn paint_bbox_and_direction_overlays_egui(
     match &state.bbox_drag {
         BBoxDragState::LassoDragging { points_scr, .. } if points_scr.len() >= 2 => {
             let pts: Vec<Pos2> = points_scr.iter().map(|p| Pos2::new(p.x.0, p.y.0)).collect();
-            painter.add(Shape::Path(PathShape {
-                points: pts,
-                closed: true,
-                fill: lasso_fill_color32(),
-                stroke: PathStroke::new(LASSO_STROKE_WIDTH_DP, lasso_stroke_color32()),
-            }));
+            if points_scr.len() >= 3 {
+                let mut bez = kurbo::BezPath::new();
+                bez.move_to(kurbo::Point::new(
+                    f64::from(points_scr[0].x.0),
+                    f64::from(points_scr[0].y.0),
+                ));
+                for p in &points_scr[1..] {
+                    bez.line_to(kurbo::Point::new(f64::from(p.x.0), f64::from(p.y.0)));
+                }
+                bez.close_path();
+                let mesh = crate::render::tessellate_bez_path_nonzero(
+                    &bez,
+                    Pos2::ZERO,
+                    lasso_fill_color32(),
+                );
+                if !mesh.is_empty() {
+                    painter.add(Shape::mesh(mesh));
+                }
+            }
+            painter.add(Shape::closed_line(
+                pts,
+                Stroke::new(LASSO_STROKE_WIDTH_DP, lasso_stroke_color32()),
+            ));
         }
         BBoxDragState::ZoomDragging {
             start_scr,
@@ -127,13 +145,14 @@ fn paint_selection_bbox_egui(painter: &Painter, state: &GrafiaCanvasState) {
     let Some(b) = state.selection_bounds() else {
         return;
     };
-    if !b.is_displayable(state.viewport.zoom) {
+    let vp = state.active_slot_viewport();
+    if !b.is_displayable(vp.zoom) {
         return;
     }
-    let c0 = b.box_screen_point(0, &state.viewport);
-    let c2 = b.box_screen_point(2, &state.viewport);
-    let c8 = b.box_screen_point(8, &state.viewport);
-    let c6 = b.box_screen_point(6, &state.viewport);
+    let c0 = b.box_screen_point(0, &vp);
+    let c2 = b.box_screen_point(2, &vp);
+    let c8 = b.box_screen_point(8, &vp);
+    let c6 = b.box_screen_point(6, &vp);
     let stroke = Stroke::new(BBOX_DASH_STROKE_WIDTH_DP, bbox_dashed_stroke_color32());
     let corners = [
         Pos2::new(c0.x.0, c0.y.0),
@@ -149,18 +168,18 @@ fn paint_selection_bbox_egui(painter: &Painter, state: &GrafiaCanvasState) {
         BBOX_DASH_STROKE_WIDTH_DP,
     ));
 
-    let k_r = BBOX_BASE_HANDLE_SIZE_DP * state.viewport.zoom.powf(BBOX_HANDLE_ZOOM_EXP) * 0.5;
+    let k_r = BBOX_BASE_HANDLE_SIZE_DP * vp.zoom.powf(BBOX_HANDLE_ZOOM_EXP) * 0.5;
     let k_stroke = Stroke::new(BBOX_KNOB_STROKE_WIDTH_DP, bbox_knob_stroke_color32());
-    for k in b.active_knobs(state.viewport.zoom) {
-        let kc = b.knob_screen_center(k, &state.viewport);
+    for k in b.active_knobs(vp.zoom) {
+        let kc = b.knob_screen_center(k, &vp);
         let pos = Pos2::new(kc.x.0, kc.y.0);
         painter.circle_filled(pos, k_r, bbox_knob_fill_color32());
         painter.circle_stroke(pos, k_r, k_stroke);
     }
 
     if let Some((w_txt, h_txt)) = state.bounding_box_pill_labels() {
-        let s_mid = b.box_screen_point(1, &state.viewport);
-        let e_mid = b.box_screen_point(5, &state.viewport);
+        let s_mid = b.box_screen_point(1, &vp);
+        let e_mid = b.box_screen_point(5, &vp);
         let w_cy = s_mid.y.0 + BBOX_PILL_OFFSET_DP * 2.0 + BBOX_PILL_MIN_HEIGHT_DP * 0.5;
         let h_cx = e_mid.x.0 + BBOX_PILL_OFFSET_DP * 2.0 + pill_width_dp(&h_txt) * 0.5;
         paint_pill_egui(painter, Pos2::new(s_mid.x.0, w_cy), &w_txt);
@@ -169,7 +188,9 @@ fn paint_selection_bbox_egui(painter: &Painter, state: &GrafiaCanvasState) {
 }
 
 fn paint_origin_reticle_egui(painter: &Painter, state: &GrafiaCanvasState) {
-    let orig = state.viewport.to_screen(state.transform_origin);
+    let orig = state
+        .active_slot_viewport()
+        .to_screen(state.transform_origin);
     let center = Pos2::new(orig.x.0, orig.y.0);
     let bg_stroke = Stroke::new(ORIGIN_RETICLE_STROKE_WIDTH_DP, origin_bg_stroke_color32());
     let tick_stroke = Stroke::new(ORIGIN_RETICLE_STROKE_WIDTH_DP, origin_tick_color32());
@@ -283,13 +304,14 @@ fn render_selection_bbox_ts(pixmap: &mut Pixmap, state: &GrafiaCanvasState) {
     let Some(b) = state.selection_bounds() else {
         return;
     };
-    if !b.is_displayable(state.viewport.zoom) {
+    let vp = state.active_slot_viewport();
+    if !b.is_displayable(vp.zoom) {
         return;
     }
-    let c0 = b.box_screen_point(0, &state.viewport);
-    let c2 = b.box_screen_point(2, &state.viewport);
-    let c8 = b.box_screen_point(8, &state.viewport);
-    let c6 = b.box_screen_point(6, &state.viewport);
+    let c0 = b.box_screen_point(0, &vp);
+    let c2 = b.box_screen_point(2, &vp);
+    let c8 = b.box_screen_point(8, &vp);
+    let c6 = b.box_screen_point(6, &vp);
     let mut pb = PathBuilder::new();
     pb.move_to(c0.x.0, c0.y.0);
     pb.line_to(c2.x.0, c2.y.0);
@@ -303,9 +325,9 @@ fn render_selection_bbox_ts(pixmap: &mut Pixmap, state: &GrafiaCanvasState) {
         BBOX_DASH_STROKE_WIDTH_DP,
     );
 
-    let k_r = BBOX_BASE_HANDLE_SIZE_DP * state.viewport.zoom.powf(BBOX_HANDLE_ZOOM_EXP) * 0.5;
-    for k in b.active_knobs(state.viewport.zoom) {
-        let kc = b.knob_screen_center(k, &state.viewport);
+    let k_r = BBOX_BASE_HANDLE_SIZE_DP * vp.zoom.powf(BBOX_HANDLE_ZOOM_EXP) * 0.5;
+    for k in b.active_knobs(vp.zoom) {
+        let kc = b.knob_screen_center(k, &vp);
         fill_circle_ts(
             pixmap,
             kc.x.0,
@@ -324,8 +346,8 @@ fn render_selection_bbox_ts(pixmap: &mut Pixmap, state: &GrafiaCanvasState) {
     }
 
     if let Some((w_txt, h_txt)) = state.bounding_box_pill_labels() {
-        let s_mid = b.box_screen_point(1, &state.viewport);
-        let e_mid = b.box_screen_point(5, &state.viewport);
+        let s_mid = b.box_screen_point(1, &vp);
+        let e_mid = b.box_screen_point(5, &vp);
         let w_cy = s_mid.y.0 + BBOX_PILL_OFFSET_DP * 2.0 + BBOX_PILL_MIN_HEIGHT_DP * 0.5;
         let h_cx = e_mid.x.0 + BBOX_PILL_OFFSET_DP * 2.0 + pill_width_dp(&h_txt) * 0.5;
         fill_pill_ts(pixmap, s_mid.x.0, w_cy, &w_txt);
@@ -334,7 +356,9 @@ fn render_selection_bbox_ts(pixmap: &mut Pixmap, state: &GrafiaCanvasState) {
 }
 
 fn render_origin_reticle_ts(pixmap: &mut Pixmap, state: &GrafiaCanvasState) {
-    let orig = state.viewport.to_screen(state.transform_origin);
+    let orig = state
+        .active_slot_viewport()
+        .to_screen(state.transform_origin);
     fill_circle_ts(
         pixmap,
         orig.x.0,

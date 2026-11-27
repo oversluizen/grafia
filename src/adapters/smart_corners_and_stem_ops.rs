@@ -7,7 +7,8 @@ use crate::adapters::state::GrafiaCanvasState;
 use crate::core::{
     compute_contours_counter_balance, compute_contours_curvature_comb_spines,
     compute_contours_curvature_heatmap_envelopes, compute_contours_inflection_markers,
-    compute_contours_symmetry_ghost, evaluate_smart_corner_contours, fit_calligraphic_brush_stroke,
+    compute_contours_symmetry_ghost, compute_radial_symmetry_contours,
+    evaluate_smart_corner_contours, fit_calligraphic_brush_stroke,
     measure_contour_orthogonal_stem_thickness, CalligraphicNibSpec, CalligraphicSample, ContourId,
     CounterBalanceReport, CurvatureCombSpine, CurvatureCombStyle, CurvatureHeatmapEnvelope,
     GlyphContour, InflectionMarker, Node, NodeId, SmartCornerSpec, StemThicknessMeasurement,
@@ -26,6 +27,12 @@ impl GrafiaCanvasState {
         self.next_node_id.max(max_existing)
     }
 
+    /// Returns the active non-destructive `SmartCornerSpec` slices from the canonical `curve_harmony` domain state (`SPEC-014 §2.7`).
+    #[must_use]
+    pub fn smart_corners(&self) -> &[SmartCornerSpec] {
+        &self.curve_harmony.smart_corners
+    }
+
     /// Attaches or updates a non-destructive `SmartCornerSpec` (`radius_upm > 0.0` fillet, `radius_upm < 0.0` ink trap, `SPEC-012 §2.1`).
     pub fn set_smart_corner(&mut self, spec: SmartCornerSpec) {
         if !spec.radius_upm.is_finite() {
@@ -33,15 +40,15 @@ impl GrafiaCanvasState {
         }
         let before = self.snapshot();
         if let Some(existing) = self
+            .curve_harmony
             .smart_corners
             .iter_mut()
             .find(|s| s.node_id == spec.node_id)
         {
             existing.radius_upm = spec.radius_upm;
         } else {
-            self.smart_corners.push(spec);
+            self.curve_harmony.smart_corners.push(spec);
         }
-        self.curve_harmony.smart_corners = self.smart_corners.clone();
         self.record_mutation("Set Smart Corner", before);
         self.bump_content_generation();
         self.assert_invariants();
@@ -50,8 +57,9 @@ impl GrafiaCanvasState {
     /// Removes any non-destructive `SmartCornerSpec` attached to `node_id` (`SPEC-012 §2.1`).
     pub fn remove_smart_corner(&mut self, node_id: NodeId) {
         let before = self.snapshot();
-        self.smart_corners.retain(|s| s.node_id != node_id);
-        self.curve_harmony.smart_corners = self.smart_corners.clone();
+        self.curve_harmony
+            .smart_corners
+            .retain(|s| s.node_id != node_id);
         self.record_mutation("Remove Smart Corner", before);
         self.bump_content_generation();
         self.assert_invariants();
@@ -61,27 +69,38 @@ impl GrafiaCanvasState {
     #[must_use]
     pub fn compute_smart_corner_preview_contours(&self) -> Vec<GlyphContour> {
         let mut preview_next_id = self.next_safe_node_id_seed();
-        evaluate_smart_corner_contours(
+        let cornered = evaluate_smart_corner_contours(
             &self.glyph.contours,
-            &self.smart_corners,
+            &self.curve_harmony.smart_corners,
             &mut preview_next_id,
-        )
+        );
+        if self.icon_studio.radial_symmetry.fold_count > 1 {
+            compute_radial_symmetry_contours(
+                &cornered,
+                &self.icon_studio.radial_symmetry,
+                &mut preview_next_id,
+            )
+        } else {
+            cornered
+        }
     }
 
     /// Destructively commits all active Smart Corner fillets and Ink Trap notches into `self.glyph.contours` inside an Undo transaction (`SPEC-012 §2.1.4`).
     pub fn bake_smart_corners(&mut self) {
-        if self.smart_corners.is_empty() {
+        if self.curve_harmony.smart_corners.is_empty() {
             return;
         }
         let before = self.snapshot();
         let mut next_id = self.next_safe_node_id_seed();
-        let baked =
-            evaluate_smart_corner_contours(&self.glyph.contours, &self.smart_corners, &mut next_id);
+        let baked = evaluate_smart_corner_contours(
+            &self.glyph.contours,
+            &self.curve_harmony.smart_corners,
+            &mut next_id,
+        );
         self.next_node_id = next_id;
         self.contours = baked.iter().map(|c| c.nodes.clone()).collect();
         self.active_contour_closed = baked.last().is_none_or(|c| c.closed);
         self.glyph.contours = baked;
-        self.smart_corners.clear();
         self.curve_harmony.smart_corners.clear();
         self.selected_nodes
             .retain(|id| self.contours.iter().flatten().any(|n| n.id == *id));
@@ -284,8 +303,6 @@ impl GrafiaCanvasState {
     pub(crate) fn build_hinting_and_hoi_snapshot(
         &self,
     ) -> crate::interaction::history::HintingAndHoiSnapshot {
-        let mut curve_harmony = self.curve_harmony.clone();
-        curve_harmony.smart_corners = self.smart_corners.clone();
         crate::interaction::history::HintingAndHoiSnapshot {
             postscript_hints: self.postscript_hints.clone(),
             selected_postscript_hint: self.selected_postscript_hint,
@@ -293,7 +310,8 @@ impl GrafiaCanvasState {
             selected_truetype_instruction: self.selected_truetype_instruction,
             hoi_layer_sets: self.drag_transients.hoi_layer_sets.clone(),
             hoi_sibling_contours: self.drag_transients.hoi_sibling_contours.clone(),
-            curve_harmony,
+            curve_harmony: self.curve_harmony.clone(),
+            icon_studio: self.icon_studio.clone(),
         }
     }
 }

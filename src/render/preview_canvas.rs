@@ -219,6 +219,31 @@ impl<'a> GrafiaPreviewWidget<'a> {
         fill_color: egui::Color32,
     ) {
         if self.state.text_stream.slots.is_empty() {
+            if self.state.icon_studio.kinetic.playing
+                || self.state.icon_studio.kinetic.phase_t > 0.0
+            {
+                for (gc, alpha) in self.state.evaluate_active_kinetic_contours() {
+                    if !gc.visible || !gc.closed || gc.nodes.len() < 2 {
+                        continue;
+                    }
+                    let col = fill_color.gamma_multiply(alpha.clamp(0.0, 1.0));
+                    let mut mesh = crate::render::tessellate_closed_contours_nonzero(
+                        std::slice::from_ref(&gc.nodes),
+                        &[true],
+                        temp_vp,
+                        col,
+                    );
+                    if self.config.flipped {
+                        for v in &mut mesh.vertices {
+                            v.pos.y = 2.0 * center_y - v.pos.y;
+                        }
+                    }
+                    if !mesh.is_empty() {
+                        ui.painter().add(Shape::mesh(mesh));
+                    }
+                }
+                return;
+            }
             let closed_flags = self.state.closed_flags();
             let mut mesh = crate::render::tessellate_closed_contours_nonzero(
                 &self.state.contours,

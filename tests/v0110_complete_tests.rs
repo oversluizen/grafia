@@ -140,12 +140,12 @@ fn tc_v0110_003_and_004_ink_trap_notch_and_bake_smart_corners_with_undo() {
     });
     let snap_before_bake = state.snapshot();
     state.bake_smart_corners();
-    assert!(state.smart_corners.is_empty() && state.glyph.contours[0].nodes.len() >= 9);
+    assert!(state.smart_corners().is_empty() && state.glyph.contours[0].nodes.len() >= 9);
     let snap_after_bake = state.snapshot();
 
     assert!(state.undo() && state.snapshot() == snap_before_bake);
     assert_eq!(state.glyph.contours[0].nodes.len(), 4);
-    assert_eq!(state.smart_corners.len(), 2);
+    assert_eq!(state.smart_corners().len(), 2);
     assert!(state.redo() && state.snapshot() == snap_after_bake);
     state.validate_invariants().unwrap();
 

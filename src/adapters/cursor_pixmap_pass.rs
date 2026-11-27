@@ -108,10 +108,8 @@ fn render_pending_first_bcp_in_ts(
     else {
         return;
     };
-    let (a_scr, in_scr) = (
-        state.viewport.to_screen(first_on.point),
-        state.viewport.to_screen(first_bcp_in),
-    );
+    let vp = state.active_slot_viewport();
+    let (a_scr, in_scr) = (vp.to_screen(first_on.point), vp.to_screen(first_bcp_in));
     let mut pb = PathBuilder::new();
     pb.move_to(a_scr.x.0, a_scr.y.0);
     pb.line_to(in_scr.x.0, in_scr.y.0);
@@ -155,7 +153,7 @@ pub fn render_pen_extras_and_cursor_tiny_skia(
         if state.active_tool == CanvasTool::Pen {
             if let Some((_, close_id)) = state.hovered_pen_close_target {
                 if let Some(node) = state.find_node(close_id) {
-                    let scr = state.viewport.to_screen(node.point);
+                    let scr = state.active_slot_viewport().to_screen(node.point);
                     let radius =
                         theme.edit_canvas.node_size_dp * 0.5 * PEN_CLOSE_HALO_RADIUS_FACTOR;
                     let mut pb = PathBuilder::new();

@@ -187,6 +187,7 @@ pub(crate) fn delete_selected_nodes_or_guide(
     state.pending_pen_first_bcp_in = None;
     prune_empty_contours(state);
     state.sync_paths_from_contours();
+    state.prune_deleted_contours_from_color_sublayers();
     state.record_mutation(
         if cut_open {
             "Cut Contour Open"

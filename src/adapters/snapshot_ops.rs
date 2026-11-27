@@ -40,7 +40,6 @@ impl GrafiaCanvasState {
         self.drag_transients.hoi_layer_sets = glyph.hoi_layer_sets.clone();
         self.drag_transients.hoi_sibling_contours = glyph.hoi_sibling_contours.clone();
         self.backdrop_ghost_contours = glyph.backdrop_ghost_contours.clone();
-        self.smart_corners.clear();
         self.curve_harmony.smart_corners.clear();
         self.editing_background_layer = false;
         self.glyph = glyph;
@@ -97,6 +96,21 @@ impl GrafiaCanvasState {
         self.next_node_id = next_id;
     }
 
+    pub(crate) fn cancel_in_flight_interaction_and_rollback(&mut self) {
+        if self.is_interactive_drag_active()
+            || self
+                .drawing_tool_state
+                .shape_builder
+                .active_width_pin_drag
+                .is_some()
+        {
+            if let Some(before) = self.drag_transients.active_drag_before_snapshot.take() {
+                self.restore_snapshot(&before);
+            }
+        }
+        self.reset_transient_interaction_states();
+    }
+
     fn reset_transient_interaction_states(&mut self) {
         self.select_state = SelectToolState::Idle;
         self.pen_state = PenToolState::Idle;
@@ -114,6 +128,7 @@ impl GrafiaCanvasState {
         self.drag_transients.alt_marquee_pending_start = None;
         self.drag_transients.alt_duplicate_pending = false;
         self.drag_transients.active_gradient_drag = None;
+        self.drag_transients.active_anchor_drag = false;
         self.active_open_contour = (0..self.contours.len())
             .rev()
             .find(|&i| !self.is_contour_closed(i));
@@ -253,6 +268,10 @@ impl GrafiaCanvasState {
         } else {
             self.paths = snap.paths.to_vec();
         }
+        self.color_sublayers = snap.hinting.color_sublayers.clone();
+        self.drag_transients.selected_color_sublayer = snap.hinting.selected_color_sublayer;
+        self.drag_transients.selected_gradient_stop = snap.hinting.selected_gradient_stop;
+        self.icon_studio = snap.hinting.icon_studio.clone();
         self.guides = snap.guides.clone();
         self.global_guides = snap.global_guides.clone();
         self.selected_guide = snap.selected_guide;
@@ -318,7 +337,7 @@ impl GrafiaCanvasState {
         self.drag_transients.hoi_layer_sets = snap.hinting.hoi_layer_sets.clone();
         self.drag_transients.hoi_sibling_contours = snap.hinting.hoi_sibling_contours.clone();
         self.curve_harmony = snap.hinting.curve_harmony.clone();
-        self.smart_corners = self.curve_harmony.smart_corners.clone();
+        self.icon_studio = snap.hinting.icon_studio.clone();
         self.glyph.postscript_hints = self.postscript_hints.clone();
         self.glyph.truetype_instructions = self.truetype_instructions.clone();
         self.glyph.hoi_layer_sets = self.drag_transients.hoi_layer_sets.clone();

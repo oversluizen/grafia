@@ -48,7 +48,8 @@ pub(crate) fn extract_cropped_luma(
 }
 
 fn compute_planar_homography(src: [(f64, f64); 4], dst: [(f64, f64); 4]) -> Option<[f64; 9]> {
-    let mut a = vec![vec![0.0_f64; HOMOGRAPHY_SYSTEM_DIM]; HOMOGRAPHY_SYSTEM_DIM];
+    let zero_row = vec![0.0_f64; HOMOGRAPHY_SYSTEM_DIM];
+    let mut a = vec![zero_row; HOMOGRAPHY_SYSTEM_DIM];
     let mut b = vec![0.0_f64; HOMOGRAPHY_SYSTEM_DIM];
     for i in 0..4 {
         let (x, y) = src[i];

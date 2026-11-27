@@ -272,7 +272,8 @@ fn refine_euler_angles_newton(
         if max_r <= EULER_CONVERGENCE_TOL {
             break;
         }
-        let mut jac = vec![vec![0.0; nf]; nf];
+        let zero_row = vec![0.0; nf];
+        let mut jac = vec![zero_row; nf];
         for (col, &a_pos) in free_anchors.iter().enumerate() {
             let mut perturbed = anchor_angles.to_vec();
             perturbed[a_pos] += EULER_FD_STEP;

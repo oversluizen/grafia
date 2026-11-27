@@ -26,9 +26,11 @@ serde_json = "1.0"
 egui = { version = "0.37.0", default-features = false }
 tiny-skia = "0.11"
 image = { version = "0.25", default-features = false, features = ["png", "gif"] }
+vitrea = "0.1.0"
+roxmltree = "0.20"
 
 [dev-dependencies]
-egui-macview = "0.6.11"
+egui-macview = { version = "0.9.2", path = "../egui-macview" }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 approx = "0.5"
@@ -173,6 +175,14 @@ path = "tests/v0110_complete_tests.rs"
 name = "v0120_complete_tests"
 path = "tests/v0120_complete_tests.rs"
 
+[[test]]
+name = "v0140_complete_tests"
+path = "tests/v0140_complete_tests.rs"
+
+[[test]]
+name = "v0150_complete_tests"
+path = "tests/v0150_complete_tests.rs"
+
 [[example]]
 name = "vector_canvas_demo"
 path = "examples/vector_canvas_demo.rs"
@@ -188,9 +198,9 @@ broken_intra_doc_links = "deny"
 unwrap_used = "deny"
 expect_used = "deny"
 panic = "deny"
-todo = "deny"
-unimplemented = "deny"
-dbg_macro = "deny"
+todo = "forbid"
+unimplemented = "forbid"
+dbg_macro = "forbid"
 iter_over_hash_type = "deny"
 cognitive_complexity = "deny"
 too_many_lines = "deny"

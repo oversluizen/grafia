@@ -45,6 +45,7 @@ pub enum CanvasTool {
     CurvedTrajectory,
     Trowel,
     Cleaner,
+    ShapeBuilder,
 }
 
 #[allow(non_upper_case_globals)]
@@ -68,6 +69,7 @@ impl CanvasTool {
     pub const CurvedTrajectoryTool: CanvasTool = CanvasTool::CurvedTrajectory;
     pub const TrowelTool: CanvasTool = CanvasTool::Trowel;
     pub const CleanerTool: CanvasTool = CanvasTool::Cleaner;
+    pub const ShapeBuilderTool: CanvasTool = CanvasTool::ShapeBuilder;
     #[must_use]
     pub const fn allows_path_segment_interaction(self) -> bool {
         matches!(self, Self::Select | Self::Pen)
@@ -80,6 +82,7 @@ pub enum CanvasViewMode {
     EditWireframe,
     PreviewFilled,
     ShapeThumbnail,
+    LiquidGlass,
 }
 
 #[derive(Debug, Clone)]
@@ -95,6 +98,42 @@ impl std::ops::Deref for GrafiaCanvasResponse {
     type Target = egui::Response;
     fn deref(&self) -> &Self::Target {
         &self.response
+    }
+}
+
+/// Cohesive boolean overlay and node-visibility flags for `GrafiaCanvasState` (`SPEC-014 §2.2`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CanvasOverlayDisplayState {
+    pub show_master_compatibility: bool,
+    pub select_all_layers_mode: bool,
+    pub show_extra_nodes: bool,
+    pub show_nodes_oncurve: bool,
+    pub show_nodes_offcurve: bool,
+    pub show_node_coordinates: bool,
+    pub show_background_nodes: bool,
+    pub show_component_piece_frames: bool,
+    pub show_hoi_diamonds: bool,
+    pub show_tunni_lines: bool,
+    pub power_nudge_enabled: bool,
+    pub show_selection_info_hud: bool,
+}
+
+impl Default for CanvasOverlayDisplayState {
+    fn default() -> Self {
+        Self {
+            show_master_compatibility: false,
+            select_all_layers_mode: false,
+            show_extra_nodes: false,
+            show_nodes_oncurve: true,
+            show_nodes_offcurve: true,
+            show_node_coordinates: false,
+            show_background_nodes: false,
+            show_component_piece_frames: false,
+            show_hoi_diamonds: false,
+            show_tunni_lines: false,
+            power_nudge_enabled: false,
+            show_selection_info_hud: false,
+        }
     }
 }
 
@@ -148,6 +187,7 @@ pub struct GrafiaCanvasState {
     pub appearance_mode: crate::tokens::AppearanceMode,
     pub system_dark_mode: bool,
     pub drawing_tool_state: DrawingToolState,
+    pub controller_ports: crate::core::ControllerPortState,
     pub text_stream: crate::core::CanvasTextStream,
     pub show_text_measurement_line: bool,
     pub text_measurement_y_upm: f64,
@@ -158,25 +198,15 @@ pub struct GrafiaCanvasState {
     pub show_background: bool,
     pub editing_background_layer: bool,
     pub anchors: Vec<crate::core::CanvasAnchor>,
-    pub show_selection_info_hud: bool,
     pub ghost_paths: Vec<crate::core::GhostMarkPath>,
     pub show_mark_cloud: bool,
     pub components: Vec<crate::core::CanvasComponent>,
     pub contour_strokes: BTreeMap<ContourId, ContourStrokeStyle>,
     pub companion_master_layers: Vec<crate::core::CompanionMasterLayer>,
-    pub show_master_compatibility: bool,
-    pub select_all_layers_mode: bool,
     pub background_image: Option<crate::tokens::CanvasBackgroundImage>,
     pub smart_handles: Vec<crate::tokens::CanvasSmartHandle>,
-    pub show_extra_nodes: bool,
     pub selected_extra_node: Option<crate::tokens::ExtraNodeKey>,
-    pub show_nodes_oncurve: bool,
-    pub show_nodes_offcurve: bool,
-    pub show_node_coordinates: bool,
-    pub show_background_nodes: bool,
-    pub show_component_piece_frames: bool,
     pub active_bbox_rotation_deg: Option<f64>,
-    pub smart_corners: Vec<crate::core::SmartCornerSpec>,
     pub preferences: crate::tokens::GrafiaPreferences,
     pub color_sublayers: Vec<CanvasColorSublayer>,
     pub custom_reference_frame: Option<CustomReferenceFrame>,
@@ -185,16 +215,28 @@ pub struct GrafiaCanvasState {
     pub truetype_instructions: Vec<TrueTypeVisualInstruction>,
     pub selected_truetype_instruction: Option<u64>,
     pub truetype_instructor_ppem: u16,
-    pub show_hoi_diamonds: bool,
     pub show_pixel_preview_ppem: Option<u16>,
     pub backdrop_ghost_contours: Vec<GlyphContour>,
-    pub show_tunni_lines: bool,
-    pub power_nudge_enabled: bool,
     pub curve_harmony: crate::core::CurveHarmonyState,
+    pub icon_studio: crate::core::CanvasIconStudioScene,
     pub content_generation: u64,
+    pub overlay_flags: CanvasOverlayDisplayState,
     pub pen_transients: PenInteractionTransients,
     pub drag_transients: DragSessionTransients,
     pub text_transients: TextInteractionTransients,
+}
+
+impl std::ops::Deref for GrafiaCanvasState {
+    type Target = CanvasOverlayDisplayState;
+    fn deref(&self) -> &Self::Target {
+        &self.overlay_flags
+    }
+}
+
+impl std::ops::DerefMut for GrafiaCanvasState {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.overlay_flags
+    }
 }
 
 macro_rules! construct_default_canvas_state {
@@ -248,6 +290,7 @@ macro_rules! construct_default_canvas_state {
             appearance_mode: $appearance_mode,
             system_dark_mode: $is_dark,
             drawing_tool_state: DrawingToolState::default(),
+            controller_ports: crate::core::ControllerPortState::default(),
             text_stream: crate::core::CanvasTextStream::new(),
             show_text_measurement_line: false,
             text_measurement_y_upm: crate::tokens::TEXT_MEASUREMENT_LINE_DEFAULT_Y_UPM,
@@ -258,25 +301,15 @@ macro_rules! construct_default_canvas_state {
             show_background: true,
             editing_background_layer: false,
             anchors: Vec::new(),
-            show_selection_info_hud: true,
             ghost_paths: Vec::new(),
             show_mark_cloud: true,
             components: Vec::new(),
             contour_strokes: std::collections::BTreeMap::new(),
             companion_master_layers: Vec::new(),
-            show_master_compatibility: false,
-            select_all_layers_mode: false,
             background_image: None,
             smart_handles: Vec::new(),
-            show_extra_nodes: false,
             selected_extra_node: None,
-            show_nodes_oncurve: true,
-            show_nodes_offcurve: true,
-            show_node_coordinates: false,
-            show_background_nodes: false,
-            show_component_piece_frames: false,
             active_bbox_rotation_deg: None,
-            smart_corners: Vec::new(),
             preferences: crate::tokens::GrafiaPreferences {
                 round_to_grid: false,
                 snap_radius_dp: crate::tokens::DEFAULT_SNAP_THRESHOLD_DP,
@@ -292,13 +325,12 @@ macro_rules! construct_default_canvas_state {
             truetype_instructions: Vec::new(),
             selected_truetype_instruction: None,
             truetype_instructor_ppem: crate::core::math_consts::TT_DEFAULT_PPEM,
-            show_hoi_diamonds: false,
             show_pixel_preview_ppem: None,
             backdrop_ghost_contours: Vec::new(),
-            show_tunni_lines: false,
-            power_nudge_enabled: false,
             curve_harmony: crate::core::CurveHarmonyState::default(),
+            icon_studio: crate::core::CanvasIconStudioScene::default(),
             content_generation: next_content_generation(),
+            overlay_flags: CanvasOverlayDisplayState::default(),
             pen_transients: PenInteractionTransients::default(),
             drag_transients: DragSessionTransients::default(),
             text_transients: TextInteractionTransients::default(),

@@ -9,7 +9,7 @@ pub(crate) use crate::render::stem_gauge_and_audit_overlays::{
 use crate::adapters::state::GrafiaCanvasState;
 use crate::core::math_consts::{
     COMB_DEFAULT_SAMPLES, COMB_SCALE_UPM, COMB_STROKE_WIDTH_DP, CURVE_FLATTEN_TOLERANCE,
-    TUNNI_LINE_WIDTH_DP,
+    TUNNI_KNOB_RADIUS_DP, TUNNI_LINE_WIDTH_DP,
 };
 use crate::core::{
     contour_to_bezpath_with_splines, CurvatureCombStyle, FontPoint, ScreenPoint,
@@ -19,7 +19,7 @@ use crate::render::stem_gauge_and_audit_overlays::{
     fill_heatmap_quad_ts, paint_centroid_and_stem_gauge_egui, paint_tangent_snap_egui,
     render_centroid_and_stem_gauge_tiny_skia, render_tangent_snap_tiny_skia,
 };
-use crate::render::ts_primitives::ts_stroke_line;
+use crate::render::ts_primitives::{ts_fill_circle, ts_stroke_circle, ts_stroke_line};
 use crate::tokens::spline_and_handle_tokens::curvature_heatmap_color32;
 use crate::tokens::GrafiaTheme;
 use egui::{Painter, Pos2, Shape, Stroke};
@@ -49,7 +49,7 @@ pub fn paint_smart_corner_and_symmetry_overlays_egui(
     theme: &GrafiaTheme,
     vp: &ViewportTransform,
 ) {
-    if !state.smart_corners.is_empty() {
+    if !state.curve_harmony.smart_corners.is_empty() {
         let preview_stroke = Stroke::new(
             TUNNI_LINE_WIDTH_DP,
             theme.edit_canvas.selected_glow_color32(),
@@ -65,6 +65,18 @@ pub fn paint_smart_corner_and_symmetry_overlays_egui(
                 }
             }
         }
+    }
+    let pin_col = theme.edit_canvas.selected_glow_color32();
+    let pin_fill = theme.edit_canvas.smooth_node_color32();
+    let pin_stroke = Stroke::new(TUNNI_LINE_WIDTH_DP, pin_col);
+    for pin in state.compute_smart_corner_radius_pins() {
+        let v_scr = vp.to_screen(pin.vertex_pt);
+        let p_scr = vp.to_screen(pin.pin_pt);
+        let pv = Pos2::new(v_scr.x.0, v_scr.y.0);
+        let pp = Pos2::new(p_scr.x.0, p_scr.y.0);
+        painter.line_segment([pv, pp], pin_stroke);
+        painter.circle_filled(pp, TUNNI_KNOB_RADIUS_DP, pin_fill);
+        painter.circle_stroke(pp, TUNNI_KNOB_RADIUS_DP, pin_stroke);
     }
 
     if state.curve_harmony.symmetry_overlay_mode != SymmetryOverlayMode::Off {
@@ -150,7 +162,7 @@ pub fn render_smart_corner_and_symmetry_overlays_tiny_skia(
     theme: &GrafiaTheme,
     vp: &ViewportTransform,
 ) {
-    if !state.smart_corners.is_empty() {
+    if !state.curve_harmony.smart_corners.is_empty() {
         let col = theme.edit_canvas.selected_glow_color32();
         for preview in state.compute_smart_corner_preview_contours() {
             let scr_pts = flatten_nodes_to_screen_points(&preview.nodes, preview.closed, vp);
@@ -163,6 +175,15 @@ pub fn render_smart_corner_and_symmetry_overlays_tiny_skia(
                 }
             }
         }
+    }
+    let pin_col = theme.edit_canvas.selected_glow_color32();
+    let pin_fill = theme.edit_canvas.smooth_node_color32();
+    for pin in state.compute_smart_corner_radius_pins() {
+        let v_scr = vp.to_screen(pin.vertex_pt);
+        let p_scr = vp.to_screen(pin.pin_pt);
+        ts_stroke_line(pixmap, v_scr, p_scr, pin_col, TUNNI_LINE_WIDTH_DP);
+        ts_fill_circle(pixmap, p_scr, TUNNI_KNOB_RADIUS_DP, pin_fill);
+        ts_stroke_circle(pixmap, p_scr, TUNNI_KNOB_RADIUS_DP, pin_col, 1.0);
     }
 
     if state.curve_harmony.symmetry_overlay_mode != SymmetryOverlayMode::Off {

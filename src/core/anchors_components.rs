@@ -167,12 +167,12 @@ pub fn compute_mark_cloud_contours(
     }
     let mut out = Vec::new();
     let mut next_cid = 10_000usize;
+    let mut nid = 50_000u64;
     for anchor in anchors.iter().filter(|a| a.selected) {
         let base_name = anchor.name.trim_start_matches('_');
         for gp in ghost_paths {
             if gp.anchor_name.trim_start_matches('_') == base_name {
                 let tx = Affine2D::translation(anchor.position.x.0, anchor.position.y.0);
-                let mut nid = 50_000u64;
                 for c in &gp.contours {
                     out.push(tx.transform_contour(c, ContourId(next_cid), &mut nid));
                     next_cid += 1;

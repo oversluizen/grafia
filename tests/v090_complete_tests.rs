@@ -967,6 +967,7 @@ fn tc_v090_006_custom_reference_frame_boxes_subdivisions_and_snapping() {
         center_crosshair: true,
         keyline_circles_radii_upm: Vec::new(),
         parallel_lines: Vec::new(),
+        ..Default::default()
     };
 
     let pix_without = rasterize_canvas_subregion(&state, &state.theme, 600, 480);
@@ -1046,6 +1047,7 @@ fn tc_v090_007_custom_reference_frame_parallel_bands_and_keyline_circles() {
         center_crosshair: false,
         keyline_circles_radii_upm: vec![150.0, 280.0],
         parallel_lines,
+        ..Default::default()
     };
     state.set_custom_reference_frame(Some(frame));
 

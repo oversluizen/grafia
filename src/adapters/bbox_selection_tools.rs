@@ -11,7 +11,6 @@ use crate::core::{
     FontPoint, GlyphContour, MetricsOrigin, NodeId, NodeType, ScreenPoint, SelectionBounds,
     TransformGridAnchor, TransformOriginSpec,
 };
-use crate::interaction::{PenToolState, SelectToolState};
 use crate::tokens::{DEFAULT_ASCENDER_UPM, DEFAULT_CAP_HEIGHT_UPM, DEFAULT_X_HEIGHT_UPM};
 
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -121,13 +120,15 @@ impl GrafiaCanvasState {
             return None;
         }
         let b = self.selection_bounds()?;
+        let active_vp = self.active_slot_viewport();
         let half_box = self.scale_touch_hit_radius_dp(
             crate::core::math_consts::BBOX_KNOB_HIT_HALF_EXTENT_DP * 2.0,
         );
-        hit_test_bbox_knobs_with_extent(&b, &self.viewport, cursor_scr, is_ctrl, is_alt, half_box)
+        hit_test_bbox_knobs_with_extent(&b, &active_vp, cursor_scr, is_ctrl, is_alt, half_box)
     }
 
     pub fn activate_tool(&mut self, tool: CanvasTool) {
+        self.cancel_in_flight_interaction_and_rollback();
         if tool == CanvasTool::Text && self.active_tool != CanvasTool::Text {
             self.text_transients.last_select_tool = self.active_tool;
         }
@@ -139,16 +140,13 @@ impl GrafiaCanvasState {
                 | CanvasTool::Primitives
                 | CanvasTool::Trowel
                 | CanvasTool::Cleaner
+                | CanvasTool::ShapeBuilder
         ) {
-            self.drawing_tool_state.controller_ports.last_drawing_tool = tool;
+            self.controller_ports.last_drawing_tool = tool;
         }
         let was_transform = matches!(self.active_tool, CanvasTool::Rotate | CanvasTool::Scale);
         let is_transform = matches!(tool, CanvasTool::Rotate | CanvasTool::Scale);
         self.active_tool = tool;
-        self.select_state = SelectToolState::Idle;
-        self.pen_state = PenToolState::Idle;
-        self.bbox_drag = BBoxDragState::Idle;
-        self.drawing_tool_state.reset_in_flight_drags();
         self.text_transients.text_drag_anchor_caret = None;
         self.text_measurement_dragging = false;
         if is_transform && !was_transform {

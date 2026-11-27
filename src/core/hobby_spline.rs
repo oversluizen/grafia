@@ -115,7 +115,8 @@ fn assemble_hobby_linear_system(
     out_span: &[Option<usize>],
 ) -> (Vec<Vec<f64>>, Vec<f64>) {
     let dim = 2 * hobby_spans.len();
-    let mut mat = vec![vec![0.0; dim]; dim];
+    let zero_row = vec![0.0; dim];
+    let mut mat = vec![zero_row; dim];
     let mut rhs = vec![0.0; dim];
 
     for (j, hs) in hobby_spans.iter().enumerate() {

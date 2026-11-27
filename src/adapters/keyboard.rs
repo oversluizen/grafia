@@ -315,18 +315,12 @@ fn handle_unmodified_shortcut_key(
             true
         }
         Key::Escape => {
+            state.cancel_in_flight_interaction_and_rollback();
             state.selected_nodes.clear();
             state.selected_guide = None;
             state.drawing_tool_state.selected_annotations.clear();
             state.clear_anchor_and_component_selections();
-            state.drawing_tool_state.reset_in_flight_drags();
-            state.select_state = crate::interaction::SelectToolState::Idle;
-            state.pen_state = crate::interaction::PenToolState::Idle;
             state.active_open_contour = None;
-            state.hovered_segment_hit = None;
-            state.hovered_pen_close_target = None;
-            state.pending_pen_bcp_out = None;
-            state.pending_pen_first_bcp_in = None;
             true
         }
         Key::Tab => {
@@ -360,6 +354,8 @@ fn handle_unmodified_shortcut_key(
         Key::Backspace | Key::Delete => {
             delete_selected_nodes_or_guide(state, shift_active, alt_active)
         }
+        Key::OpenBracket => state.reorder_selected_color_sublayer(-1),
+        Key::CloseBracket => state.reorder_selected_color_sublayer(1),
         _ => false,
     }
 }

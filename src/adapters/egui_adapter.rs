@@ -95,7 +95,8 @@ impl<'a> GrafiaCanvasWidget<'a> {
             | CanvasTool::Pencil
             | CanvasTool::Pixel
             | CanvasTool::Trowel
-            | CanvasTool::Cleaner => CursorIcon::Crosshair,
+            | CanvasTool::Cleaner
+            | CanvasTool::ShapeBuilder => CursorIcon::Crosshair,
             CanvasTool::Annotation
             | CanvasTool::TrueTypeInstructor
             | CanvasTool::Hoi

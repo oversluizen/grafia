@@ -22,8 +22,14 @@ pub fn expand_stroked_contours_preview(
     strokes: &BTreeMap<ContourId, ContourStrokeStyle>,
 ) -> Vec<GlyphContour> {
     let mut out = Vec::new();
-    let mut next_cid = 20_000usize;
-    let mut next_nid = 20_000u64;
+    let max_cid = contours.iter().map(|c| c.id.0).max().unwrap_or(0);
+    let max_nid = contours
+        .iter()
+        .flat_map(|c| c.nodes.iter().map(|n| n.id.0))
+        .max()
+        .unwrap_or(0);
+    let mut next_cid = max_cid.saturating_add(1).max(20_000usize);
+    let mut next_nid = max_nid.saturating_add(1).max(20_000u64);
     for contour in contours {
         if let Some(style) = strokes.get(&contour.id) {
             let expanded =
@@ -198,8 +204,7 @@ fn emit_corner_join(
         return;
     }
     match join {
-        LineJoinStyle::Miter => unreachable!(),
-        LineJoinStyle::Bevel => {
+        LineJoinStyle::Miter | LineJoinStyle::Bevel => {
             push_node(out, next_nid, q1, NodeType::Corner);
             push_node(out, next_nid, q2, NodeType::Corner);
         }

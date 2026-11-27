@@ -85,6 +85,11 @@ pub struct TouchInteractionState {
     pub last_raw_press_time_sec: f64,
     pub last_raw_press_was_touch: bool,
     pub primary_press_active: bool,
+    pub last_touch_event_time_sec: f64,
+    pub native_pointer_drag_active: bool,
+    pub native_pointer_raw_pos: Option<egui::Pos2>,
+    pub active_primary_touch_id: Option<u64>,
+    pub rejected_palm_contacts: BTreeMap<u64, egui::Pos2>,
 }
 
 /// Binarization mode for bitmap & shadowed-camera auto-tracing (`SPEC-009 §2.5.1`).

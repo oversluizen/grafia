@@ -3,13 +3,22 @@
 pub mod cagd_and_controller_presets;
 pub mod color_and_hinting_presets;
 pub mod demo_panels;
+pub mod guided_showcase;
+pub mod guided_showcase_cards;
 pub mod host_ports;
+pub mod icon_hero_templates;
+pub mod icon_studio_showcase;
+pub mod icon_studio_workbench_ui;
 pub mod inspector_ui;
+pub mod mobile_thumb_hud;
 pub mod presets;
+pub mod sonoma_top_bar;
 pub mod spline_and_trace_presets;
 pub mod toolbar_specs;
 
-pub use presets::DemoPreset;
+pub use guided_showcase::{coach_card, tool_dutch_guide, ShowcaseChapter};
+pub use presets::{DemoPreset, StudioThemePreset};
+pub use sonoma_top_bar::StudioWorkspaceMode;
 
 use grafia::adapters::GrafiaCanvasState;
 use grafia::core::{
@@ -33,6 +42,25 @@ pub struct MockFontHost {
     pub preview_cfg: PreviewRenderConfig,
     pub preview_cache: PreviewStripCache,
     pub event_log: VecDeque<String>,
+    pub show_left_sidebar: bool,
+    pub show_right_inspector: bool,
+    pub responsive_layout_initialized: bool,
+    pub initial_canvas_fitted: bool,
+    pub last_canvas_size: Option<egui::Vec2>,
+    pub active_chapter: ShowcaseChapter,
+    pub studio_mode: StudioWorkspaceMode,
+    pub studio_theme: StudioThemePreset,
+    pub tour_index: usize,
+    pub show_coach_banner: bool,
+    pub crispness_badge_cache: Option<(u64, bool, egui::TextureHandle)>,
+    pub show_mobile_thumb_hud: bool,
+    pub thumb_dock_right: bool,
+    pub is_fullscreen: bool,
+    pub preview_panel_height_dp: f32,
+    pub thumb_dial_layer: egui_macview::MacThumbDialLayer,
+    pub thumb_latched_mask: egui_macview::MacThumbIntentMask,
+    pub thumb_rotary_norm: f32,
+    pub edge_wheel_value_pct: f32,
 }
 
 impl Default for MockFontHost {
@@ -66,11 +94,38 @@ impl MockFontHost {
             ),
             preview_cache: PreviewStripCache::new(),
             event_log: VecDeque::new(),
+            show_left_sidebar: true,
+            show_right_inspector: false,
+            responsive_layout_initialized: false,
+            initial_canvas_fitted: false,
+            last_canvas_size: None,
+            active_chapter: ShowcaseChapter::BasisTekenen,
+            studio_mode: StudioWorkspaceMode::LetterStudio,
+            studio_theme: StudioThemePreset::PaperLight,
+            tour_index: 0,
+            show_coach_banner: true,
+            crispness_badge_cache: None,
+            show_mobile_thumb_hud: true,
+            thumb_dock_right: false,
+            is_fullscreen: false,
+            preview_panel_height_dp: 200.0,
+            thumb_dial_layer: egui_macview::MacThumbDialLayer::CompassModifiers,
+            thumb_latched_mask: egui_macview::MacThumbIntentMask::NONE,
+            thumb_rotary_norm: 0.5,
+            edge_wheel_value_pct: 48.0,
         };
         host.push_log(
             "HostPort Ready: Cmd+U, Text Tool (T), Components, Spacing/Kerning connected",
         );
         host
+    }
+
+    pub fn fit_canvas_viewport(&self, state: &mut GrafiaCanvasState) {
+        if let Some(sz) = self.last_canvas_size.filter(|s| s.x > 64.0 && s.y > 64.0) {
+            state.fit_viewport_to_glyph(sz.x, sz.y);
+        } else {
+            self::toolbar_specs::fit_demo_canvas_viewport(state);
+        }
     }
 
     fn build_default_glyph_library() -> BTreeMap<String, Glyph> {
@@ -178,59 +233,30 @@ impl MockFontHost {
     #[must_use]
     pub fn default_anchors_for(&self, glyph_name: &str, width: f64) -> Vec<CanvasAnchor> {
         let cx = (width * 0.5).round();
+        let anchor = |id, name: &str, x, y, selected| CanvasAnchor {
+            id: AnchorId(id),
+            name: name.into(),
+            position: FontPoint::new(x, y),
+            selected,
+        };
         if glyph_name == "cedillacomb" {
             return vec![
-                CanvasAnchor {
-                    id: AnchorId(1),
-                    name: "_bottom".into(),
-                    position: FontPoint::new(0.0, 0.0),
-                    selected: true,
-                },
-                CanvasAnchor {
-                    id: AnchorId(2),
-                    name: "bottom".into(),
-                    position: FontPoint::new(0.0, -140.0),
-                    selected: false,
-                },
+                anchor(1, "_bottom", 0.0, 0.0, true),
+                anchor(2, "bottom", 0.0, -140.0, false),
             ];
         }
         if glyph_name.ends_with("comb") {
             return vec![
-                CanvasAnchor {
-                    id: AnchorId(1),
-                    name: "_top".into(),
-                    position: FontPoint::new(0.0, 500.0),
-                    selected: true,
-                },
-                CanvasAnchor {
-                    id: AnchorId(2),
-                    name: "top".into(),
-                    position: FontPoint::new(0.0, 680.0),
-                    selected: false,
-                },
+                anchor(1, "_top", 0.0, 500.0, true),
+                anchor(2, "top", 0.0, 680.0, false),
             ];
         }
         let is_lower = glyph_name.chars().next().is_some_and(char::is_lowercase);
         let top_y = if is_lower { 500.0 } else { 700.0 };
         vec![
-            CanvasAnchor {
-                id: AnchorId(1),
-                name: "top".into(),
-                position: FontPoint::new(cx, top_y),
-                selected: true,
-            },
-            CanvasAnchor {
-                id: AnchorId(2),
-                name: "bottom".into(),
-                position: FontPoint::new(cx, 0.0),
-                selected: false,
-            },
-            CanvasAnchor {
-                id: AnchorId(3),
-                name: "ogonek".into(),
-                position: FontPoint::new((width - 90.0).max(cx), 0.0),
-                selected: false,
-            },
+            anchor(1, "top", cx, top_y, true),
+            anchor(2, "bottom", cx, 0.0, false),
+            anchor(3, "ogonek", (width - 90.0).max(cx), 0.0, false),
         ]
     }
 

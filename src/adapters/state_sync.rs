@@ -147,10 +147,31 @@ impl GrafiaCanvasState {
     }
 
     pub fn fit_viewport_to_glyph(&mut self, canvas_w: f32, canvas_h: f32) {
+        if self.text_stream.slots.len() > 1 {
+            let (mut x_min, mut x_max) = (0.0_f64, self.glyph.width.max(1.0));
+            let (mut y_min, mut y_max) = (0.0_f64, self.glyph.height.max(1.0));
+            for s in &self.text_stream.slots {
+                x_min = x_min.min(s.origin_x_upm);
+                x_max = x_max.max(s.origin_x_upm + s.glyph.width.max(1.0));
+                y_min = y_min.min(s.origin_y_upm);
+                y_max = y_max.max(s.origin_y_upm + s.glyph.height.max(1.0));
+            }
+            let span_w = ((x_max - x_min) as f32).max(1.0);
+            let span_h = ((y_max - y_min) as f32).max(1.0);
+            let zoom_h = (canvas_h * AUTOFIT_MARGIN_RATIO) / span_h;
+            let zoom_w = (canvas_w * AUTOFIT_MARGIN_RATIO) / span_w;
+            let zoom = zoom_h.min(zoom_w).max(crate::tokens::MIN_VIEWPORT_ZOOM);
+            let pan_x = (canvas_w - span_w * zoom) * 0.5 - (x_min as f32) * zoom;
+            let pan_y = canvas_h * 0.5 + (span_h * zoom * 0.5) + (y_min as f32) * zoom;
+            self.viewport.zoom = zoom;
+            self.viewport.pan_offset = ScreenPoint::new(pan_x, pan_y);
+            return;
+        }
         let glyph_h = (self.glyph.height as f32).max(1.0);
         let glyph_w = (self.glyph.width as f32).max(1.0);
-        let zoom =
-            ((canvas_h * AUTOFIT_MARGIN_RATIO) / glyph_h).max(crate::tokens::MIN_VIEWPORT_ZOOM);
+        let zoom_h = (canvas_h * AUTOFIT_MARGIN_RATIO) / glyph_h;
+        let zoom_w = (canvas_w * AUTOFIT_MARGIN_RATIO) / glyph_w;
+        let zoom = zoom_h.min(zoom_w).max(crate::tokens::MIN_VIEWPORT_ZOOM);
         let pan_x = (canvas_w - glyph_w * zoom) * 0.5;
         let pan_y = canvas_h * 0.5 + (glyph_h * zoom * 0.5);
         self.viewport.zoom = zoom;
@@ -250,6 +271,7 @@ impl GrafiaCanvasState {
             })
             .collect();
         self.prune_stale_node_and_contour_refs();
+        self.sync_color_sublayers_from_glyph_contours();
         self.glyph.background_contours = self.background_contours.clone();
         self.glyph.anchors = self.anchors.clone();
         self.sync_active_glyph_to_text_stream();

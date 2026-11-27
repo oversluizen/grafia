@@ -109,6 +109,70 @@ fn render_pixel_and_brush_preview_ts(pixmap: &mut Pixmap, state: &GrafiaCanvasSt
             );
         }
     }
+    render_icon_studio_overlays_ts(pixmap, state);
+}
+
+fn render_icon_studio_overlays_ts(pixmap: &mut Pixmap, state: &GrafiaCanvasState) {
+    if state.active_tool == CanvasTool::ShapeBuilder {
+        let sb = &state.drawing_tool_state.shape_builder;
+        let base_c32 = if sb.erase_mode {
+            state.theme.knife_line_color32()
+        } else {
+            state.theme.primitive_preview_stroke_color32()
+        };
+        let col = color32_to_tiny_skia(base_c32);
+        let fill_col = color32_to_tiny_skia(crate::tokens::edit_active_fill_color32(base_c32));
+        let vp = state.active_slot_viewport();
+        for reg in crate::render::canvas_render_cache::cached_shape_builder_regions(state) {
+            if sb.visited_region_ids.contains(&reg.region_id)
+                || sb.hovered_region_id == Some(reg.region_id)
+            {
+                let bez = crate::core::contour_to_bezpath_with_splines(
+                    &reg.contour.nodes,
+                    true,
+                    0.0,
+                    &[],
+                );
+                let affine =
+                    kurbo::Affine::translate((vp.pan_offset.x.0 as f64, vp.pan_offset.y.0 as f64))
+                        * kurbo::Affine::scale_non_uniform(vp.zoom as f64, -(vp.zoom as f64));
+                let scr_bez = affine * bez;
+                if let Some(ts_path) = crate::adapters::headless::kurbo_to_tiny_skia_path(&scr_bez)
+                {
+                    let mut fill_paint = tiny_skia::Paint::default();
+                    fill_paint.set_color(fill_col);
+                    fill_paint.anti_alias = true;
+                    pixmap.fill_path(
+                        &ts_path,
+                        &fill_paint,
+                        tiny_skia::FillRule::Winding,
+                        tiny_skia::Transform::identity(),
+                        None,
+                    );
+                }
+                let s = vp.to_screen(reg.centroid);
+                fill_circle_ts(pixmap, s.x.0, s.y.0, KNIFE_INTERSECTION_RADIUS_DP, col);
+            }
+        }
+    }
+    if !state.icon_studio.variable_width_strokes.is_empty() {
+        let col = color32_to_tiny_skia(state.theme.primitive_preview_stroke_color32());
+        let vp = state.active_slot_viewport();
+        for pin in state.compute_variable_width_handle_pins() {
+            let (sl, sc, sr) = (
+                vp.to_screen(pin.left_pt),
+                vp.to_screen(pin.spine_pt),
+                vp.to_screen(pin.right_pt),
+            );
+            let mut pb = PathBuilder::new();
+            pb.move_to(sl.x.0, sl.y.0);
+            pb.line_to(sr.x.0, sr.y.0);
+            stroke_ts(pixmap, pb, col, PRIMITIVE_PREVIEW_STROKE_WIDTH_DP);
+            for p in [sl, sc, sr] {
+                fill_circle_ts(pixmap, p.x.0, p.y.0, ANNOTATION_HANDLE_RADIUS_DP, col);
+            }
+        }
+    }
 }
 
 fn render_primitive_drag_preview_ts(pixmap: &mut Pixmap, state: &GrafiaCanvasState) {

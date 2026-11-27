@@ -3,6 +3,7 @@
 use crate::adapters::headless::append_kurbo_to_builder;
 use crate::adapters::state::{CanvasTool, GrafiaCanvasState};
 use crate::core::NodeType;
+use crate::render::ts_primitives::{fill_circle_ts as fill_circle, stroke_ts as stroke_pb};
 use crate::render::{
     compute_open_contour_endpoint_ticks, compute_start_node_arrow_triangle, PreviewFilledProjection,
 };
@@ -11,36 +12,6 @@ use crate::tokens::{
     START_NODE_ARROW_OUTLINE_WIDTH_DP,
 };
 use tiny_skia::{FillRule, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
-
-fn fill_circle(pixmap: &mut Pixmap, cx: f32, cy: f32, r: f32, color: tiny_skia::Color) {
-    let mut pb = PathBuilder::new();
-    pb.push_circle(cx, cy, r);
-    if let Some(path) = pb.finish() {
-        let mut paint = Paint::default();
-        paint.set_color(color);
-        paint.anti_alias = true;
-        pixmap.fill_path(
-            &path,
-            &paint,
-            FillRule::Winding,
-            Transform::identity(),
-            None,
-        );
-    }
-}
-
-fn stroke_pb(pixmap: &mut Pixmap, pb: PathBuilder, color: tiny_skia::Color, width: f32) {
-    if let Some(path) = pb.finish() {
-        let mut paint = Paint::default();
-        paint.set_color(color);
-        paint.anti_alias = true;
-        let stroke = Stroke {
-            width,
-            ..Default::default()
-        };
-        pixmap.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
-    }
-}
 
 #[derive(Debug, Clone, Copy)]
 struct StartArrowAndOpenTickStyle {
@@ -335,30 +306,21 @@ pub(crate) fn render_marquee(pixmap: &mut Pixmap, state: &GrafiaCanvasState, the
             if (verts[1].x.0 - verts[0].x.0).abs() > 1.0
                 && (verts[2].y.0 - verts[0].y.0).abs() > 1.0
             {
-                let mut pb = PathBuilder::new();
-                pb.move_to(verts[0].x.0, verts[0].y.0);
-                for v in &verts[1..] {
-                    pb.line_to(v.x.0, v.y.0);
-                }
-                pb.close();
-                if let Some(path) = pb.finish() {
-                    let mut fill_paint = Paint::default();
-                    fill_paint.set_color(fill_col);
-                    fill_paint.anti_alias = true;
-                    pixmap.fill_path(
-                        &path,
-                        &fill_paint,
-                        FillRule::Winding,
-                        Transform::identity(),
-                        None,
-                    );
-                    let mut pb2 = PathBuilder::new();
-                    pb2.move_to(verts[0].x.0, verts[0].y.0);
+                let build_poly = || {
+                    let mut pb = PathBuilder::new();
+                    pb.move_to(verts[0].x.0, verts[0].y.0);
                     for v in &verts[1..] {
-                        pb2.line_to(v.x.0, v.y.0);
+                        pb.line_to(v.x.0, v.y.0);
                     }
-                    pb2.close();
-                    stroke_pb(pixmap, pb2, stroke_col, sw);
+                    pb.close();
+                    pb
+                };
+                if let Some(path) = build_poly().finish() {
+                    let mut fp = Paint::default();
+                    fp.set_color(fill_col);
+                    fp.anti_alias = true;
+                    pixmap.fill_path(&path, &fp, FillRule::Winding, Transform::identity(), None);
+                    stroke_pb(pixmap, build_poly(), stroke_col, sw);
                 }
                 return;
             }
@@ -384,24 +346,65 @@ pub(crate) fn render_preview_silhouette(
     theme: &GrafiaTheme,
 ) {
     let vp = state.active_slot_viewport();
-    let mut paint = Paint::default();
-    paint.set_color(color32_to_tiny_skia(theme.preview_canvas.fill_color32()));
-    paint.anti_alias = true;
-    let mut pb = PathBuilder::new();
-    for (c_idx, path) in state.paths.iter().enumerate() {
-        if !state.is_contour_closed(c_idx) {
-            continue;
+    let base_c32 = theme.preview_canvas.fill_color32();
+    let fill_pb = |pix: &mut Pixmap, pb: PathBuilder, c32: egui::Color32| {
+        if let Some(path) = pb.finish() {
+            let mut paint = Paint::default();
+            paint.set_color(color32_to_tiny_skia(c32));
+            paint.anti_alias = true;
+            pix.fill_path(
+                &path,
+                &paint,
+                FillRule::Winding,
+                Transform::identity(),
+                None,
+            );
         }
-        let proj = PreviewFilledProjection::compute(path, &vp);
-        append_kurbo_to_builder(&mut pb, &proj.screen_path);
+    };
+    if state.icon_studio.kinetic.is_active() {
+        for (gc, alpha) in state.evaluate_active_kinetic_contours() {
+            if !gc.visible || gc.nodes.len() < 2 {
+                continue;
+            }
+            let bez = crate::core::contour_to_bezpath_with_splines(&gc.nodes, gc.closed, 0.0, &[]);
+            let mut pb = PathBuilder::new();
+            append_kurbo_to_builder(
+                &mut pb,
+                &PreviewFilledProjection::compute(&bez, &vp).screen_path,
+            );
+            let col = base_c32.gamma_multiply(alpha.clamp(0.0, 1.0));
+            if gc.closed {
+                fill_pb(pixmap, pb, col);
+            } else {
+                stroke_pb(pixmap, pb, color32_to_tiny_skia(col), 2.0);
+            }
+        }
+        return;
     }
-    if let Some(compound_path) = pb.finish() {
-        pixmap.fill_path(
-            &compound_path,
-            &paint,
-            FillRule::Winding,
-            Transform::identity(),
-            None,
-        );
+    if !state.color_sublayers.is_empty() {
+        return;
     }
+    let mut pb = PathBuilder::new();
+    let eval_contours = state.evaluate_active_filled_preview_contours();
+    if eval_contours.is_empty() && !state.paths.is_empty() {
+        for (c_idx, path) in state.paths.iter().enumerate() {
+            if state.is_contour_closed(c_idx) {
+                append_kurbo_to_builder(
+                    &mut pb,
+                    &PreviewFilledProjection::compute(path, &vp).screen_path,
+                );
+            }
+        }
+    } else {
+        for gc in eval_contours {
+            if gc.visible && gc.closed && gc.nodes.len() >= 2 {
+                let bez = crate::core::contour_to_bezpath_with_splines(&gc.nodes, true, 0.0, &[]);
+                append_kurbo_to_builder(
+                    &mut pb,
+                    &PreviewFilledProjection::compute(&bez, &vp).screen_path,
+                );
+            }
+        }
+    }
+    fill_pb(pixmap, pb, base_c32);
 }

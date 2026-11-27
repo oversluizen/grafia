@@ -12,14 +12,14 @@ use crate::core::tidy_align_connect::tidy_up_contours;
 use kurbo::{CubicBez, ParamCurve, Point};
 
 pub(crate) fn round_grid_pt(pt: FontPoint, grid: f64) -> FontPoint {
-    if grid > 0.0 {
-        FontPoint::new(
-            (pt.x.0 / grid).round() * grid,
-            (pt.y.0 / grid).round() * grid,
-        )
-    } else {
-        pt
+    if grid.is_finite() && grid >= COLLINEAR_MIN_LEN_EPSILON {
+        let rx = (pt.x.0 / grid).round() * grid;
+        let ry = (pt.y.0 / grid).round() * grid;
+        if rx.is_finite() && ry.is_finite() {
+            return FontPoint::new(rx, ry);
+        }
     }
+    pt
 }
 
 pub(crate) fn alloc_node(next_id: &mut u64, pt: FontPoint, nt: NodeType) -> Node {

@@ -57,10 +57,10 @@ pub fn pixmap_to_rgba_image(pixmap: Pixmap) -> image::RgbaImage {
 
 pub(crate) fn alloc_pixmap_or_1x1(width: u32, height: u32) -> Pixmap {
     assert!(width > 0 && height > 0, "Pixmap dimensions must be > 0");
-    let Some(p) = Pixmap::new(width, height).or_else(|| Pixmap::new(1, 1)) else {
-        unreachable!()
-    };
-    p
+    match Pixmap::new(width, height).or_else(|| Pixmap::new(1, 1)) {
+        Some(p) => p,
+        None => alloc_pixmap_or_1x1(1, 1),
+    }
 }
 
 fn render_metrics_box(pixmap: &mut Pixmap, state: &GrafiaCanvasState, theme: &GrafiaTheme) {
@@ -157,6 +157,9 @@ fn append_contour_bcp_tangent_lines_ts(
 }
 
 fn render_wireframe_contours(pixmap: &mut Pixmap, state: &GrafiaCanvasState, theme: &GrafiaTheme) {
+    if state.render_kinetic_wireframe_ts(pixmap, theme) {
+        return;
+    }
     let vp = state.active_slot_viewport();
     let affine = kurbo::Affine::translate((vp.pan_offset.x.0 as f64, vp.pan_offset.y.0 as f64))
         * kurbo::Affine::scale_non_uniform(vp.zoom as f64, -(vp.zoom as f64));
@@ -287,6 +290,12 @@ fn render_canvas_passes(
             if include_thumbnails {
                 render_shape_thumbnails_tiny_skia(pixmap, state, theme);
             }
+        }
+        CanvasViewMode::LiquidGlass => {
+            crate::render::render_liquid_glass_pass_tiny_skia(pixmap, state);
+            render_wireframe_contours(pixmap, state, theme);
+            render_nodes(pixmap, state, theme);
+            render_marquee(pixmap, state, theme);
         }
     }
 }

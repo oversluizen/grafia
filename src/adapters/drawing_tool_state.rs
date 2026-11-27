@@ -90,6 +90,16 @@ pub struct PixelDragState {
     pub last_cell: Option<(i64, i64)>,
 }
 
+/// Active region-sweep drag state for `CanvasTool::ShapeBuilder` and variable-width pin dragging (`SPEC-016 §2.4.4`).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ShapeBuilderDragState {
+    pub active: bool,
+    pub erase_mode: bool,
+    pub visited_region_ids: Vec<u32>,
+    pub hovered_region_id: Option<u32>,
+    pub active_width_pin_drag: Option<(ContourId, usize, bool)>,
+}
+
 /// Bundled state for drawing, measurement, annotation, pencil, and pixel tools (`SPEC-005`).
 #[derive(Debug, Clone, PartialEq)]
 pub struct DrawingToolState {
@@ -108,10 +118,10 @@ pub struct DrawingToolState {
     pub pixel: PixelDragState,
     pub last_pixel_cell: Option<(i64, i64)>,
     pub pixel_size_upm: f64,
-    pub controller_ports: crate::core::ControllerPortState,
     pub brush_stroke_active: bool,
     pub active_trajectory_drag: Option<(NodeId, usize)>,
     pub active_trajectory_drag_is_control2: bool,
+    pub shape_builder: ShapeBuilderDragState,
 }
 
 impl Default for DrawingToolState {
@@ -132,10 +142,10 @@ impl Default for DrawingToolState {
             pixel: PixelDragState::default(),
             last_pixel_cell: None,
             pixel_size_upm: PIXEL_DEFAULT_STEP_UPM,
-            controller_ports: crate::core::ControllerPortState::default(),
             brush_stroke_active: false,
             active_trajectory_drag: None,
             active_trajectory_drag_is_control2: false,
+            shape_builder: ShapeBuilderDragState::default(),
         }
     }
 }
@@ -150,6 +160,7 @@ impl DrawingToolState {
         self.pixel = PixelDragState::default();
         self.brush_stroke_active = false;
         self.active_trajectory_drag = None;
+        self.shape_builder = ShapeBuilderDragState::default();
         self.active_trajectory_drag_is_control2 = false;
     }
 }
@@ -199,6 +210,8 @@ impl GrafiaCanvasState {
         }
         self.active_contour_closed = true;
         self.sync_paths_from_contours();
+        let added: Vec<_> = self.glyph.contours[c_idx..].to_vec();
+        self.try_auto_adopt_drawn_contours_into_sublayers(&added);
         self.record_mutation("Add Primitive", before);
         self.assert_invariants();
         true
@@ -279,16 +292,22 @@ impl GrafiaCanvasState {
         ) {
             return false;
         }
-        let valid_ids: std::collections::HashSet<NodeId> = self
+        let new_contours: Vec<GlyphContour> = self
             .contours
             .iter()
-            .flat_map(|c| c.iter().map(|n| n.id))
+            .enumerate()
+            .map(|(idx, nodes)| {
+                let mut gc = GlyphContour::new(ContourId(idx), nodes.clone());
+                gc.closed = flags.get(idx).copied().unwrap_or(true);
+                gc
+            })
             .collect();
-        self.selected_nodes.retain(|id| valid_ids.contains(id));
-        self.sync_contours_and_closed_flags(&flags);
-        self.record_mutation("Remove Overlap", before);
-        self.assert_invariants();
-        true
+        self.finish_icon_contour_replacement(
+            new_contours,
+            self.next_node_id,
+            "Remove Overlap",
+            before,
+        )
     }
 }
 

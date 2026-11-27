@@ -282,14 +282,23 @@ impl AppearanceMode {
     }
 }
 
-/// Reference Vector (``) Dark Mode canvas background (`NSColor::darkContentBackgroundColor` @ `spec_ref`).
+/// Sonoma Dark canvas background (`NSColor::darkContentBackgroundColor` @ `spec_ref`).
 pub const DARK_CANVAS_BACKGROUND_HEX: &str = "#1E1E1E";
+
+/// Studio Anthracite calm mid-gray canvas background (`SPEC-018 §3.2`).
+pub const ANTHRACITE_CANVAS_BACKGROUND_HEX: &str = "#282B33";
 
 /// Sonoma Dark sidebar (`Shapes`) background.
 pub const DARK_SIDEBAR_BACKGROUND_HEX: &str = "#262626";
 
+/// Studio Anthracite sidebar background (`SPEC-018 §3.2`).
+pub const ANTHRACITE_SIDEBAR_BACKGROUND_HEX: &str = "#2F333B";
+
 /// Sonoma Dark InfoBox / HUD background.
 pub const DARK_INFOBOX_BACKGROUND_HEX: &str = "#2C2C2E";
+
+/// Studio Anthracite InfoBox / HUD background (`SPEC-018 §3.2`).
+pub const ANTHRACITE_INFOBOX_BACKGROUND_HEX: &str = "#363B45";
 
 /// Sonoma Dark splitter / separator color.
 pub const DARK_SPLITTER_HEX: &str = "#38383A";
@@ -304,7 +313,7 @@ pub const DARK_METRICS_LABEL_HEX: &str = "#98989D";
 pub const DARK_OPEN_ENDPOINT_HEX: &str = "#0A84FF";
 
 impl super::GrafiaTheme {
-    /// Loads the Reference Vector (``) Sonoma Dark Mode theme from `tokens/grafia_theme_sonoma_dark.json`.
+    /// Loads the Sonoma Dark Mode theme from `tokens/grafia_theme_sonoma_dark.json`.
     #[must_use]
     pub fn sonoma_dark() -> Self {
         let json_str = include_str!("../../tokens/grafia_theme_sonoma_dark.json");
@@ -318,6 +327,26 @@ impl super::GrafiaTheme {
         theme
     }
 
+    /// Loads the calm `Studio Anthracite` (`SPEC-018 §3.2`) editorial mid-gray theme.
+    #[must_use]
+    pub fn studio_anthracite() -> Self {
+        let mut theme = Self::sonoma_dark();
+        theme.theme_name = "Grafia Studio Anthracite".to_owned();
+        theme.edit_canvas.corner_node_color = "#639CE8".to_owned();
+        theme.edit_canvas.smooth_node_color = "#58C88C".to_owned();
+        theme.edit_canvas.bcp_handle_color = "#B89B74".to_owned();
+        theme.edit_canvas.bcp_line_color = "#7C828F".to_owned();
+        theme.preview_canvas.fill_color = "#ECEEF2".to_owned();
+        theme.preview_canvas.baseline_color = "#6E7482".to_owned();
+        theme
+    }
+
+    /// Returns `true` when this theme is the calm `Studio Anthracite` editorial mid-gray theme.
+    #[must_use]
+    pub fn is_anthracite(&self) -> bool {
+        self.theme_name.contains("Anthracite")
+    }
+
     /// Resolves the appropriate `GrafiaTheme` (`sonoma_default` or `sonoma_dark`) for the given
     /// 3-way `AppearanceMode` (`Light`, `Dark`, `System`) and host OS `system_is_dark` flag.
     #[must_use]
@@ -329,10 +358,11 @@ impl super::GrafiaTheme {
         }
     }
 
-    /// Returns `true` when this theme is a Dark Mode theme.
+    /// Returns `true` when this theme is a Dark Mode or Studio Anthracite theme.
     #[must_use]
     pub fn is_dark(&self) -> bool {
         self.theme_name.contains("Dark")
+            || self.is_anthracite()
             || self
                 .preview_canvas
                 .fill_color

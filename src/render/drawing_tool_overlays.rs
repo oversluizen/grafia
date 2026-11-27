@@ -115,6 +115,55 @@ fn paint_pixel_and_brush_preview_egui(painter: &Painter, state: &GrafiaCanvasSta
             );
         }
     }
+    paint_icon_studio_overlays_egui(painter, state);
+}
+
+fn paint_icon_studio_overlays_egui(painter: &Painter, state: &GrafiaCanvasState) {
+    if state.active_tool == CanvasTool::ShapeBuilder {
+        let sb = &state.drawing_tool_state.shape_builder;
+        let col = if sb.erase_mode {
+            state.theme.knife_line_color32()
+        } else {
+            state.theme.primitive_preview_stroke_color32()
+        };
+        let fill_col = crate::tokens::edit_active_fill_color32(col);
+        let vp = state.active_slot_viewport();
+        for reg in crate::render::canvas_render_cache::cached_shape_builder_regions(state) {
+            if sb.visited_region_ids.contains(&reg.region_id)
+                || sb.hovered_region_id == Some(reg.region_id)
+            {
+                let mesh = crate::render::tessellate_closed_contours_nonzero(
+                    std::slice::from_ref(&reg.contour.nodes),
+                    &[true],
+                    &vp,
+                    fill_col,
+                );
+                if !mesh.is_empty() {
+                    painter.add(egui::Shape::mesh(mesh));
+                }
+                let s = vp.to_screen(reg.centroid);
+                painter.circle_filled(Pos2::new(s.x.0, s.y.0), KNIFE_INTERSECTION_RADIUS_DP, col);
+            }
+        }
+    }
+    if !state.icon_studio.variable_width_strokes.is_empty() {
+        let col = state.theme.primitive_preview_stroke_color32();
+        let vp = state.active_slot_viewport();
+        for pin in state.compute_variable_width_handle_pins() {
+            let (sl, sc, sr) = (
+                vp.to_screen(pin.left_pt),
+                vp.to_screen(pin.spine_pt),
+                vp.to_screen(pin.right_pt),
+            );
+            painter.line_segment(
+                [Pos2::new(sl.x.0, sl.y.0), Pos2::new(sr.x.0, sr.y.0)],
+                Stroke::new(PRIMITIVE_PREVIEW_STROKE_WIDTH_DP, col),
+            );
+            for p in [sl, sc, sr] {
+                painter.circle_filled(Pos2::new(p.x.0, p.y.0), ANNOTATION_HANDLE_RADIUS_DP, col);
+            }
+        }
+    }
 }
 
 fn paint_primitive_drag_preview_egui(painter: &Painter, state: &GrafiaCanvasState) {

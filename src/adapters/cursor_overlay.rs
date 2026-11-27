@@ -58,23 +58,20 @@ pub fn find_open_contour_close_or_resume_target(
         if state.is_contour_closed(c_idx) || state.contours[c_idx].is_empty() {
             continue;
         }
+        let vp = state.active_slot_viewport();
         let on_curve: Vec<Node> = state.contours[c_idx]
             .iter()
             .filter(|n| n.node_type != NodeType::OffCurve)
             .cloned()
             .collect();
         if (on_curve.len() >= 2 || has_other_active_open(c_idx))
-            && state
-                .viewport
-                .to_screen(on_curve[0].point)
-                .distance_to(scr_pt)
-                < hit_r
+            && vp.to_screen(on_curve[0].point).distance_to(scr_pt) < hit_r
         {
             return Some((c_idx, on_curve[0].clone(), true));
         }
         if let Some(last) = on_curve
             .last()
-            .filter(|n| state.viewport.to_screen(n.point).distance_to(scr_pt) < hit_r)
+            .filter(|n| vp.to_screen(n.point).distance_to(scr_pt) < hit_r)
         {
             return Some((c_idx, last.clone(), false));
         }
@@ -170,7 +167,8 @@ impl GrafiaCanvasState {
             | CanvasTool::Stem
             | CanvasTool::CurvedTrajectory
             | CanvasTool::Trowel
-            | CanvasTool::Cleaner => Some(GrafiaCursorKind::SelectArrow),
+            | CanvasTool::Cleaner
+            | CanvasTool::ShapeBuilder => Some(GrafiaCursorKind::SelectArrow),
         }
     }
 }
@@ -320,6 +318,7 @@ pub fn paint_pen_extras_and_cursor_egui(
     theme: &GrafiaTheme,
 ) {
     if state.view_mode == CanvasViewMode::EditWireframe {
+        let vp = state.active_slot_viewport();
         if let Some((c_idx, first_bcp_in)) = state.pending_pen_first_bcp_in {
             if !state.is_contour_closed(c_idx) {
                 if let Some(first_on) = state
@@ -327,10 +326,8 @@ pub fn paint_pen_extras_and_cursor_egui(
                     .get(c_idx)
                     .and_then(|c| c.iter().find(|n| n.node_type != NodeType::OffCurve))
                 {
-                    let (a_scr, in_scr) = (
-                        state.viewport.to_screen(first_on.point),
-                        state.viewport.to_screen(first_bcp_in),
-                    );
+                    let (a_scr, in_scr) =
+                        (vp.to_screen(first_on.point), vp.to_screen(first_bcp_in));
                     let (a_pos, in_pos) = (
                         Pos2::new(a_scr.x.0, a_scr.y.0),
                         Pos2::new(in_scr.x.0, in_scr.y.0),
@@ -360,7 +357,7 @@ pub fn paint_pen_extras_and_cursor_egui(
         if state.active_tool == CanvasTool::Pen {
             if let Some((_, close_id)) = state.hovered_pen_close_target {
                 if let Some(node) = state.find_node(close_id) {
-                    let scr = state.viewport.to_screen(node.point);
+                    let scr = vp.to_screen(node.point);
                     let radius =
                         theme.edit_canvas.node_size_dp * 0.5 * PEN_CLOSE_HALO_RADIUS_FACTOR;
                     painter.circle_stroke(

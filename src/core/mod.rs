@@ -32,9 +32,18 @@ pub mod handle_constraints;
 pub mod hinting_and_hoi;
 pub mod hobby_spline;
 pub mod host_requests;
+pub mod icon_color_modes;
+pub mod icon_knockout_mask;
+pub mod icon_studio;
+pub mod icon_symmetry_and_clean;
 pub mod inflection_ops;
+pub mod kinetic_draw_trim;
+pub mod kinetic_magic_replace;
+pub mod kinetic_svg_io;
+pub mod kinetic_symbols;
 pub mod knife_ops;
 pub mod lasso_and_zoom;
+pub mod liquid_glass_baker;
 pub mod local_brushes;
 pub mod master_compatibility;
 pub mod master_matching;
@@ -53,6 +62,7 @@ pub mod segment_slide;
 pub mod selection_info;
 pub mod selection_info_ops;
 pub mod servo_and_nudge;
+pub mod shape_builder;
 pub mod smart_corners_brush;
 pub mod smart_handles;
 pub mod spline_support;
@@ -63,7 +73,10 @@ pub mod text_stream_ops;
 pub mod tidy_align_connect;
 pub mod transform_ops;
 pub mod tunni_and_comb;
+pub mod variable_width_stroke;
 pub mod vertical_stream;
+pub mod w3c_svg_defs;
+pub mod w3c_svg_io;
 
 pub use crate::render::compute_ruler_tick_steps_upm;
 pub use align_and_connect::{
@@ -138,7 +151,8 @@ pub use diagonal_and_ratio_hud::{
     SegmentHandleRatioHud, TangentExtensionSnap, TangentExtensionSnapKind,
 };
 pub use document_scene::{
-    CanvasDocumentScene, CanvasGuideSet, CanvasHintingAndHoiScene, CanvasLayerAttachments,
+    CanvasCurveHarmonyScene, CanvasDocumentScene, CanvasGuideSet, CanvasHintingAndHoiScene,
+    CanvasLayerAttachments,
 };
 pub use extra_nodes::{compute_layer_extra_nodes, hit_test_extra_nodes};
 pub use fit_and_stroke::{
@@ -169,7 +183,38 @@ pub use host_requests::{
     AutoTraceConfig, AutoTraceThresholdMode, CanvasHostRequest, ComponentId, SnapTargetMask,
     TextStreamEditKind, TextStreamEditRequest, TouchInteractionState,
 };
+pub use icon_color_modes::{
+    expand_non_destructive_icon_contours, resolve_sublayers_for_color_mode, DrawDirection,
+    SymbolColorRenderingMode, SymbolHierarchyLevel,
+};
+pub use icon_knockout_mask::{
+    apply_knockout_halo_masks_to_sublayers, build_expanded_knockout_halo_nodes,
+    evaluate_motion_path_pose_at_ratio, KineticPlaybackMode,
+};
+pub use icon_studio::{
+    BounceDirection, CanvasIconStudioScene, KineticLayerScope, KineticSymbolEffect,
+    KineticTimelineState, LiquidGlassRenderConfig, RadialSymmetrySpec, ReplaceFallback,
+    ScaleDirection, SymbolLayerTag, VariableWidthStrokeSpec, WidthNodeSample, WiggleAxis,
+};
+pub use icon_symmetry_and_clean::{
+    audit_and_normalize_icon_contours, compute_optical_oblique_contours,
+    compute_radial_symmetry_contours,
+};
 pub use inflection_ops::add_inflection_points_to_contours;
+pub use kinetic_draw_trim::{
+    contour_total_arc_length, evaluate_kinetic_color_sublayers,
+    evaluate_kinetic_color_sublayers_with_paths, evaluate_kinetic_glyph_contours,
+    trim_contour_by_arc_ratio,
+};
+pub use kinetic_magic_replace::{
+    evaluate_magic_replace_color_sublayers, evaluate_magic_replace_glyph_contours,
+    harmonize_contour_cubic_segments, interpolate_magic_replace_contour_pair,
+};
+pub use kinetic_svg_io::{export_kinetic_symbol_svg, import_kinetic_symbol_svg};
+pub use kinetic_symbols::{
+    apply_layer_kinetic_transform, compute_layer_local_phase, evaluate_layer_kinetic_transform,
+    resolve_layer_pivot_upm, LayerKineticTransform,
+};
 pub use knife_ops::{
     compute_knife_intersections, constrain_knife_endpoint, contour_intersections_with_segment,
     intersect_finite_segments, knife_add_nodes_in_layer, knife_cut_paths_in_layer,
@@ -180,6 +225,7 @@ pub use lasso_and_zoom::{
     select_nodes_in_lasso_polygon, select_nodes_in_slanted_marquee,
     slanted_marquee_parallelogram_screen, MetricsOrigin, TransformOriginSpec,
 };
+pub use liquid_glass_baker::bake_liquid_glass_to_colrv1_sublayers;
 pub use local_brushes::{apply_cleaner_brush_in_contours, apply_trowel_brush_in_contours};
 pub use master_compatibility::{
     compute_master_compatibility_report, select_nodes_in_rect_across_layers, CompanionMasterLayer,
@@ -217,8 +263,9 @@ pub use primitives_ops::{
     ToolDialogRequest,
 };
 pub use reference_frame::{
-    collect_reference_frame_snap_lines, compute_subdivision_grid_lines_upm,
-    reference_frame_center_upm, CustomReferenceFrame, RectUpm, ReferenceBandLine, SnapTargetKind,
+    collect_reference_frame_snap_lines, compute_icon_optical_balance,
+    compute_subdivision_grid_lines_upm, reference_frame_center_upm, CustomReferenceFrame,
+    IconOpticalBalanceReport, RectUpm, ReferenceBandLine, SnapTargetKind,
 };
 pub use segment_degree_ops::{
     add_offcurve_in_contour, interpolate_contours_linear, remove_offcurve_in_contour,
@@ -246,9 +293,14 @@ pub use servo_and_nudge::{
     classify_node_continuity_in_contours, enforce_genius_or_g3_on_handle_move,
     power_nudge_contours, servo_translate_node_in_contours, ContinuityGrade,
 };
+pub use shape_builder::{
+    apply_shape_builder_regions_to_contours, compute_shape_builder_regions,
+    hit_test_shape_builder_region, ShapeBuilderOp, ShapeBuilderRegion,
+};
 pub use smart_corners_brush::{
-    evaluate_smart_corner_contours, fit_calligraphic_brush_stroke, CalligraphicNibSpec,
-    CalligraphicSample, SmartCornerSpec,
+    compute_smart_corner_radius_pins, evaluate_smart_corner_contours,
+    fit_calligraphic_brush_stroke, hit_test_smart_corner_radius_pin, CalligraphicNibSpec,
+    CalligraphicSample, SmartCornerRadiusPin, SmartCornerSpec,
 };
 pub use smart_handles::{
     hit_test_smart_handles, project_pointer_onto_smart_handle, smart_handle_track_endpoints_upm,
@@ -283,8 +335,13 @@ pub use tunni_and_comb::{
     compute_tunni_overlays_for_contours, drag_tunni_in_contour, scale_tunni_in_contour,
     CurvatureCombPoly, CurvatureCombTooth, TunniSegmentOverlay,
 };
+pub use variable_width_stroke::{
+    compute_variable_width_handle_pins, evaluate_variable_width_at_t,
+    expand_variable_width_contour, hit_test_variable_width_handle_pin, VariableWidthHandlePin,
+};
 pub use vertical_stream::{
     compute_glyph_tsb_and_bsb, compute_vertical_kerning_indicator_quads,
     recompute_vertical_slot_origins, resolve_vertical_caret_index_at_upm,
     resolve_vertical_slot_at_upm, MetricsAxis, WritingDirection,
 };
+pub use w3c_svg_io::{export_w3c_icon_svg, import_w3c_icon_svg, W3cSvgIconDocument};

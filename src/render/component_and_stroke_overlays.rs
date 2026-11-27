@@ -95,7 +95,10 @@ pub fn paint_component_and_stroke_overlays_egui(
         paint_contour_group_egui(painter, &cloud, &vp, col, col, BACKGROUND_STROKE_WIDTH_DP);
     }
 
-    if !state.contour_strokes.is_empty() {
+    if !state.contour_strokes.is_empty()
+        || !state.icon_studio.variable_width_strokes.is_empty()
+        || state.icon_studio.radial_symmetry.fold_count > 1
+    {
         let expanded = crate::render::canvas_render_cache::cached_expanded_stroke_contours(state);
         let col = theme.component_fill_color32(true, false);
         paint_contour_group_egui(
@@ -259,7 +262,10 @@ pub fn render_component_and_stroke_overlays_tiny_skia(
         );
     }
 
-    if !state.contour_strokes.is_empty() {
+    if !state.contour_strokes.is_empty()
+        || !state.icon_studio.variable_width_strokes.is_empty()
+        || state.icon_studio.radial_symmetry.fold_count > 1
+    {
         let expanded = crate::render::canvas_render_cache::cached_expanded_stroke_contours(state);
         let col = theme.component_fill_color32(true, false);
         render_contour_group_tiny_skia(

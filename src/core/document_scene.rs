@@ -1,14 +1,15 @@
 //! Cohesive host document scene aggregate (`CanvasDocumentScene` — `SPEC-014 §2.4`).
 
 use crate::core::{
-    CanvasAnchor, CanvasBackgroundImage, CanvasColorSublayer, CanvasComponent, CanvasSmartHandle,
-    CompanionMasterLayer, ContourId, ContourStrokeStyle, CustomReferenceFrame, Glyph, GlyphContour,
-    HoiCubicLayerSet, HoiSiblingContours, PostScriptHint, TrueTypeVisualInstruction,
+    ActiveMirrorAxis, CanvasAnchor, CanvasBackgroundImage, CanvasColorSublayer, CanvasComponent,
+    CanvasIconStudioScene, CanvasSmartHandle, CompanionMasterLayer, ContourId, ContourStrokeStyle,
+    CurvedTrajectoryLink, CustomReferenceFrame, Glyph, GlyphContour, HoiCubicLayerSet,
+    HoiSiblingContours, NodeId, PostScriptHint, SmartCornerSpec, TrueTypeVisualInstruction,
     WritingDirection,
 };
 use crate::snapping::{GlyphMetrics, Guide};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Local and global guide collection and visibility/lock state for a glyph document scene (`SPEC-014 §2.4`).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -67,6 +68,18 @@ impl Default for CanvasHintingAndHoiScene {
     }
 }
 
+/// Curve continuity locks, non-destructive Smart Corners, reference stems, curved master trajectories, mirror axis, and overshoot for a glyph scene (`SPEC-014 §2.4`).
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct CanvasCurveHarmonyScene {
+    pub genius_nodes: BTreeSet<NodeId>,
+    pub g3_nodes: BTreeSet<NodeId>,
+    pub smart_corners: Vec<SmartCornerSpec>,
+    pub reference_stems_upm: Vec<f64>,
+    pub curved_trajectories: Vec<CurvedTrajectoryLink>,
+    pub active_mirror_axis: ActiveMirrorAxis,
+    pub round_overshoot_upm: Option<f64>,
+}
+
 /// Complete, cohesive host document scene aggregate for atomic loading and exporting on `GrafiaCanvasState` (`SPEC-014 §2.4`).
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct CanvasDocumentScene {
@@ -78,4 +91,8 @@ pub struct CanvasDocumentScene {
     pub hinting: CanvasHintingAndHoiScene,
     pub reference_frame: Option<CustomReferenceFrame>,
     pub writing_direction: WritingDirection,
+    #[serde(default)]
+    pub curve_harmony: CanvasCurveHarmonyScene,
+    #[serde(default)]
+    pub icon_studio: CanvasIconStudioScene,
 }

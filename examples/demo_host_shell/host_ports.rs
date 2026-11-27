@@ -1,8 +1,12 @@
 //! Host-Port ("Stekkers") request, spacing, and kerning event pump for `MockFontHost`.
 
+use super::icon_studio_showcase::{demo_kinetic_effect_by_idx, DEMO_KINETIC_DEFAULT_PHASE};
 use super::MockFontHost;
+use egui::{Slider, Ui};
 use grafia::adapters::GrafiaCanvasState;
-use grafia::core::{CanvasHostRequest, TextStreamEditKind, TextStreamEditRequest};
+use grafia::core::{
+    CanvasHostRequest, KineticPlaybackMode, TextStreamEditKind, TextStreamEditRequest,
+};
 
 impl MockFontHost {
     pub fn poll_host_ports(&mut self, state: &mut GrafiaCanvasState) {
@@ -163,5 +167,63 @@ impl MockFontHost {
             "HostPort: EditTextStream({:?}) -> \"{}\"",
             edit_req.edit, self.text_buffer
         ));
+    }
+
+    pub(crate) fn render_kinetic_timeline_controls(
+        &mut self,
+        ui: &mut Ui,
+        st: &mut GrafiaCanvasState,
+    ) {
+        let playing = st.icon_studio.kinetic.playing;
+        let lbl = if playing { "⏸ Pause" } else { "▶ Play" };
+        if ui.selectable_label(playing, lbl).clicked() {
+            st.icon_studio.kinetic.playing = !playing;
+            st.bump_content_generation();
+        }
+        let cur_pm = st.icon_studio.kinetic.playback_mode;
+        let rep = KineticPlaybackMode::Repeating {
+            repeat_delay_phase: 0.15,
+        };
+        for (lbl, mode) in [
+            ("1× Veer", KineticPlaybackMode::OneShot),
+            ("Herhaal", rep),
+            ("Continu", KineticPlaybackMode::Continuous),
+            ("Sensor %", KineticPlaybackMode::VariableValue(0.65)),
+        ] {
+            let on = std::mem::discriminant(&cur_pm) == std::mem::discriminant(&mode);
+            if ui.selectable_label(on, lbl).clicked() {
+                st.set_kinetic_playback_mode(mode);
+            }
+        }
+        Self::render_kinetic_effect_and_phase_controls(ui, st);
+    }
+
+    fn render_kinetic_effect_and_phase_controls(ui: &mut Ui, st: &mut GrafiaCanvasState) {
+        let names = "Pulse,Bounce,VarColor,Scale,DrawOn,DrawOff,Wiggle,Rotate,Breathe,MagicReplace";
+        for (idx, lbl) in names.split(',').enumerate() {
+            let eff = demo_kinetic_effect_by_idx(idx);
+            let same = std::mem::discriminant(&st.icon_studio.kinetic.effect)
+                == std::mem::discriminant(&eff);
+            if ui.selectable_label(same, lbl).clicked() {
+                st.icon_studio.kinetic.effect = eff;
+                let t = st.icon_studio.kinetic.phase_t;
+                st.icon_studio.kinetic.phase_t = t.max(DEMO_KINETIC_DEFAULT_PHASE);
+                st.bump_content_generation();
+            }
+        }
+        if let KineticPlaybackMode::VariableValue(mut val) = st.icon_studio.kinetic.playback_mode {
+            if ui
+                .add(Slider::new(&mut val, 0.0..=1.0).text("Sensor"))
+                .changed()
+            {
+                st.set_kinetic_playback_mode(KineticPlaybackMode::VariableValue(val));
+            }
+        } else if ui
+            .add(Slider::new(&mut st.icon_studio.kinetic.phase_t, 0.0..=1.0).text("Fase t"))
+            .changed()
+        {
+            st.icon_studio.kinetic.playing = false;
+            st.bump_content_generation();
+        }
     }
 }

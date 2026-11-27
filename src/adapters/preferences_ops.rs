@@ -167,9 +167,7 @@ impl GrafiaCanvasState {
         } else {
             crate::tokens::PEN_NODE_HIT_RADIUS_DP
         };
-        if self.drawing_tool_state.controller_ports.active_input_device
-            == crate::core::InputDeviceKind::TouchFinger
-        {
+        if self.controller_ports.active_input_device == crate::core::InputDeviceKind::TouchFinger {
             base * crate::core::math_consts::TOUCH_HIT_RADIUS_INFLATION_FACTOR
         } else {
             base
@@ -230,7 +228,7 @@ impl GrafiaCanvasState {
     pub(crate) fn map_pointer_pos_with_touch_offset(&self, raw: Pos2) -> ScreenPoint {
         if (!self.drag_transients.touch_state.contacts.is_empty()
             || self.drag_transients.touch_state.egui_any_touches_in_frame
-            || self.drawing_tool_state.controller_ports.active_input_device
+            || self.controller_ports.active_input_device
                 == crate::core::InputDeviceKind::TouchFinger)
             && self.preferences.touch_finger_offset_dp != 0.0
         {
@@ -284,8 +282,13 @@ impl GrafiaCanvasState {
             return None;
         };
         let key = id.0;
+        self.drag_transients.touch_state.native_pointer_drag_active = false;
+        self.drag_transients.touch_state.native_pointer_raw_pos = None;
         match phase {
             TouchPhase::Start => {
+                if self.drag_transients.touch_state.contacts.is_empty() {
+                    self.drag_transients.touch_state.active_primary_touch_id = Some(key);
+                }
                 self.drag_transients
                     .touch_state
                     .contacts
@@ -311,7 +314,13 @@ impl GrafiaCanvasState {
             TouchPhase::End | TouchPhase::Cancel => {
                 self.drag_transients.touch_state.contacts.remove(&key);
                 if self.drag_transients.touch_state.contacts.is_empty() {
-                    self.drag_transients.touch_state.active_touch_raw_pos = None;
+                    let ts = &mut self.drag_transients.touch_state;
+                    ts.active_touch_raw_pos = None;
+                    ts.active_primary_touch_id = None;
+                    ts.primary_press_active = false;
+                    ts.native_pointer_drag_active = false;
+                    ts.native_pointer_raw_pos = None;
+                    ts.rejected_palm_contacts.clear();
                     let was_tap = *phase == TouchPhase::End
                         && self.drag_transients.touch_state.two_finger_peak
                         && self.drag_transients.touch_state.max_contact_excursion_dp
@@ -336,14 +345,15 @@ impl GrafiaCanvasState {
             .values()
             .map(|(_, cur)| *cur)
             .collect();
-        if let Some((start_p, cur_p)) = self.drag_transients.touch_state.contacts.get_mut(&key) {
+        let ts = &mut self.drag_transients.session_config.touch_state;
+        if let Some((start_p, cur_p)) = ts.contacts.get_mut(&key) {
             let exc = start_p.distance(pos);
-            if exc > self.drag_transients.touch_state.max_contact_excursion_dp {
-                self.drag_transients.touch_state.max_contact_excursion_dp = exc;
+            if exc > ts.max_contact_excursion_dp {
+                ts.max_contact_excursion_dp = exc;
             }
             *cur_p = pos;
         }
-        self.drag_transients.touch_state.active_touch_raw_pos = Some(pos);
+        ts.active_touch_raw_pos = Some(pos);
         let new_contacts: Vec<Pos2> = self
             .drag_transients
             .touch_state

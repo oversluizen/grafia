@@ -65,13 +65,25 @@ fn rasterize_contours_coverage_mask(
     let mut paint = Paint::default();
     paint.set_color_rgba8(255, 255, 255, 255);
     paint.anti_alias = true;
-    mask_pix.fill_path(
-        &path,
-        &paint,
-        FillRule::Winding,
-        Transform::identity(),
-        None,
-    );
+    if contours.iter().any(|c| c.visible && c.closed) {
+        mask_pix.fill_path(
+            &path,
+            &paint,
+            FillRule::Winding,
+            Transform::identity(),
+            None,
+        );
+    }
+    if contours
+        .iter()
+        .any(|c| c.visible && !c.closed && c.nodes.len() >= 2)
+    {
+        let stroke = tiny_skia::Stroke {
+            width: 2.0,
+            ..Default::default()
+        };
+        mask_pix.stroke_path(&path, &paint, &stroke, Transform::identity(), None);
+    }
     Some(
         mask_pix
             .data()
@@ -127,6 +139,36 @@ fn composite_sublayer_into_rgba(
     w: u32,
     h: u32,
 ) {
+    let op = if sub.opacity.is_finite() {
+        f64::from(sub.opacity.clamp(0.0, 1.0))
+    } else {
+        0.0
+    };
+    if let ColorLayerPaint::Solid { rgba } = sub.paint {
+        let base_a = f64::from(rgba[3]) * op;
+        if base_a <= 0.0 {
+            return;
+        }
+        for (p_idx, &raw_cov) in cov.iter().enumerate() {
+            if raw_cov == 0 {
+                continue;
+            }
+            let clip_a = clip_mask.map_or(255_u8, |cm| cm[p_idx]);
+            if clip_a == 0 {
+                continue;
+            }
+            let eff_cov = (f64::from(raw_cov) * f64::from(clip_a)) / (BYTE_MAX_F64 * BYTE_MAX_F64);
+            let sa = (base_a * eff_cov).round().clamp(0.0, BYTE_MAX_F64) as u8;
+            if sa == 0 {
+                continue;
+            }
+            let base = p_idx * 4;
+            let dst = [out[base], out[base + 1], out[base + 2], out[base + 3]];
+            let blended = porter_duff_src_over([rgba[0], rgba[1], rgba[2], sa], dst);
+            out[base..base + 4].copy_from_slice(&blended);
+        }
+        return;
+    }
     for py in 0..h {
         let sy = (py as f32) + 0.5;
         for px in 0..w {
@@ -157,7 +199,7 @@ fn composite_sublayer_into_rgba(
     }
 }
 
-/// Blends visible `state.color_sublayers` onto `pixmap` during Pass 2 (`SPEC-010 §2.1`).
+/// Blends visible `state.color_sublayers` onto `pixmap` during Pass 2 (`SPEC-010 §2.1`, `SPEC-016 §4.2`).
 pub fn paint_color_layers_pixmap_pass(pixmap: &mut Pixmap, state: &GrafiaCanvasState) {
     if state.color_sublayers.is_empty() {
         return;
@@ -165,11 +207,12 @@ pub fn paint_color_layers_pixmap_pass(pixmap: &mut Pixmap, state: &GrafiaCanvasS
     let vp = state.active_slot_viewport();
     let w = pixmap.width();
     let h = pixmap.height();
-    let overlay_rgba = rasterize_color_sublayers_rgba(&state.color_sublayers, &vp, w, h);
+    let eval_subs = state.evaluate_active_color_sublayers();
+    let overlay_rgba = rasterize_color_sublayers_rgba(&eval_subs, &vp, w, h);
     blend_unmultiplied_rgba_onto_pixmap(pixmap, &overlay_rgba);
 }
 
-fn blend_unmultiplied_rgba_onto_pixmap(pixmap: &mut Pixmap, overlay_rgba: &[u8]) {
+pub(crate) fn blend_unmultiplied_rgba_onto_pixmap(pixmap: &mut Pixmap, overlay_rgba: &[u8]) {
     let data = pixmap.data_mut();
     for (dst_pm, src) in data
         .as_chunks_mut::<4>()
@@ -260,8 +303,10 @@ pub fn render_colored_thumbnail(
         out.extend_from_slice(&[bg[0], bg[1], bg[2], 255]);
     }
     let vp = compute_thumbnail_viewport(state, w, h);
+    let kinetic_active = state.icon_studio.kinetic.is_active();
     if !state.color_sublayers.is_empty() {
-        let col_rgba = rasterize_color_sublayers_rgba(&state.color_sublayers, &vp, w, h);
+        let eval_subs = state.evaluate_active_color_sublayers();
+        let col_rgba = rasterize_color_sublayers_rgba(&eval_subs, &vp, w, h);
         for (dst, src) in out
             .as_chunks_mut::<4>()
             .0
@@ -274,7 +319,16 @@ pub fn render_colored_thumbnail(
         }
         return out;
     }
-    if let Some(cov) = rasterize_contours_coverage_mask(&state.glyph.contours, &vp, w, h) {
+    let eval_contours = if kinetic_active {
+        state
+            .evaluate_active_kinetic_contours()
+            .into_iter()
+            .map(|(c, _)| c)
+            .collect()
+    } else {
+        state.evaluate_active_filled_preview_contours()
+    };
+    if let Some(cov) = rasterize_contours_coverage_mask(&eval_contours, &vp, w, h) {
         let fg = theme.preview_canvas.fill_color32().to_srgba_unmultiplied();
         for (dst, &m) in out.as_chunks_mut::<4>().0.iter_mut().zip(cov.iter()) {
             if m > 0 {

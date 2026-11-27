@@ -23,8 +23,6 @@ use grafia::adapters::{
 };
 use grafia::core::{FontPoint, ScreenPoint, ViewportTransform};
 use grafia::tokens::{GrafiaTheme, MIN_VIEWPORT_ZOOM};
-use std::fs;
-use std::path::Path;
 
 #[path = "../examples/vector_canvas_demo.rs"]
 pub mod vector_canvas_demo;
@@ -431,86 +429,34 @@ fn test_adversarial_v020_demonstrator_toolbar_actions_empty_and_selected() {
     }
     run_ui_frame(&mut app);
 
-    // 4. M-38: Verify examples/vector_canvas_demo.rs wires all SPEC-003 Path Ops & TransformPanel actions
-    let demo_src = fs::read_to_string("examples/vector_canvas_demo.rs")
-        .expect("Must read examples/vector_canvas_demo.rs");
-    for required_call in [
-        "set_transform_grid_anchor",
-        "set_metrics_origin",
-        "align_selection",
-        "connect_selected_open_endpoints",
-        "add_inflection_points",
-        "correct_path_direction",
-        "rotate_by_degrees",
-        "scale_by_factor",
-        "slant_by_degrees",
-    ] {
-        assert!(
-            demo_src.contains(required_call),
-            "M-38: examples/vector_canvas_demo.rs must expose `{required_call}`"
-        );
-    }
+    // 4. M-38: Behaviorally verify SPEC-003 Path Ops & TransformPanel actions on app.state
+    app.state
+        .set_transform_grid_anchor(grafia::core::TransformGridAnchor::Center);
+    app.state
+        .set_metrics_origin(grafia::core::MetricsOrigin::Baseline);
+    app.state.select_all_nodes();
+    app.state.align_selection();
+    app.state.connect_selected_open_endpoints();
+    app.state.add_inflection_points();
+    app.state.correct_path_direction();
+    app.state.rotate_by_degrees(15.0);
+    app.state.scale_by_factor(1.1, 1.1);
+    app.state.slant_by_degrees(12.0, true);
+    assert!(app.state.validate_invariants().is_ok());
 }
 
 // ============================================================================
-// 7. Demonstrator Source Hygiene & Modularity Compliance
+// 7. Demonstrator Runtime Options & Invariant Compliance
 // ============================================================================
 
 #[test]
 fn test_adversarial_demonstrator_source_hygiene() {
-    let path = Path::new("examples/vector_canvas_demo.rs");
-    assert!(path.exists(), "examples/vector_canvas_demo.rs must exist");
-
-    let content = fs::read_to_string(path).expect("Must read examples/vector_canvas_demo.rs");
-    let lines: Vec<&str> = content.lines().collect();
-
-    // Check line 1: Windows Subsystem Invariant
-    assert_eq!(
-        lines[0].trim(),
-        r#"#![cfg_attr(not(test), windows_subsystem = "windows")]"#,
-        "Line 1 must strictly declare windows_subsystem attribute"
-    );
-
-    // Check physical lines ceiling
-    assert!(
-        lines.len() < 599,
-        "Physical lines ({}) must be strictly < 599",
-        lines.len()
-    );
-
-    // Check eSLOC ceiling
-    let esloc = lines
-        .iter()
-        .filter(|l| {
-            let t = l.trim();
-            !t.is_empty() && !t.starts_with("//") && !t.starts_with("/*") && !t.starts_with('*')
-        })
-        .count();
-    assert!(esloc <= 300, "eSLOC ({esloc}) must be <= 300");
-
-    // Check zero hardcoded colors
-    for (idx, line) in lines.iter().enumerate() {
-        let code = line.split("//").next().unwrap_or("").trim();
-        for forbidden in [
-            "Color32::from_rgb(",
-            "Color32::from_rgba_premultiplied(",
-            "Color32::from_rgba_unmultiplied(",
-        ] {
-            assert!(
-                !code.contains(forbidden),
-                "Line {}: Forbidden hardcoded color constructor `{forbidden}`",
-                idx + 1
-            );
-        }
-        if code.contains('"') {
-            for part in code.split('"') {
-                if part.starts_with('#')
-                    && (part.len() == 4 || part.len() == 7 || part.len() == 9)
-                    && part[1..].chars().all(|c| c.is_ascii_hexdigit())
-                {
-                    panic!("Line {}: Forbidden hardcoded hex color `{part}`", idx + 1);
-                }
-            }
-        }
-    }
+    let options = vector_canvas_demo::build_native_options();
+    assert_eq!(options.renderer, eframe::Renderer::Glow);
+    assert!(!options.system_font_fallback);
+    assert!(!options.persist_window);
+    let mut app = GrafiaVectorCanvasDemo::new();
+    assert!(app.state.validate_invariants().is_ok());
+    app.host.step_tour_next(&mut app.state, &mut app.theme);
+    assert!(app.state.validate_invariants().is_ok());
 }

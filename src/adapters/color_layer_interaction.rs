@@ -2,11 +2,17 @@
 
 use crate::adapters::state::{CanvasTool, GrafiaCanvasState};
 use crate::core::{
-    apply_gradient_handle_drag, gradient_stops_slice, hit_test_gradient_handle,
-    CanvasColorSublayer, CanvasHostRequest, ColorLayerPaint, ColorSublayerMutation,
-    CustomReferenceFrame, FontPoint, GradientHandleKind, ScreenPoint, SelectionInfo,
+    apply_gradient_handle_drag, apply_knockout_halo_masks_to_sublayers,
+    compute_radial_symmetry_contours, contour_to_bezpath_with_splines,
+    expand_non_destructive_icon_contours, gradient_stops_slice, hit_test_gradient_handle,
+    point_in_polygon, resolve_sublayers_for_color_mode, CanvasColorSublayer, CanvasHostRequest,
+    ColorLayerPaint, ColorSublayerMutation, CustomReferenceFrame, FontPoint, GradientHandleKind,
+    NodeId, ScreenPoint, SelectionInfo, SymbolColorRenderingMode, SymbolHierarchyLevel,
+    SymbolLayerTag,
 };
-use crate::tokens::PERCENT_SCALE_FACTOR;
+use crate::tokens::{CURVE_FLATTEN_TOLERANCE, PERCENT_SCALE_FACTOR};
+use kurbo::PathEl;
+use std::collections::HashSet;
 
 /// Active pointer drag state for an on-canvas gradient endpoint, radius, or stop diamond handle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,6 +56,182 @@ impl GrafiaCanvasState {
         self.drag_transients.selected_gradient_stop = None;
         self.drag_transients.active_gradient_drag = None;
         self.assert_invariants();
+    }
+
+    /// Returns the currently selected color sublayer index (`SPEC-017 §2.2`).
+    #[must_use]
+    pub fn selected_color_sublayer_index(&self) -> Option<usize> {
+        self.drag_transients
+            .selected_color_sublayer
+            .filter(|&idx| idx < self.color_sublayers.len())
+    }
+
+    /// Synchronizes contour node geometry from `self.glyph.contours` into `self.color_sublayers`
+    /// by matching `ContourId` and `NodeId` lineage (`SPEC-017 §2.2`).
+    pub fn sync_color_sublayers_from_glyph_contours(&mut self) {
+        if self.color_sublayers.is_empty() || self.glyph.contours.is_empty() {
+            return;
+        }
+        for sub in &mut self.color_sublayers {
+            for sc in &mut sub.contours {
+                let sc_nids: HashSet<NodeId> = sc.nodes.iter().map(|n| n.id).collect();
+                if let Some(gc) = self
+                    .glyph
+                    .contours
+                    .iter()
+                    .find(|c| c.id == sc.id && c.nodes.iter().any(|n| sc_nids.contains(&n.id)))
+                    .or_else(|| {
+                        self.glyph.contours.iter().find(|c| {
+                            !sc_nids.is_empty() && c.nodes.iter().any(|n| sc_nids.contains(&n.id))
+                        })
+                    })
+                {
+                    sc.id = gc.id;
+                    sc.nodes.clone_from(&gc.nodes);
+                    sc.closed = gc.closed;
+                }
+            }
+        }
+    }
+
+    /// Hit-tests `self.color_sublayers` in top-down Z-order at `font_pt` and selects the hit sublayer (`SPEC-017 §2.2`).
+    pub fn try_select_color_sublayer_at_upm(&mut self, font_pt: FontPoint) -> bool {
+        for (idx, sub) in self.color_sublayers.iter().enumerate().rev() {
+            if !sub.visible || sub.locked {
+                continue;
+            }
+            for gc in &sub.contours {
+                if !gc.visible || gc.nodes.len() < 3 {
+                    continue;
+                }
+                let bez = contour_to_bezpath_with_splines(&gc.nodes, true, 0.0, &[]);
+                let mut poly = Vec::new();
+                kurbo::flatten(bez.iter(), CURVE_FLATTEN_TOLERANCE, |el| {
+                    if let PathEl::MoveTo(p) | PathEl::LineTo(p) = el {
+                        poly.push(FontPoint::new(p.x, p.y));
+                    }
+                });
+                if poly.len() >= 3 && point_in_polygon(font_pt, &poly) {
+                    self.select_color_sublayer(Some(idx));
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Moves the currently selected color sublayer forward (`delta > 0`) or backward (`delta < 0`) in Z-order,
+    /// keeping `icon_studio.symbol_layer_tags` synchronized and recording an Undo transaction (`SPEC-017 §2.2`).
+    pub fn reorder_selected_color_sublayer(&mut self, delta: i32) -> bool {
+        let Some(cur_idx) = self.selected_color_sublayer_index() else {
+            return false;
+        };
+        let len = self.color_sublayers.len();
+        if len < 2 || delta == 0 {
+            return false;
+        }
+        let target = (cur_idx as i32 + delta).clamp(0, (len - 1) as i32) as usize;
+        if target == cur_idx {
+            return false;
+        }
+        let before = self.snapshot();
+        self.color_sublayers.swap(cur_idx, target);
+        if self.icon_studio.symbol_layer_tags.len() >= len {
+            self.icon_studio.symbol_layer_tags.swap(cur_idx, target);
+        }
+        self.drag_transients.selected_color_sublayer = Some(target);
+        if let Some((s_idx, st_idx)) = self.drag_transients.selected_gradient_stop {
+            if s_idx == cur_idx {
+                self.drag_transients.selected_gradient_stop = Some((target, st_idx));
+            }
+        }
+        self.record_mutation("Reorder Color Sublayer", before);
+        self.assert_invariants();
+        true
+    }
+
+    /// Sets the active Apple SF Symbols 4-mode color rendering mode with Undo/Redo (`SPEC-017 §2.3`).
+    pub fn set_symbol_color_rendering_mode(&mut self, mode: SymbolColorRenderingMode) {
+        if self.icon_studio.color_mode == mode {
+            return;
+        }
+        let before = self.snapshot();
+        self.icon_studio.color_mode = mode;
+        self.record_mutation("Set Symbol Color Mode", before);
+        self.assert_invariants();
+    }
+
+    /// Sets the `SymbolHierarchyLevel` (`Primary`, `Secondary`, `Tertiary`) of the selected color sublayer with Undo/Redo (`SPEC-017 §2.3`).
+    pub fn set_selected_sublayer_hierarchy_level(&mut self, level: SymbolHierarchyLevel) -> bool {
+        let Some(idx) = self.selected_color_sublayer_index() else {
+            return false;
+        };
+        let cur_lvl = self
+            .icon_studio
+            .symbol_layer_tags
+            .get(idx)
+            .map_or(SymbolHierarchyLevel::Primary, |t| t.hierarchy_level);
+        if cur_lvl == level && idx < self.icon_studio.symbol_layer_tags.len() {
+            return false;
+        }
+        let before = self.snapshot();
+        while self.icon_studio.symbol_layer_tags.len() <= idx {
+            let group = (self.icon_studio.symbol_layer_tags.len() as u8)
+                .saturating_add(1)
+                .max(1);
+            self.icon_studio.symbol_layer_tags.push(SymbolLayerTag {
+                layer_group: group,
+                ..Default::default()
+            });
+        }
+        self.icon_studio.symbol_layer_tags[idx].hierarchy_level = level;
+        self.record_mutation("Set Sublayer Hierarchy Level", before);
+        self.assert_invariants();
+        true
+    }
+
+    /// Evaluates `self.color_sublayers` applying `icon_studio.color_mode`, non-destructive `SmartCornerSpec` /
+    /// open-stroke expansion (`ContourStrokeStyle` & `VariableWidthStrokeSpec`), and `icon_studio.kinetic` (`SPEC-017 §2.3 & §2.7`).
+    #[must_use]
+    pub fn evaluate_active_color_sublayers(&self) -> Vec<CanvasColorSublayer> {
+        let mut subs = if self.icon_studio.kinetic.is_active() {
+            self.evaluate_active_kinetic_sublayers()
+        } else {
+            resolve_sublayers_for_color_mode(
+                &self.color_sublayers,
+                &self.icon_studio.symbol_layer_tags,
+                self.icon_studio.color_mode,
+            )
+        };
+        let mut next_nid = self.next_node_id.max(1);
+        if !self.curve_harmony.smart_corners.is_empty()
+            || !self.contour_strokes.is_empty()
+            || !self.icon_studio.variable_width_strokes.is_empty()
+            || self.icon_studio.radial_symmetry.fold_count > 1
+        {
+            for sub in &mut subs {
+                sub.contours = expand_non_destructive_icon_contours(
+                    &sub.contours,
+                    &self.curve_harmony.smart_corners,
+                    &self.contour_strokes,
+                    &self.icon_studio.variable_width_strokes,
+                    &mut next_nid,
+                );
+                if self.icon_studio.radial_symmetry.fold_count > 1 {
+                    sub.contours = compute_radial_symmetry_contours(
+                        &sub.contours,
+                        &self.icon_studio.radial_symmetry,
+                        &mut next_nid,
+                    );
+                }
+            }
+        }
+        apply_knockout_halo_masks_to_sublayers(
+            &mut subs,
+            &self.icon_studio.symbol_layer_tags,
+            &mut next_nid,
+        );
+        subs
     }
 
     /// Selects a specific `(sublayer_index, stop_index)` gradient stop for HUD inspection and editing.

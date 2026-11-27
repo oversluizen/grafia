@@ -1,15 +1,14 @@
-//! `SPEC-011`..`SPEC-013` & `SPEC-015` Interactive Demo Presets and
-//! Loupedeck CT / Wacom Intuos 4 / `egui-macview` PieMenu Controller Simulator Panel.
+//! `SPEC-011`..`SPEC-015` & `SPEC-018 §2` CAGD, Stamdikte, Kalligrafie & Hardware Controller Presets.
 
-use super::MockFontHost;
+use super::{DemoPreset, MockFontHost};
 use egui::{ProgressBar, RichText, Separator, Ui};
-use grafia::adapters::GrafiaCanvasState;
+use grafia::adapters::{CanvasTool, GrafiaCanvasState};
 use grafia::core::{
     ActiveMirrorAxis, CalligraphicNibSpec, CalligraphicSample, CanvasIntent, CanvasRotaryChannel,
     CompanionMasterLayer, CurvatureCombStyle, CurvedTrajectoryLink, FontPoint, InputDeviceKind,
     NodeId, SmartCornerSpec, StylusAccessoryEvent,
 };
-use grafia::tokens::GlyphArchetype;
+use grafia::tokens::{GlyphArchetype, FIT_CURVE_MAX_COLUMN_INDEX};
 
 const DEMO_SMART_CORNER_FILLET_UPM: f64 = 28.0;
 const DEMO_SMART_CORNER_TRAP_UPM: f64 = -18.0;
@@ -17,29 +16,169 @@ const DEMO_NIB_MIN_WIDTH_UPM: f64 = 12.0;
 const DEMO_NIB_MAX_WIDTH_UPM: f64 = 44.0;
 const DEMO_NIB_ANGLE_DEG: f64 = 30.0;
 const DEMO_NIB_TILT_INFLUENCE: f64 = 0.5;
-const DEMO_BRUSH_P0_X: f64 = 120.0;
-const DEMO_BRUSH_P0_Y: f64 = 520.0;
-const DEMO_BRUSH_P1_X: f64 = 260.0;
-const DEMO_BRUSH_P1_Y: f64 = 640.0;
-const DEMO_BRUSH_P2_X: f64 = 420.0;
-const DEMO_BRUSH_P2_Y: f64 = 540.0;
-const DEMO_PRESSURE_LOW: f64 = 0.25;
-const DEMO_PRESSURE_HIGH: f64 = 0.85;
-const DEMO_TILT_X: f64 = 15.0;
-const DEMO_TILT_Y: f64 = 10.0;
 const DEMO_REF_STEM_V_UPM: f64 = 84.0;
 const DEMO_REF_STEM_H_UPM: f64 = 68.0;
 const DEMO_REF_STEM_TOL_UPM: f64 = 6.0;
 const DEMO_OVERSHOOT_UPM: f64 = 14.0;
 const DEMO_TRAJ_CTRL_X_UPM: f64 = 340.0;
 const DEMO_TRAJ_CTRL_Y_UPM: f64 = 760.0;
-const DEMO_COMP_SHIFT_X_UPM: f64 = 36.0;
-const DEMO_COMP_SHIFT_Y_UPM: f64 = 24.0;
 const DEMO_SQUEEZE_X_DP: f32 = 320.0;
 const DEMO_SQUEEZE_Y_DP: f32 = 240.0;
 
 impl MockFontHost {
+    pub fn apply_cagd_domain_case(&mut self, preset: DemoPreset, state: &mut GrafiaCanvasState) {
+        self.ensure_letter_glyph(state, GlyphArchetype::O);
+        state.select_all_nodes();
+        match preset {
+            DemoPreset::G2HarmonizeAndGeniusNodes => {
+                state.harmonize_selected_nodes();
+                if let Some(&id0) = state.selected_nodes.first() {
+                    state.set_node_genius(id0, true);
+                }
+                state.show_tunni_lines = true;
+                self.push_log("Case 07: G² Krommingscontinuïteit & Genius-knoop (★) vergrendeld");
+            }
+            DemoPreset::G3ClothoidEulerSpiral => {
+                state.harmonize_selected_nodes_g3();
+                if let Some(&id3) = state.selected_nodes.get(3) {
+                    state.set_node_g3_lock(id3, true);
+                }
+                state.curve_harmony.show_curvature_comb = true;
+                self.push_log("Case 08: G³ Clothoïde / Euler-Spiraal (❖) nul-schok overgang");
+            }
+            DemoPreset::TunniLinesAndHandleRatios => {
+                state.show_tunni_lines = true;
+                state.apply_fit_curve_column(self.fit_curve_col);
+                self.fit_curve_col = (self.fit_curve_col + 1) % (FIT_CURVE_MAX_COLUMN_INDEX + 1);
+                self.push_log("Case 09: Blauwe Tunni-hefboomlijnen & 55% Handle-Ratio pill-badges");
+            }
+            DemoPreset::CurvatureCombSpikesAndHeatmap => {
+                state.curve_harmony.show_curvature_comb = true;
+                let next =
+                    if state.curve_harmony.curvature_comb_style == CurvatureCombStyle::SpinesOnly {
+                        CurvatureCombStyle::HeatmapEnvelope
+                    } else {
+                        CurvatureCombStyle::SpinesOnly
+                    };
+                state.set_curvature_comb_style(next);
+                self.push_log(format!("Case 10: Krommingskam stijl = {next:?}"));
+            }
+            DemoPreset::RedArrowsOutlineAudit => {
+                state.curve_harmony.show_outline_audit = true;
+                if let Some(n) = state.contours.first_mut().and_then(|c| c.get_mut(1)) {
+                    n.point.y.0 += 48.0;
+                }
+                state.sync_paths_from_contours();
+                self.push_log("Case 11: Rode-Pijlen Contour-Audit detecteert extrema-overshoot");
+            }
+            _ => {
+                let _ = state.convert_selected_cubic_nodes_to_hobby();
+                state.power_nudge_enabled = true;
+                state.curve_harmony.servo_scaling_enabled = true;
+                self.push_log("Case 12: Hobby-Splines + Power Nudge & Proportionele Servo-Handles");
+            }
+        }
+        state.bump_content_generation();
+    }
+
+    pub fn apply_stems_domain_case(&mut self, preset: DemoPreset, state: &mut GrafiaCanvasState) {
+        match preset {
+            DemoPreset::SmartCornersFilletsAndInkTraps => {
+                self.ensure_letter_glyph(state, GlyphArchetype::A);
+                for (id, r) in [
+                    (NodeId(1), DEMO_SMART_CORNER_FILLET_UPM),
+                    (NodeId(2), DEMO_SMART_CORNER_TRAP_UPM),
+                ] {
+                    state.set_smart_corner(SmartCornerSpec {
+                        node_id: id,
+                        radius_upm: r,
+                    });
+                }
+                state.selected_nodes = vec![NodeId(1), NodeId(2)];
+                self.push_log("Case 13: Niet-destructieve Smart Corner (+28) & Inktval (-18 UPM)");
+            }
+            DemoPreset::Calligraphic6DofNibBrush => self.apply_calligraphic_brush_case(state),
+            DemoPreset::StructuralStemGaugeAndTool => {
+                self.ensure_letter_glyph(state, GlyphArchetype::A);
+                state.set_reference_stems(
+                    vec![DEMO_REF_STEM_V_UPM, DEMO_REF_STEM_H_UPM],
+                    DEMO_REF_STEM_TOL_UPM,
+                );
+                state.set_show_stem_gauge(true);
+                state.activate_tool(CanvasTool::Stem);
+                self.push_log(
+                    "Case 15: Structurele Stamdikte-Meter (84/68 UPM) & Stem-Tool actief",
+                );
+            }
+            DemoPreset::IntersectionRulerAndRainbow => self.apply_intersection_ruler_case(state),
+            DemoPreset::TrowelSmoothingAndCleanerBrush => {
+                self.ensure_letter_glyph(state, GlyphArchetype::O);
+                let next = if state.active_tool == CanvasTool::Trowel {
+                    CanvasTool::Cleaner
+                } else {
+                    CanvasTool::Trowel
+                };
+                state.activate_tool(next);
+                self.push_log(format!("Case 17: Borstel-Gereedschap = {next:?}"));
+            }
+            _ => {
+                self.ensure_letter_glyph(state, GlyphArchetype::O);
+                state.set_show_optical_rhythm_fill(true);
+                state.set_round_overshoot_upm(Some(DEMO_OVERSHOOT_UPM));
+                state.set_show_visual_centroid(true);
+                state.set_active_mirror_axis(ActiveMirrorAxis::Vertical {
+                    x_upm: state.glyph.width * 0.5,
+                });
+                self.push_log("Case 18: Optisch Ritme + Overshoot-Band (14 UPM) + Zwaartepunt (⊕)");
+            }
+        }
+    }
+
+    fn apply_calligraphic_brush_case(&mut self, state: &mut GrafiaCanvasState) {
+        self.ensure_letter_glyph(state, GlyphArchetype::A);
+        let nib = CalligraphicNibSpec {
+            min_width_upm: DEMO_NIB_MIN_WIDTH_UPM,
+            max_width_upm: DEMO_NIB_MAX_WIDTH_UPM,
+            base_angle_deg: DEMO_NIB_ANGLE_DEG,
+            tilt_influence: DEMO_NIB_TILT_INFLUENCE,
+        };
+        let mk_s = |x, y, p| CalligraphicSample {
+            pos: FontPoint::new(x, y),
+            pressure: p,
+            tilt_x: 15.0,
+            tilt_y: 10.0,
+        };
+        let _ = state.apply_calligraphic_brush_stroke(
+            nib,
+            &[
+                mk_s(110.0, 540.0, 0.25),
+                mk_s(280.0, 665.0, 0.88),
+                mk_s(470.0, 545.0, 0.25),
+            ],
+        );
+        self.push_log("Case 14: 6-DoF Druk & Stylus-Tilt Kalligrafie-Penseelstreek");
+    }
+
+    fn apply_intersection_ruler_case(&mut self, state: &mut GrafiaCanvasState) {
+        self.ensure_letter_glyph(state, GlyphArchetype::O);
+        state.set_show_measurement_rainbow(true);
+        state.activate_tool(CanvasTool::Measurement);
+        let mods = grafia::Modifiers::default();
+        let _ = state.on_drawing_tool_pointer_press(
+            grafia::ScreenPoint::new(180.0, 360.0),
+            FontPoint::new(40.0, 350.0),
+            mods,
+        );
+        let _ = state.on_drawing_tool_pointer_move(
+            grafia::ScreenPoint::new(620.0, 360.0),
+            FontPoint::new(660.0, 350.0),
+            mods,
+        );
+        self.push_log("Case 16: Snijpunten-Meetlat (L) + Continue Dikte-Regenboog op /O");
+    }
+
     pub fn apply_master_compat_preset(&mut self, state: &mut GrafiaCanvasState) {
+        self.ensure_letter_glyph(state, GlyphArchetype::O);
         let shift_contours = |dx: f64, dy: f64| -> Vec<Vec<grafia::core::Node>> {
             let mut copy = state.contours.clone();
             for c in &mut copy {
@@ -51,157 +190,34 @@ impl MockFontHost {
             copy
         };
         let closed_flags: Vec<bool> = state.glyph.contours.iter().map(|c| c.closed).collect();
-        let make_master = |id, name: &str, color_rgba, contours, editable| CompanionMasterLayer {
-            id,
-            name: name.into(),
-            color_rgba,
-            contours,
-            closed_flags: if editable {
-                closed_flags.clone()
-            } else {
-                Vec::new()
-            },
-            anchors: if editable {
-                state.anchors.clone()
-            } else {
-                Vec::new()
-            },
-            editable,
-        };
         state.set_companion_master_layers(vec![
-            make_master(
-                1,
-                "Light",
-                [55, 145, 225, 200],
-                shift_contours(-18.0, -10.0),
-                true,
-            ),
-            make_master(
-                2,
-                "Bold",
-                [65, 195, 125, 200],
-                shift_contours(24.0, 14.0),
-                true,
-            ),
-            make_master(3, "BrokenMaster", [225, 55, 55, 215], Vec::new(), false),
+            CompanionMasterLayer {
+                id: 1,
+                name: "Light".into(),
+                color_rgba: [52, 116, 178, 200],
+                contours: shift_contours(-18.0, -10.0),
+                closed_flags: closed_flags.clone(),
+                anchors: state.anchors.clone(),
+                editable: true,
+            },
+            CompanionMasterLayer {
+                id: 2,
+                name: "Bold".into(),
+                color_rgba: [64, 152, 138, 200],
+                contours: shift_contours(24.0, 14.0),
+                closed_flags,
+                anchors: state.anchors.clone(),
+                editable: true,
+            },
         ]);
-        state.show_master_compatibility = !state.show_master_compatibility;
-        self.push_log(format!(
-            "Preset: Master Compatibility = {}",
-            state.show_master_compatibility
-        ));
-    }
-
-    pub fn apply_curve_harmony_and_audit_preset(&mut self, state: &mut GrafiaCanvasState) {
-        if state.active_archetype != GlyphArchetype::O {
-            state.load_glyph_archetype(GlyphArchetype::O);
-            super::toolbar_specs::fit_demo_canvas_viewport(state);
-            state.glyph.name = "O".into();
-        }
-        state.select_all_nodes();
-        state.harmonize_selected_nodes();
-        if let Some(&first_id) = state.selected_nodes.first() {
-            state.set_node_genius(first_id, true);
-        }
-        if let Some(&second_id) = state.selected_nodes.get(3) {
-            state.set_node_g3_lock(second_id, true);
-        }
-        state.show_tunni_lines = true;
-        state.curve_harmony.show_curvature_comb = true;
-        state.curve_harmony.show_outline_audit = true;
-        state.curve_harmony.servo_scaling_enabled = true;
-        state.bump_content_generation();
-        self.push_log(
-            "Preset v0.10: G2/G3 Harmonized + Genius(★)/G3(❖) Badges + Tunni + Comb + Audit active",
-        );
-    }
-
-    pub fn apply_smart_corners_brush_and_gauge_preset(&mut self, state: &mut GrafiaCanvasState) {
-        if state.active_archetype != GlyphArchetype::A {
-            state.load_glyph_archetype(GlyphArchetype::A);
-            super::toolbar_specs::fit_demo_canvas_viewport(state);
-            state.glyph.name = "A".into();
-        }
-        state.set_smart_corner(SmartCornerSpec {
-            node_id: NodeId(1),
-            radius_upm: DEMO_SMART_CORNER_FILLET_UPM,
-        });
-        state.set_smart_corner(SmartCornerSpec {
-            node_id: NodeId(2),
-            radius_upm: DEMO_SMART_CORNER_TRAP_UPM,
-        });
-        let nib = CalligraphicNibSpec {
-            min_width_upm: DEMO_NIB_MIN_WIDTH_UPM,
-            max_width_upm: DEMO_NIB_MAX_WIDTH_UPM,
-            base_angle_deg: DEMO_NIB_ANGLE_DEG,
-            tilt_influence: DEMO_NIB_TILT_INFLUENCE,
-        };
-        let samples = [
-            CalligraphicSample {
-                pos: FontPoint::new(DEMO_BRUSH_P0_X, DEMO_BRUSH_P0_Y),
-                pressure: DEMO_PRESSURE_LOW,
-                tilt_x: DEMO_TILT_X,
-                tilt_y: DEMO_TILT_Y,
-            },
-            CalligraphicSample {
-                pos: FontPoint::new(DEMO_BRUSH_P1_X, DEMO_BRUSH_P1_Y),
-                pressure: DEMO_PRESSURE_HIGH,
-                tilt_x: DEMO_TILT_X,
-                tilt_y: DEMO_TILT_Y,
-            },
-            CalligraphicSample {
-                pos: FontPoint::new(DEMO_BRUSH_P2_X, DEMO_BRUSH_P2_Y),
-                pressure: DEMO_PRESSURE_LOW,
-                tilt_x: DEMO_TILT_X,
-                tilt_y: DEMO_TILT_Y,
-            },
-        ];
-        let _ = state.apply_calligraphic_brush_stroke(nib, &samples);
-        state.set_reference_stems(
-            vec![DEMO_REF_STEM_V_UPM, DEMO_REF_STEM_H_UPM],
-            DEMO_REF_STEM_TOL_UPM,
-        );
-        state.set_show_stem_gauge(true);
-        state.set_show_visual_centroid(true);
-        state.curve_harmony.show_curvature_comb = true;
-        state.set_curvature_comb_style(CurvatureCombStyle::HeatmapEnvelope);
-        self.push_log(
-            "Preset v0.11: Smart Corner + Ink Trap + Calligraphic Stroke + Heatmap + Stem Gauge + Centroid ⊕",
-        );
-    }
-
-    pub fn apply_stem_rainbow_trajectory_and_mirror_preset(
-        &mut self,
-        state: &mut GrafiaCanvasState,
-    ) {
-        if state.active_archetype != GlyphArchetype::O {
-            state.load_glyph_archetype(GlyphArchetype::O);
-            super::toolbar_specs::fit_demo_canvas_viewport(state);
-            state.glyph.name = "O".into();
-        }
-        state.set_show_measurement_rainbow(true);
-        state.set_round_overshoot_upm(Some(DEMO_OVERSHOOT_UPM));
-        state.set_active_mirror_axis(ActiveMirrorAxis::Vertical {
-            x_upm: state.glyph.width * 0.5,
-        });
-        let mut shifted = state.contours.clone();
-        for c in &mut shifted {
-            for n in c {
-                n.point.x.0 += DEMO_COMP_SHIFT_X_UPM;
-                n.point.y.0 += DEMO_COMP_SHIFT_Y_UPM;
-            }
-        }
-        let closed_flags: Vec<bool> = state.glyph.contours.iter().map(|c| c.closed).collect();
-        state.set_companion_master_layers(vec![CompanionMasterLayer {
-            id: 1,
-            name: "BoldMaster".into(),
-            color_rgba: [65, 195, 125, 200],
-            contours: shifted,
-            closed_flags,
-            anchors: Vec::new(),
-            editable: true,
-        }]);
         state.show_master_compatibility = true;
+        let _ = state.auto_match_master_compatibility(1);
+        self.push_log("Case 19: Multi-Master Compatibiliteitsstralen (Light ↔ Bold) & Auto-Match");
+    }
+
+    pub fn apply_curved_master_trajectories_case(&mut self, state: &mut GrafiaCanvasState) {
+        self.apply_master_compat_preset(state);
+        state.activate_tool(CanvasTool::CurvedTrajectory);
         if let Some(first_node) = state.contours.first().and_then(|c| c.first()) {
             state.set_curved_trajectory_link(CurvedTrajectoryLink {
                 node_id: first_node.id,
@@ -210,22 +226,19 @@ impl MockFontHost {
                 control2: None,
             });
         }
-        self.push_log(
-            "Preset v0.12: Measurement Rainbow + Overshoot Ribbons + Curved Trajectory + 1-Axis Mirror",
-        );
+        self.push_log("Case 20: Gebogen Master-Traject voor knik-vrije roterende interpolatie");
     }
 
     pub fn apply_controller_rotary_and_haptics_preset(&mut self, state: &mut GrafiaCanvasState) {
+        self.set_mobile_thumb_hud_enabled(true, state);
         let latched = !state.is_intent_latched(CanvasIntent::ConstrainAngle);
         state.set_intent_latched(CanvasIntent::ConstrainAngle, latched);
         state.step_rotary_encoder(CanvasRotaryChannel::ContextPrimary, 1.0);
         self.poll_host_ports(state);
         let tel = state.controller_telemetry();
         self.push_log(format!(
-            "Preset SPEC-015: Dial={} ({}) | Intents={}",
-            tel.primary_rotary.parameter_name,
-            tel.primary_rotary.formatted_value,
-            tel.available_intents.len()
+            "Case 36: Liquid Glass Pie Menu + Vliegwiel | Dial={} ({})",
+            tel.primary_rotary.parameter_name, tel.primary_rotary.formatted_value
         ));
     }
 
@@ -254,15 +267,14 @@ impl MockFontHost {
             }
         });
         ui.horizontal_wrapped(|ui| {
-            let channels = [
+            for (name, ch) in [
                 ("Primary", CanvasRotaryChannel::ContextPrimary),
                 ("Zoom", CanvasRotaryChannel::ViewportZoom),
                 ("Angle", CanvasRotaryChannel::CanvasRotationOrSlant),
                 ("Undo/Redo", CanvasRotaryChannel::HistoryScrub),
                 ("Tension/R", CanvasRotaryChannel::CurveTensionOrRadius),
                 ("Kern/Spc", CanvasRotaryChannel::KerningOrSpacing),
-            ];
-            for (name, ch) in channels {
+            ] {
                 if ui.button(format!("{name} -")).clicked() {
                     state.step_rotary_encoder(ch, -1.0);
                 }

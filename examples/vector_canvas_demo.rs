@@ -1,9 +1,6 @@
 #![cfg_attr(not(test), windows_subsystem = "windows")]
 
-//! Interactive Grafia Vector Canvas & Hexagonal Host-Port ("Stekkers") Demonstrator.
-//! Wires `set_transform_grid_anchor`, `set_metrics_origin`, `align_selection`,
-//! `connect_selected_open_endpoints`, `add_inflection_points`, `correct_path_direction`,
-//! `rotate_by_degrees`, `scale_by_factor`, and `slant_by_degrees`.
+//! Interactive Grafia Vector Canvas & Hexagonal Host-Port ("Stekkers") Guided Showcase.
 
 pub mod demo_host_shell;
 
@@ -14,33 +11,21 @@ pub use demo_host_shell::toolbar_specs::{
     WINDOW_WIDTH_DP,
 };
 use demo_host_shell::{
-    demo_panels::{render_left_sidebar, render_top_toolbar},
+    demo_panels::{render_left_studio_sidebar, render_top_toolbar},
     MockFontHost,
 };
-use eframe::egui::{self, CentralPanel, Panel, Separator};
-use grafia::adapters::{CanvasViewMode, GrafiaCanvasState, GrafiaCanvasWidget};
+use eframe::egui::{self, CentralPanel, Key as K, Panel, Separator};
+use grafia::adapters::{
+    CanvasViewMode, CanvasViewMode as M, GrafiaCanvasState, GrafiaCanvasWidget,
+};
 use grafia::tokens::GrafiaTheme;
 
-/// View mode icon and tooltip table covering all 3 `CanvasViewMode` projections.
-pub const VIEW_MODE_SPECS: [(CanvasViewMode, egui::Key, &str, &str); 3] = [
-    (
-        CanvasViewMode::EditWireframe,
-        egui::Key::Num1,
-        "\u{f7f8}",
-        "Edit Contour View [1] — Bezier nodes, handles, metrics & guides",
-    ),
-    (
-        CanvasViewMode::PreviewFilled,
-        egui::Key::Num2,
-        "\u{f7ff}",
-        "Preview Filled View [2] — Filled glyph counter preview",
-    ),
-    (
-        CanvasViewMode::ShapeThumbnail,
-        egui::Key::Num3,
-        "\u{f80d}",
-        "Shape Thumbnail View [3] — Fit-to-viewport silhouette",
-    ),
+/// View mode icon and tooltip table covering all 4 `CanvasViewMode` projections.
+pub const VIEW_MODE_SPECS: [(CanvasViewMode, K, &str, &str); 4] = [
+    (M::EditWireframe, K::Num1, "\u{f7f8}", "Edit [1]"),
+    (M::PreviewFilled, K::Num2, "\u{f7ff}", "Filled [2]"),
+    (M::ShapeThumbnail, K::Num3, "\u{f80d}", "Thumb [3]"),
+    (M::LiquidGlass, K::Num4, "\u{f77e}", "Glass [4]"),
 ];
 
 /// Top-level demonstrator application embedding `GrafiaCanvasWidget` and `MockFontHost`.
@@ -61,57 +46,75 @@ impl GrafiaVectorCanvasDemo {
     #[must_use]
     pub fn new() -> Self {
         let mut state = GrafiaCanvasState::init_glyph_a();
+        state.show_selection_info_hud = true;
         fit_demo_canvas_viewport(&mut state);
         Self {
             state,
             theme: GrafiaTheme::sonoma_default(),
-            show_preview_panel: true,
+            show_preview_panel: false,
             host: MockFontHost::new(),
         }
     }
 
     /// Renders the complete interactive Grafia Vector Canvas Demo UI inside `ui`.
     pub fn render_ui(&mut self, ui: &mut egui::Ui) {
+        self.host.active_mac_theme().apply_to_egui(ui.ctx());
         self.host.poll_host_ports(&mut self.state);
         for (mode, key, _, _) in VIEW_MODE_SPECS {
             if ui.input(|i| i.key_pressed(key)) {
                 self.state.view_mode = mode;
             }
         }
-
+        let w = ui.ctx().content_rect().width();
+        self.host
+            .update_responsive_layout(w, &mut self.show_preview_panel, &mut self.state);
+        if self.state.icon_studio.kinetic.playing {
+            let dt = f64::from(ui.input(|i| i.stable_dt).clamp(0.001, 0.05));
+            self.state.step_kinetic_timeline(dt);
+            ui.ctx().request_repaint();
+        }
         Panel::top("top_toolbar").show(ui, |ui| {
-            render_top_toolbar(
-                ui,
-                &mut self.state,
-                &mut self.theme,
-                &mut self.host,
-                &mut self.show_preview_panel,
-            );
-            ui.add(Separator::default().horizontal());
-            self.host
-                .render_preset_bar(ui, &mut self.state, &mut self.theme);
+            let pr = &mut self.show_preview_panel;
+            render_top_toolbar(ui, &mut self.state, &mut self.theme, &mut self.host, pr);
+            if self.host.show_coach_banner {
+                ui.add(Separator::default().horizontal());
+                self.host
+                    .render_coach_banner(ui, &mut self.state, &mut self.theme);
+            }
         });
-
         Panel::bottom("status_bar").show(ui, |ui| {
-            MockFontHost::render_status_bar_contents(ui, &self.state);
-        });
-
-        Panel::left("shapes_sidebar").show(ui, |ui| {
-            render_left_sidebar(ui, &mut self.state);
-        });
-
-        Panel::right("host_inspector_panel").show(ui, |ui| {
-            self.host.render_host_inspector(ui, &mut self.state);
+            MockFontHost::render_status_bar_contents(ui, &self.state)
         });
         if self.show_preview_panel {
-            Panel::bottom("glyph_preview_panel").show(ui, |ui| {
-                self.host.render_preview_strip_panel(ui, &self.state);
+            let ph = self.host.preview_panel_height_dp;
+            Panel::bottom("glyph_preview_panel")
+                .resizable(true)
+                .default_size(ph)
+                .size_range(110.0..=480.0)
+                .show(ui, |ui| {
+                    self.host.render_preview_strip_panel(ui, &self.state)
+                });
+        }
+        if self.host.show_left_sidebar {
+            Panel::left("shapes_sidebar").show(ui, |ui| {
+                render_left_studio_sidebar(ui, &mut self.host, &mut self.state, &mut self.theme)
+            });
+        }
+        if self.host.show_right_inspector {
+            Panel::right("host_inspector_panel").show(ui, |ui| {
+                self.host.render_host_inspector(ui, &mut self.state)
             });
         }
         CentralPanel::default().show(ui, |ui| {
-            GrafiaCanvasWidget::new(&mut self.state, &self.theme)
-                .with_size(ui.available_size())
+            let avail = ui.available_size();
+            self.host.record_and_fit_canvas_size(avail, &mut self.state);
+            let stashed = self.host.take_mobile_hud_guarded_events(ui, avail);
+            let r = GrafiaCanvasWidget::new(&mut self.state, &self.theme)
+                .with_size(avail)
                 .show(ui);
+            MockFontHost::restore_mobile_hud_guarded_events(ui, stashed);
+            self.host
+                .render_mobile_thumb_hud_overlay(ui, r.rect, &mut self.state);
         });
         self.host.poll_host_ports(&mut self.state);
     }
@@ -214,70 +217,74 @@ mod tests {
     fn test_vector_canvas_demo_all_archetypes_modes_tools_and_host_stekkers() {
         let ctx = egui::Context::default();
         configure_demo_fonts(&ctx);
+        let run_frame = |app: &mut GrafiaVectorCanvasDemo, rect: egui::Rect| {
+            let input = egui::RawInput {
+                screen_rect: Some(rect),
+                ..Default::default()
+            };
+            let mut out = ctx.run_ui(input, |ui| app.render_ui(ui));
+            out.textures_delta.clear();
+            out
+        };
         let mut app = GrafiaVectorCanvasDemo::new();
-        let screen_rect = egui::Rect::from_min_size(
-            egui::Pos2::ZERO,
-            egui::Vec2::new(WINDOW_WIDTH_DP, WINDOW_HEIGHT_DP),
-        );
+        let win_sz = egui::Vec2::new(WINDOW_WIDTH_DP, WINDOW_HEIGHT_DP);
+        let screen_rect = egui::Rect::from_min_size(egui::Pos2::ZERO, win_sz);
         app.state
             .add_guide_from_selection(false, FontPoint::new(DEMO_GUIDE_X_UPM, DEMO_GUIDE_Y_UPM));
 
         for (preset, _) in DemoPreset::ALL {
+            assert!(!demo_host_shell::coach_card(preset).title.is_empty());
             app.host
                 .apply_preset(preset, &mut app.state, &mut app.theme);
-            let mut full_output = ctx.run_ui(
-                egui::RawInput {
-                    screen_rect: Some(screen_rect),
-                    ..Default::default()
-                },
-                |ui| app.render_ui(ui),
-            );
-            full_output.textures_delta.clear();
-            assert!(!ctx
-                .tessellate(full_output.shapes, full_output.pixels_per_point)
-                .is_empty());
+            let out = run_frame(&mut app, screen_rect);
+            assert!(!ctx.tessellate(out.shapes, out.pixels_per_point).is_empty());
+            assert!(app.state.validate_invariants().is_ok());
         }
-
-        // Verify zero redundant preview strip rasterization on idle frame
-        let renders_before_idle = app.host.preview_cache.render_count();
-        let mut idle_output = ctx.run_ui(
-            egui::RawInput {
-                screen_rect: Some(screen_rect),
-                ..Default::default()
-            },
-            |ui| app.render_ui(ui),
+        assert_eq!(DemoPreset::ALL.len(), 36);
+        assert!(app.host.show_left_sidebar && app.state.show_selection_info_hud);
+        for ch in demo_host_shell::ShowcaseChapter::ALL {
+            assert_eq!(ch.presets().len(), 6);
+        }
+        for th in demo_host_shell::StudioThemePreset::ALL {
+            app.host
+                .apply_studio_theme(th, &mut app.state, &mut app.theme);
+            let _ = run_frame(&mut app, screen_rect);
+            assert_eq!(
+                ctx.global_style().visuals.panel_fill,
+                app.host.active_mac_theme().window_background()
+            );
+        }
+        let renders_before = app.host.preview_cache.render_count();
+        let _ = run_frame(&mut app, screen_rect);
+        assert_eq!(app.host.preview_cache.render_count(), renders_before);
+        app.host.step_tour_next(&mut app.state, &mut app.theme);
+        app.host.step_tour_prev(&mut app.state, &mut app.theme);
+        app.host.apply_preset(
+            DemoPreset::TextStreamAovaKerning,
+            &mut app.state,
+            &mut app.theme,
         );
-        idle_output.textures_delta.clear();
-        assert_eq!(app.host.preview_cache.render_count(), renders_before_idle);
-
-        // Exercise TextStreamEditRequest + ResetDefaultAnchors + OpenComponentSource + SpacingDelta
-        app.host
-            .apply_preset(DemoPreset::TextStreamAova, &mut app.state, &mut app.theme);
         app.state.insert_text_at_caret("S");
         app.host.poll_host_ports(&mut app.state);
         assert_eq!(app.host.text_buffer, "AOSVA");
         app.state.delete_text_backward_at_caret();
         app.host.poll_host_ports(&mut app.state);
         assert_eq!(app.host.text_buffer, "AOVA");
-        let set_lsb = grafia::core::SelectionInfoAction::SetLsb(55.0);
-        assert!(app.state.apply_selection_info_action(set_lsb));
+        let lsb_act = grafia::core::SelectionInfoAction::SetLsb(55.0);
+        assert!(app.state.apply_selection_info_action(lsb_act));
         app.host.poll_host_ports(&mut app.state);
-        assert!(app
-            .host
-            .event_log
-            .back()
-            .is_some_and(|l| l.contains("SpacingDelta")));
-        app.state = GrafiaCanvasState::init_glyph_a();
-        let comp_p = DemoPreset::ComponentAndDecompose;
-        app.host
-            .apply_preset(comp_p, &mut app.state, &mut app.theme);
-        assert!(app
-            .state
-            .double_click_component_at_upm(FontPoint::new(350.0, 620.0)));
-        app.host.poll_host_ports(&mut app.state);
-        assert_eq!(app.state.glyph.name, "acutecomb");
         assert!(app.state.validate_invariants().is_ok());
-        assert!(app.state.undo() && app.state.glyph.name == "A");
+
+        let mut mob = GrafiaVectorCanvasDemo::new();
+        let _ = run_frame(
+            &mut mob,
+            egui::Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::new(390.0, 844.0)),
+        );
+        assert!(!mob.host.show_left_sidebar && mob.host.show_mobile_thumb_hud);
+        assert_eq!(mob.state.preferences.touch_finger_offset_dp, 0.0);
+        assert_eq!(demo_host_shell::sonoma_top_bar::TOOL_CATEGORIES.len(), 4);
+        let c_sz = mob.host.last_canvas_size.expect("mobile size");
+        assert!(c_sz.x >= 350.0 && c_sz.y >= 650.0);
     }
 
     #[test]
@@ -286,17 +293,13 @@ mod tests {
             ORIGIN_ANCHOR_GRID_ROWS.map(|row| row.map(|r| r.0)),
             [[6, 7, 8], [3, 4, 5], [0, 1, 2]]
         );
-
         let ctx = egui::Context::default();
         configure_demo_fonts(&ctx);
         let mut out = ctx.run_ui(egui::RawInput::default(), |ui| {
-            let defs = ui.ctx().fonts_mut(|f| f.definitions().clone());
+            let fams = ui.ctx().fonts_mut(|f| f.definitions().families.clone());
             let cup = egui_macview::CUPERTINO_ICONS_FONT_NAME;
-            assert_eq!(
-                defs.families[&egui::FontFamily::Proportional][0].as_str(),
-                cup
-            );
-            assert_eq!(defs.families[&egui::FontFamily::Monospace][0].as_str(), cup);
+            assert_eq!(fams[&egui::FontFamily::Proportional][0].as_str(), cup);
+            assert_eq!(fams[&egui::FontFamily::Monospace][0].as_str(), cup);
             assert_eq!(METRICS_ORIGIN_SPECS.map(|s| s.1), ["Base", "xH/2", "Cap"]);
             let font_id = egui::FontId::proportional(TEST_ICON_FONT_SIZE_PT);
             let layout_str = |s: String| {
@@ -310,17 +313,16 @@ mod tests {
                     tofu_uv
                 );
             }
-            let all_icons = TOOL_ICON_SPECS
+            for icon in TOOL_ICON_SPECS
                 .iter()
                 .map(|s| s.1)
                 .chain(VIEW_MODE_SPECS.iter().map(|s| s.2))
                 .chain(ORIGIN_ANCHOR_GRID_ROWS.iter().flatten().map(|r| r.1))
                 .chain(egui_macview::MacSymbol::ALL.iter().map(|s| s.as_str()))
-                .chain(ALL_ACTION_ICONS);
-            for icon in all_icons {
+                .chain(ALL_ACTION_ICONS)
+            {
                 let galley = layout_str(icon.to_owned());
-                assert!(galley.size().x > 0.0 && galley.size().y > 0.0);
-                assert_ne!(galley.rows[0].glyphs[0].uv_rect, tofu_uv);
+                assert!(galley.size().x > 0.0 && galley.rows[0].glyphs[0].uv_rect != tofu_uv);
             }
         });
         out.textures_delta.clear();

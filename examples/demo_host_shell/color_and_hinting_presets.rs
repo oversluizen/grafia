@@ -1,12 +1,13 @@
-//! Interactive Multi-Layer Color Gradients, Vertical Stream, `CustomReferenceFrame`, Hinting, and `HOI` Presets.
+//! `SPEC-018 §2` Domain IV (`Variabele Fonts, Masters & Hinting`) & COLRv1 Gradient Presets.
 
-use super::MockFontHost;
+use super::{DemoPreset, MockFontHost};
 use grafia::adapters::{CanvasTool, GrafiaCanvasState};
 use grafia::core::{
     CanvasColorSublayer, ColorLayerPaint, CompanionMasterLayer, CustomReferenceFrame, FontPoint,
     GradientSpread, GradientStop, Node, NodeId, PostScriptHint, PostScriptHintAxis, RectUpm,
     TrueTypeInstructionKind, TrueTypeRoundingGrid, TrueTypeVisualInstruction, WritingDirection,
 };
+use grafia::tokens::GlyphArchetype;
 
 const COLR_SHADOW_DX_UPM: f64 = 18.0;
 const COLR_SHADOW_DY_UPM: f64 = -14.0;
@@ -18,8 +19,8 @@ const COLR_RADIAL_CX_UPM: f64 = 300.0;
 const COLR_RADIAL_CY_UPM: f64 = 360.0;
 const COLR_RADIAL_R0_UPM: f64 = 30.0;
 const COLR_RADIAL_R1_UPM: f64 = 320.0;
-const COLR_SHADOW_OPACITY: f32 = 0.9;
-const COLR_PRIMARY_OPACITY: f32 = 0.85;
+const COLR_SHADOW_OPACITY: f32 = 0.88;
+const COLR_PRIMARY_OPACITY: f32 = 0.84;
 const REF_OUTER_MAX_X_UPM: f64 = 600.0;
 const REF_OUTER_MAX_Y_UPM: f64 = 750.0;
 const REF_INNER_MIN_X_UPM: f64 = 60.0;
@@ -39,13 +40,38 @@ const HOI_SHIFT_M1_DX_UPM: f64 = 22.0;
 const HOI_SHIFT_M1_DY_UPM: f64 = 18.0;
 
 impl MockFontHost {
-    pub fn apply_color_layers_colrv1_preset(&mut self, state: &mut GrafiaCanvasState) {
-        if !state.color_sublayers.is_empty() {
-            state.set_color_sublayers(Vec::new());
-            state.select_color_sublayer(None);
-            self.push_log("Preset: Cleared Color Sublayers");
-            return;
+    pub fn apply_masters_and_hinting_case(
+        &mut self,
+        preset: DemoPreset,
+        state: &mut GrafiaCanvasState,
+    ) {
+        match preset {
+            DemoPreset::MultiMasterCompatAndAutoMatch => self.apply_master_compat_preset(state),
+            DemoPreset::CurvedMasterTrajectories => {
+                self.apply_curved_master_trajectories_case(state);
+            }
+            DemoPreset::HigherOrderInterpolationHoi => {
+                self.ensure_letter_glyph(state, GlyphArchetype::O);
+                Self::populate_demo_hoi_layers(state);
+                state.activate_tool(CanvasTool::Hoi);
+                self.push_log("Case 21: Hogere-Orde Interpolatie (HOI) niet-lineaire diamanten");
+            }
+            DemoPreset::TrueTypeVisualInstructor16Ppem => {
+                self.ensure_letter_glyph(state, GlyphArchetype::A);
+                Self::populate_demo_truetype_instructions(state);
+                state.activate_tool(CanvasTool::TrueTypeInstructor);
+                self.push_log("Case 22: TrueType Visual Instructor & 16 PPEM Pixel-Raster");
+            }
+            DemoPreset::PostScriptStemAndGhostHints => {
+                self.ensure_letter_glyph(state, GlyphArchetype::A);
+                self.apply_postscript_hints_only(state);
+            }
+            _ => self.apply_auto_trace_bg_image_preset(state),
         }
+    }
+
+    pub fn apply_color_layers_colrv1_preset(&mut self, state: &mut GrafiaCanvasState) {
+        self.ensure_letter_glyph(state, GlyphArchetype::O);
         let mut shadow_contours = state.glyph.contours.clone();
         for c in &mut shadow_contours {
             for n in &mut c.nodes {
@@ -64,8 +90,8 @@ impl MockFontHost {
                     c1: FontPoint::new(COLR_RADIAL_CX_UPM, COLR_RADIAL_CY_UPM),
                     r1: COLR_RADIAL_R1_UPM,
                     stops: vec![
-                        GradientStop::new(0.0, [255, 165, 45, 220]),
-                        GradientStop::new(1.0, [195, 40, 135, 190]),
+                        GradientStop::new(0.0, [214, 134, 58, 210]),
+                        GradientStop::new(1.0, [164, 58, 118, 185]),
                     ],
                     spread: GradientSpread::Pad,
                 },
@@ -81,9 +107,9 @@ impl MockFontHost {
                     p0: FontPoint::new(COLR_GRAD_P0_X_UPM, COLR_GRAD_P0_Y_UPM),
                     p1: FontPoint::new(COLR_GRAD_P1_X_UPM, COLR_GRAD_P1_Y_UPM),
                     stops: vec![
-                        GradientStop::new(0.0, [40, 135, 255, 235]),
-                        GradientStop::new(0.5, [95, 225, 185, 235]),
-                        GradientStop::new(1.0, [255, 90, 120, 235]),
+                        GradientStop::new(0.0, [52, 116, 178, 228]),
+                        GradientStop::new(0.5, [64, 152, 138, 228]),
+                        GradientStop::new(1.0, [198, 78, 92, 228]),
                     ],
                     spread: GradientSpread::Pad,
                 },
@@ -95,21 +121,17 @@ impl MockFontHost {
         state.set_color_sublayers(layers);
         state.select_color_sublayer(Some(1));
         state.select_gradient_stop(Some((1, 1)));
-        self.push_log("Preset: Gradients active (Drag gradient endpoints/stops!)");
+        self.push_log("Case 29: COLRv1 Multi-Stop Gradiënten met on-canvas verloop-handles");
     }
 
     pub fn apply_vertical_text_and_ref_frame_preset(&mut self, state: &mut GrafiaCanvasState) {
-        let next_dir = if state.text_stream.writing_direction == WritingDirection::TopToBottom {
-            WritingDirection::LeftToRight
-        } else {
-            WritingDirection::TopToBottom
-        };
+        self.ensure_letter_glyph(state, GlyphArchetype::A);
         self.text_buffer = "AOVA".to_owned();
         let slots = self.build_slots_for_text(&self.text_buffer);
         state.activate_tool(CanvasTool::Text);
         state.set_text_stream_slots_with_caret(slots, 1, 2);
-        state.set_writing_direction(next_dir);
-        let frame = (next_dir == WritingDirection::TopToBottom).then(|| CustomReferenceFrame {
+        state.set_writing_direction(WritingDirection::TopToBottom);
+        state.set_custom_reference_frame(Some(CustomReferenceFrame {
             outer_box: Some(RectUpm::new(
                 0.0,
                 0.0,
@@ -126,15 +148,15 @@ impl MockFontHost {
             center_crosshair: true,
             keyline_circles_radii_upm: vec![REF_KEYLINE_R1_UPM, REF_KEYLINE_R2_UPM],
             parallel_lines: Vec::new(),
-        });
-        state.set_custom_reference_frame(frame);
-        self.push_log(format!(
-            "Preset: WritingDirection={next_dir:?} + CustomReferenceFrame={}",
-            state.custom_reference_frame.is_some()
-        ));
+            ..Default::default()
+        }));
+        self.fit_canvas_viewport(state);
+        self.push_log(
+            "Case 04: Verticale CJK Tekststroom (Top-to-Bottom) & 3×3 Ideografisch Kader",
+        );
     }
 
-    pub fn apply_hinting_pixel_preview_and_hoi_preset(&mut self, state: &mut GrafiaCanvasState) {
+    fn apply_postscript_hints_only(&mut self, state: &mut GrafiaCanvasState) {
         state.set_postscript_hints(vec![
             PostScriptHint {
                 id: 1,
@@ -159,19 +181,10 @@ impl MockFontHost {
                 selected: false,
             },
         ]);
-        Self::populate_demo_truetype_instructions_and_hoi(state);
-        let next_tool = if state.active_tool == CanvasTool::TrueTypeInstructor {
-            CanvasTool::Hoi
-        } else {
-            CanvasTool::TrueTypeInstructor
-        };
-        state.activate_tool(next_tool);
-        self.push_log(format!(
-            "Preset: PS/TT Hints + 16 PPEM Grid + HOI Diamonds (Tool={next_tool:?})"
-        ));
+        self.push_log("Case 23: PostScript Horizontale Stam-Hint (68 UPM) & Top Ghost-Hint (700)");
     }
 
-    fn populate_demo_truetype_instructions_and_hoi(state: &mut GrafiaCanvasState) {
+    fn populate_demo_truetype_instructions(state: &mut GrafiaCanvasState) {
         let all_ids: Vec<NodeId> = state
             .contours
             .iter()
@@ -210,6 +223,9 @@ impl MockFontHost {
         }
         state.set_truetype_instructor_ppem(DEMO_TT_PPEM);
         state.set_pixel_preview_ppem(Some(DEMO_TT_PPEM));
+    }
+
+    fn populate_demo_hoi_layers(state: &mut GrafiaCanvasState) {
         let shift = |dx: f64, dy: f64| -> Vec<Vec<Node>> {
             let mut copy = state.contours.clone();
             for c in &mut copy {
@@ -225,7 +241,7 @@ impl MockFontHost {
             CompanionMasterLayer {
                 id: 1,
                 name: "M0".into(),
-                color_rgba: [65, 145, 235, 190],
+                color_rgba: [52, 116, 178, 190],
                 contours: shift(HOI_SHIFT_M0_DX_UPM, HOI_SHIFT_M0_DY_UPM),
                 closed_flags: flags.clone(),
                 anchors: Vec::new(),
@@ -234,7 +250,7 @@ impl MockFontHost {
             CompanionMasterLayer {
                 id: 2,
                 name: "M1".into(),
-                color_rgba: [85, 205, 145, 190],
+                color_rgba: [64, 152, 138, 190],
                 contours: shift(HOI_SHIFT_M1_DX_UPM, HOI_SHIFT_M1_DY_UPM),
                 closed_flags: flags,
                 anchors: Vec::new(),

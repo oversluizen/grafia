@@ -5,7 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
-  <title>Grafia v0.12.0 — Interactive Vector &amp; Glyph Canvas Demo (WASM)</title>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>Grafia v0.15.0 — Interactive Vector &amp; Icon Studio Demo (WASM)</title>
   <style>
     html, body {
       margin: 0;
@@ -80,20 +83,82 @@
   <canvas id="grafia_canvas"></canvas>
   <div id="loading_overlay">
     <div class="spinner"></div>
-    <div>Loading Grafia v0.12.0 Vector Canvas WASM…</div>
+    <div>Loading Grafia v0.15.0 Vector &amp; Icon Studio WASM…</div>
   </div>
   <div id="error_banner"></div>
   <script type="module">
-    import init from './vector_canvas_demo.js';
+    import init from './vector_canvas_demo.js?v=20261125_2318';
+
+    // Tablet Touch & Stylus Bridge for eframe-0.37:
+    // 1. eframe-0.37's touchstart/touchmove/touchend listeners already emit PointerButton + PointerMoved + Touch.
+    //    Suppressing redundant pointerdown/pointerup for pointerType === 'touch' prevents double-PointerButton
+    //    presses from triggering accidental double-clicks when touching a handle.
+    // 2. eframe-0.37 installs mousemove/pointerdown/pointerup but has NO pointermove or pointercancel listener.
+    //    Forwarding stylus (pointerType === 'pen') pointermove -> document mousemove and pointercancel -> pointerup
+    //    enables smooth 120Hz/240Hz stylus handle dragging across iPadOS, Android, and Windows tablets.
+    const hasTouchEvents = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+    window.addEventListener('pointerdown', (ev) => {
+      if (hasTouchEvents && ev.pointerType === 'touch') {
+        ev.stopImmediatePropagation();
+      }
+    }, { capture: true });
+    window.addEventListener('pointerup', (ev) => {
+      if (hasTouchEvents && ev.pointerType === 'touch') {
+        ev.stopImmediatePropagation();
+      }
+    }, { capture: true });
+    window.addEventListener('pointermove', (ev) => {
+      if (ev.pointerType === 'pen') {
+        document.dispatchEvent(new MouseEvent('mousemove', {
+          clientX: ev.clientX,
+          clientY: ev.clientY,
+          screenX: ev.screenX,
+          screenY: ev.screenY,
+          button: ev.button,
+          buttons: ev.buttons,
+          ctrlKey: ev.ctrlKey,
+          shiftKey: ev.shiftKey,
+          altKey: ev.altKey,
+          metaKey: ev.metaKey,
+          bubbles: true,
+          cancelable: true,
+        }));
+      }
+    }, { passive: true });
+    window.addEventListener('pointercancel', (ev) => {
+      if (ev.pointerType === 'pen') {
+        document.dispatchEvent(new PointerEvent('pointerup', {
+          clientX: ev.clientX,
+          clientY: ev.clientY,
+          pointerId: ev.pointerId,
+          pointerType: 'pen',
+          button: 0,
+          buttons: 0,
+          bubbles: true,
+          cancelable: true,
+        }));
+      }
+    }, { passive: true });
 
     const loadingEl = document.getElementById('loading_overlay');
     const errorEl = document.getElementById('error_banner');
+    let lastRustPanicMsg = null;
+
+    const origConsoleError = console.error.bind(console);
+    console.error = (...args) => {
+      origConsoleError(...args);
+      const joined = args.map((a) => String(a)).join(' ');
+      if (joined.includes('panicked at')) {
+        lastRustPanicMsg = joined.split('\n')[0];
+      }
+    };
 
     function showError(msg) {
       if (loadingEl) loadingEl.style.display = 'none';
       if (errorEl) {
         errorEl.style.display = 'block';
-        errorEl.textContent = 'Grafia WASM initialization error: ' + msg;
+        const detail = lastRustPanicMsg ? `${msg} (${lastRustPanicMsg})` : msg;
+        errorEl.textContent = 'Grafia WASM initialization error: ' + detail;
       }
     }
 
@@ -109,7 +174,7 @@
     if (!gl2) {
       showError('WebGL2 / WebGL is not available in this browser.');
     } else {
-      init({ module_or_path: './vector_canvas_demo_bg.wasm' })
+      init({ module_or_path: './vector_canvas_demo_bg.wasm?v=20261125_2318' })
         .then(() => {
           if (loadingEl) {
             loadingEl.style.opacity = '0';

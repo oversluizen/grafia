@@ -1,18 +1,18 @@
-//! Top Toolbar and Left Shapes/Transform Sidebar Panels for `vector_canvas_demo`.
+//! Left Studio Navigator (`36-Case 6×6 Matrix`), `ShapeLocatorWidget`, Transform & Path Operations Sidebar Panel (`SPEC-018 §1.2`).
 
-use super::super::VIEW_MODE_SPECS;
+pub use super::sonoma_top_bar::render_top_toolbar;
+
 use super::toolbar_specs::{
-    fit_demo_canvas_viewport, DEMO_GUIDE_X_UPM, DEMO_GUIDE_Y_UPM, DEMO_ROTATE_STEP_DEG,
-    DEMO_SCALE_UP_FACTOR, DEMO_SLANT_STEP_DEG, GRID_SPACING_DP, MAX_VIEWPORT_ZOOM,
-    METRICS_ORIGIN_SPECS, MIN_VIEWPORT_ZOOM, ORIGIN_ANCHOR_GRID_ROWS, SIDEBAR_TOP_SPACE_DP,
-    TOOL_ICON_SPECS, ZOOM_IN_FACTOR, ZOOM_OUT_FACTOR, ZOOM_PERCENT_BASE,
+    DEMO_GUIDE_X_UPM, DEMO_GUIDE_Y_UPM, DEMO_ROTATE_STEP_DEG, DEMO_SCALE_UP_FACTOR,
+    DEMO_SLANT_STEP_DEG, GRID_SPACING_DP, METRICS_ORIGIN_SPECS, ORIGIN_ANCHOR_GRID_ROWS,
+    SIDEBAR_TOP_SPACE_DP,
 };
-use super::{DemoPreset, MockFontHost};
-use egui::{Grid, Separator, Ui};
+use super::MockFontHost;
+use egui::{Grid, ScrollArea, Separator, Ui};
 use egui_macview::MacSymbol;
 use grafia::adapters::GrafiaCanvasState;
 use grafia::core::{FontPoint, ShapeBooleanRole, TransformGridAnchor, TransformOriginSpec};
-use grafia::tokens::{GlyphArchetype, GrafiaTheme};
+use grafia::tokens::GrafiaTheme;
 
 fn tip_btn(ui: &mut Ui, icon: &str, tip: &str) -> bool {
     ui.button(icon).on_hover_text(tip).clicked()
@@ -24,107 +24,20 @@ fn tip_toggle(ui: &mut Ui, active: bool, icon: &str, tip: &str) -> bool {
         .clicked()
 }
 
-pub fn render_top_toolbar(
+pub fn render_left_studio_sidebar(
     ui: &mut Ui,
+    host: &mut MockFontHost,
     state: &mut GrafiaCanvasState,
     theme: &mut GrafiaTheme,
-    host: &mut MockFontHost,
-    show_preview_panel: &mut bool,
 ) {
-    ui.horizontal_wrapped(|ui| {
-        ui.heading("grafia");
-        ui.add(Separator::default().vertical());
-        for (mode, _, icon, tip) in VIEW_MODE_SPECS {
-            if tip_toggle(ui, state.view_mode == mode, icon, tip) {
-                state.view_mode = mode;
-            }
-        }
-        ui.add(Separator::default().vertical());
-        for (tool, icon, tip) in TOOL_ICON_SPECS {
-            if tip_toggle(ui, state.active_tool == tool, icon, tip) {
-                state.activate_tool(tool);
-            }
-        }
-        ui.add(Separator::default().vertical());
-        if tip_toggle(
-            ui,
-            state.show_bounding_box,
-            "\u{f618}",
-            "Toggle Selection Bounding Box — 8-knob scale, rotate & slant frame",
-        ) {
-            state.show_bounding_box = !state.show_bounding_box;
-        }
-        if tip_toggle(
-            ui,
-            state.show_text_measurement_line,
-            "\u{f7ca}",
-            "Toggle Text-Mode Horizontal Scanline",
-        ) {
-            state.show_text_measurement_line = !state.show_text_measurement_line;
-        }
-        if tip_toggle(
-            ui,
-            !state.text_stream.slots.is_empty(),
-            "AOVA",
-            "Load Multi-Glyph Horizontal Text Strip & Kerning",
-        ) {
-            host.apply_preset(DemoPreset::TextStreamAova, state, theme);
-        }
-        if tip_toggle(
-            ui,
-            *show_preview_panel,
-            MacSymbol::SidebarLeading.as_str(),
-            "Toggle Bottom Live Preview Panel",
-        ) {
-            *show_preview_panel = !*show_preview_panel;
-        }
-        render_top_toolbar_zoom_and_history(ui, state);
-    });
-}
-
-fn render_top_toolbar_zoom_and_history(ui: &mut Ui, state: &mut GrafiaCanvasState) {
-    ui.add(Separator::default().vertical());
-    if tip_btn(ui, MacSymbol::Minus.as_str(), "Zoom Out [Cmd+-]") {
-        state.viewport.zoom = (state.viewport.zoom * ZOOM_OUT_FACTOR).max(MIN_VIEWPORT_ZOOM);
-    }
-    ui.label(format!("{:.0}%", state.viewport.zoom * ZOOM_PERCENT_BASE));
-    if tip_btn(ui, MacSymbol::Plus.as_str(), "Zoom In [Cmd+=]") {
-        state.viewport.zoom = (state.viewport.zoom * ZOOM_IN_FACTOR).min(MAX_VIEWPORT_ZOOM);
-    }
-    if tip_btn(ui, "\u{f37d}", "Fit Glyph in Viewport [Cmd+0]") {
-        fit_demo_canvas_viewport(state);
-    }
-    ui.add(Separator::default().vertical());
-    for arch in GlyphArchetype::all() {
-        let lbl = arch.button_label();
-        if tip_toggle(ui, state.active_archetype == arch, lbl, lbl) {
-            state.load_glyph_archetype(arch);
-            fit_demo_canvas_viewport(state);
-        }
-    }
-    ui.add(Separator::default().vertical());
-    if ui
-        .add_enabled(state.history.can_undo(), egui::Button::new("\u{f544}"))
-        .on_hover_text("Undo [Cmd+Z]")
-        .clicked()
-    {
-        state.undo();
-    }
-    if ui
-        .add_enabled(state.history.can_redo(), egui::Button::new("\u{f549}"))
-        .on_hover_text("Redo [Cmd+Shift+Z]")
-        .clicked()
-    {
-        state.redo();
-    }
-    if tip_btn(
-        ui,
-        MacSymbol::ArrowCounterClockwise.as_str(),
-        "Reset Canvas to Golden Master /A",
-    ) {
-        *state = GrafiaCanvasState::init_glyph_a();
-        fit_demo_canvas_viewport(state);
-    }
+    ScrollArea::vertical()
+        .id_salt("left_studio_sidebar_scroll")
+        .show(ui, |ui| {
+            ui.add_space(SIDEBAR_TOP_SPACE_DP);
+            host.render_keynote_36_case_navigator(ui, state, theme);
+            ui.add(Separator::default().horizontal());
+            render_left_sidebar(ui, state);
+        });
 }
 
 pub fn render_left_sidebar(ui: &mut Ui, state: &mut GrafiaCanvasState) {

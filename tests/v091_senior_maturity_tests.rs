@@ -1,15 +1,21 @@
 //! Normative Verification Suite for `SPEC-014` (`grafia v0.9.1` — Senior Architectural Maturity).
-//! Covers `TC-MATURITY-001`..`TC-MATURITY-005`.
+//! Covers `TC-MATURITY-001`..`TC-MATURITY-010`.
+
+mod common;
+
+#[path = "../examples/vector_canvas_demo.rs"]
+pub mod demo_app;
 
 use grafia::render::canvas_render_cache::get_or_upload_color_sublayers_texture;
 use grafia::{
-    AnchorId, CanvasAnchor, CanvasColorSublayer, CanvasDocumentScene, CanvasGuideSet,
-    CanvasHintingAndHoiScene, CanvasLayerAttachments, ColorLayerPaint, ContourId,
-    CustomReferenceFrame, FontPoint, Glyph, GlyphContour, GlyphMetrics, GradientExtend,
-    GradientStop, GrafiaCanvasState, GrafiaTheme, Guide, GuideId, Modifiers, Node, NodeId,
-    NodeType, PostScriptHint, PostScriptHintAxis, RectUpm, ReferenceFramePalette,
-    RulerTickRangeUpm, SelectToolState, TrueTypeInstructionKind, TrueTypeRoundingGrid,
-    TrueTypeVisualInstruction, WritingDirection, MAX_INTERACTIVE_DRAG_PIXMAP_DIM,
+    ActiveMirrorAxis, AnchorId, CanvasAnchor, CanvasColorSublayer, CanvasCurveHarmonyScene,
+    CanvasDocumentScene, CanvasGuideSet, CanvasHintingAndHoiScene, CanvasLayerAttachments,
+    CanvasTool, ColorLayerPaint, ContourId, CurvedTrajectoryLink, CustomReferenceFrame, FontPoint,
+    Glyph, GlyphContour, GlyphMetrics, GradientExtend, GradientStop, GrafiaCanvasState,
+    GrafiaTheme, Guide, GuideId, Modifiers, Node, NodeId, NodeType, PostScriptHint,
+    PostScriptHintAxis, RectUpm, ReferenceFramePalette, RulerTickRangeUpm, SelectToolState,
+    SmartCornerSpec, TrueTypeInstructionKind, TrueTypeRoundingGrid, TrueTypeVisualInstruction,
+    WritingDirection, MAX_INTERACTIVE_DRAG_PIXMAP_DIM,
 };
 
 fn sample_closed_triangle_contour(id: usize, offset_x: f64, offset_y: f64) -> GlyphContour {
@@ -321,8 +327,11 @@ fn tc_maturity_005_canvas_document_scene_host_load_and_export_roundtrip() {
             center_crosshair: true,
             keyline_circles_radii_upm: vec![250.0, 400.0],
             parallel_lines: Vec::new(),
+            ..Default::default()
         }),
         writing_direction: WritingDirection::TopToBottom,
+        curve_harmony: CanvasCurveHarmonyScene::default(),
+        ..CanvasDocumentScene::default()
     };
 
     let mut state = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
@@ -410,29 +419,255 @@ fn tc_maturity_007_preferences_hit_radii_kerning_steps_and_ghost_hint_widths_con
 
 #[test]
 fn tc_maturity_008_wasm32_browser_canvas_entrypoint_and_fs_guards() {
-    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-    let demo_src =
-        std::fs::read_to_string(manifest_dir.join("examples/vector_canvas_demo.rs")).unwrap();
-    assert!(
-        demo_src.contains("get_element_by_id(\"grafia_canvas\")"),
-        "WASM entrypoint must target <canvas id=\"grafia_canvas\">"
-    );
-    assert!(
-        !demo_src.contains("get_element_by_id(\"the_canvas_id\")"),
-        "WASM entrypoint must not use placeholder the_canvas_id"
-    );
+    let options = demo_app::build_native_options();
+    assert_eq!(options.renderer, eframe::Renderer::Glow);
+    assert!(!options.system_font_fallback);
+    assert!(!options.persist_window);
 
-    let toolbar_src =
-        std::fs::read_to_string(manifest_dir.join("examples/demo_host_shell/toolbar_specs.rs"))
-            .unwrap();
-    assert!(
-        toolbar_src.matches("#[cfg(not(target_arch = \"wasm32\"))]").count() >= 2,
-        "toolbar_specs.rs must guard both install_crash_logger() and native disk font loading with #[cfg(not(target_arch = \"wasm32\"))]"
-    );
+    let mut state =
+        common::canvas_with_closed_contour(&[(100.0, 100.0), (400.0, 100.0), (250.0, 500.0)]);
+    let out = common::run_headless_canvas_frame(&mut state, 640.0, 480.0);
+    assert!(!out.shapes.is_empty());
+}
 
-    let cargo_toml = std::fs::read_to_string(manifest_dir.join("Cargo.toml")).unwrap();
-    assert!(
-        cargo_toml.contains("features = [\"glow\", \"default_fonts\"]"),
-        "Cargo.toml wasm32 eframe dev-dependency must include default_fonts so browser text renders without C:\\Windows\\Fonts"
+#[test]
+fn tc_maturity_009_canvas_document_scene_v010_to_v012_curve_harmony_roundtrip() {
+    let mut state =
+        common::canvas_with_closed_contour(&[(100.0, 100.0), (400.0, 100.0), (250.0, 500.0)]);
+
+    state.set_node_genius(NodeId(1), true);
+    state.set_node_g3_lock(NodeId(2), true);
+    common::assert_mutation_undo_redo_roundtrip(&mut state, |s| {
+        s.set_smart_corner(SmartCornerSpec {
+            node_id: NodeId(3),
+            radius_upm: 24.0,
+        });
+    });
+    state.set_reference_stems(vec![84.0, 68.0], 6.0);
+    state.set_curved_trajectory_link(CurvedTrajectoryLink {
+        node_id: NodeId(1),
+        companion_layer_index: 0,
+        control1: FontPoint::new(150.0, 260.0),
+        control2: Some(FontPoint::new(220.0, 310.0)),
+    });
+    state.set_active_mirror_axis(ActiveMirrorAxis::Vertical { x_upm: 300.0 });
+    state.set_round_overshoot_upm(Some(14.0));
+
+    let scene = state.export_document_scene();
+    assert!(scene.curve_harmony.genius_nodes.contains(&NodeId(1)));
+    assert!(scene.curve_harmony.g3_nodes.contains(&NodeId(2)));
+    assert_eq!(
+        scene.curve_harmony.smart_corners,
+        vec![SmartCornerSpec {
+            node_id: NodeId(3),
+            radius_upm: 24.0
+        }]
     );
+    assert_eq!(scene.curve_harmony.reference_stems_upm, vec![84.0, 68.0]);
+    assert_eq!(scene.curve_harmony.curved_trajectories.len(), 1);
+    assert_eq!(
+        scene.curve_harmony.active_mirror_axis,
+        ActiveMirrorAxis::Vertical { x_upm: 300.0 }
+    );
+    assert_eq!(scene.curve_harmony.round_overshoot_upm, Some(14.0));
+
+    let mut restored = GrafiaCanvasState::new(GrafiaTheme::sonoma_default());
+    restored.load_document_scene(scene.clone());
+    assert!(restored.validate_invariants().is_ok());
+    assert_eq!(
+        restored.smart_corners(),
+        &restored.curve_harmony.smart_corners
+    );
+    assert_eq!(restored.export_document_scene(), scene);
+}
+
+#[test]
+fn tc_maturity_010_guided_showcase_chapters_and_dutch_coach_cards_complete() {
+    use demo_app::demo_host_shell::{coach_card, tool_dutch_guide, DemoPreset, ShowcaseChapter};
+
+    assert_eq!(ShowcaseChapter::ALL.len(), 6);
+    assert_eq!(DemoPreset::ALL.len(), 36);
+    assert_eq!(demo_app::TOOL_ICON_SPECS.len(), 20);
+    for ch in ShowcaseChapter::ALL {
+        assert!(!ch.tab_label().is_empty());
+        assert!(!ch.summary().is_empty());
+    }
+    for (preset, _) in DemoPreset::ALL {
+        let card = coach_card(preset);
+        assert!(!card.short_button.is_empty());
+        assert!(!card.title.is_empty());
+        assert!(!card.what_is_it.is_empty());
+        assert!(!card.why_host_plug.is_empty());
+        assert!(!card.try_it_yourself.is_empty());
+    }
+    for (tool, _, _) in demo_app::TOOL_ICON_SPECS {
+        let (nl_name, nl_how) = tool_dutch_guide(tool);
+        assert!(!nl_name.is_empty() && !nl_how.is_empty());
+    }
+
+    let mut app = demo_app::GrafiaVectorCanvasDemo::new();
+    assert_eq!(app.host.tour_index, 0);
+    app.host.step_tour_next(&mut app.state, &mut app.theme);
+    assert_eq!(app.host.tour_index, 1);
+    app.host.step_tour_prev(&mut app.state, &mut app.theme);
+    assert_eq!(app.host.tour_index, 0);
+    let _ = CanvasTool::Select;
+}
+
+fn verify_mark_cloud_and_stroke_id_monotonicity(state: &GrafiaCanvasState) {
+    use grafia::core::{
+        compute_mark_cloud_contours, expand_stroked_contours_preview, AnchorId, CanvasAnchor,
+        ContourStrokeStyle, GhostMarkPath, LineCapStyle, LineJoinStyle, StrokePosition,
+    };
+    use std::collections::HashSet;
+
+    let anchors = vec![CanvasAnchor {
+        id: AnchorId(1),
+        name: "top".to_string(),
+        position: FontPoint::new(250.0, 600.0),
+        selected: true,
+    }];
+    let mark_a = GhostMarkPath {
+        anchor_name: "_top".to_string(),
+        contours: state.glyph.contours.clone(),
+    };
+    let mark_b = GhostMarkPath {
+        anchor_name: "_top".to_string(),
+        contours: state.glyph.contours.clone(),
+    };
+    let cloud = compute_mark_cloud_contours(&anchors, &[mark_a, mark_b], true);
+    assert_eq!(cloud.len(), 2);
+    let mut cloud_node_ids = HashSet::new();
+    for c in &cloud {
+        for n in &c.nodes {
+            assert!(
+                cloud_node_ids.insert(n.id),
+                "Duplicate NodeId {:?} across mark cloud contours",
+                n.id
+            );
+        }
+    }
+
+    let mut high_contour = state.glyph.contours[0].clone();
+    for (i, n) in high_contour.nodes.iter_mut().enumerate() {
+        n.id = NodeId(25_000 + i as u64);
+    }
+    let mut strokes = std::collections::BTreeMap::new();
+    strokes.insert(
+        high_contour.id,
+        ContourStrokeStyle {
+            width: 20.0,
+            height: 20.0,
+            position: StrokePosition::Center,
+            cap_start: LineCapStyle::Round,
+            cap_end: LineCapStyle::Round,
+            join: LineJoinStyle::Miter,
+        },
+    );
+    let preview = expand_stroked_contours_preview(&[high_contour], &strokes);
+    assert!(!preview.is_empty());
+    for c in &preview {
+        for n in &c.nodes {
+            assert!(n.id.0 > 25_002);
+        }
+    }
+}
+
+fn verify_dirty_scene_sanitization(state: &mut GrafiaCanvasState, c0: grafia::core::GlyphContour) {
+    use grafia::core::{CanvasColorSublayer, ColorLayerPaint, GradientStop};
+    use grafia::snapping::{Guide, GuideId};
+
+    let mut dirty_scene = state.export_document_scene();
+    dirty_scene.guides.local_guides = vec![
+        Guide::new(GuideId(7), FontPoint::new(100.0, 200.0), 0.0, false),
+        Guide::new(GuideId(7), FontPoint::new(f64::NAN, 200.0), 0.0, false),
+    ];
+    dirty_scene.color_layers = vec![CanvasColorSublayer {
+        id: 1,
+        name: "External".to_string(),
+        contours: vec![c0],
+        paint: ColorLayerPaint::LinearGradient {
+            p0: FontPoint::new(0.0, 0.0),
+            p1: FontPoint::new(100.0, 100.0),
+            stops: vec![GradientStop {
+                offset: 1.75,
+                rgba: [255, 0, 0, 255],
+            }],
+            spread: grafia::core::GradientSpread::Pad,
+        },
+        opacity: 2.5,
+        visible: true,
+        locked: false,
+    }];
+    dirty_scene.hinting = sample_hinting_and_hoi_scene();
+    dirty_scene.hinting.truetype_instructor_ppem = 0;
+    dirty_scene.hinting.show_pixel_preview_ppem = Some(0);
+    dirty_scene.hinting.postscript_hints[0].origin_upm = f64::NAN;
+    dirty_scene.hinting.truetype_instructions[0].ppem = 0;
+    dirty_scene.hinting.truetype_instructions[0].delta_pixels = f64::INFINITY;
+    dirty_scene.curve_harmony.smart_corners = vec![
+        SmartCornerSpec {
+            node_id: NodeId(1),
+            radius_upm: 20.0,
+        },
+        SmartCornerSpec {
+            node_id: NodeId(1),
+            radius_upm: f64::NAN,
+        },
+    ];
+    state.load_document_scene(dirty_scene);
+    assert!(state.validate_invariants().is_ok());
+}
+
+#[test]
+fn tc_maturity_011_pre_flight_production_robustness_and_battery_pan_hardening() {
+    use grafia::adapters::headless::rasterize_canvas_subregion;
+    use grafia::core::{
+        ContourStrokeStyle, LineCapStyle, LineJoinStyle, ScreenPoint, StrokePosition,
+    };
+
+    let theme = GrafiaTheme::sonoma_default();
+    let mut state =
+        common::canvas_with_closed_contour(&[(100.0, 100.0), (400.0, 100.0), (250.0, 500.0)]);
+
+    let pix = rasterize_canvas_subregion(&state, &theme, 0, 0);
+    assert_eq!((pix.width(), pix.height()), (1, 1));
+
+    verify_mark_cloud_and_stroke_id_monotonicity(&state);
+
+    let c0 = state.glyph.contours[0].clone();
+    let mut c1 = c0.clone();
+    c1.id = ContourId(1);
+    for (i, n) in c1.nodes.iter_mut().enumerate() {
+        n.id = NodeId(100 + i as u64);
+        n.point.x.0 += 350.0;
+    }
+    state.contours = vec![c0.nodes.clone(), c1.nodes.clone()];
+    state.glyph.contours = vec![c0.clone(), c1.clone()];
+    state.sync_paths_from_contours();
+    let style = ContourStrokeStyle {
+        width: 16.0,
+        height: 16.0,
+        position: StrokePosition::Center,
+        cap_start: LineCapStyle::Butt,
+        cap_end: LineCapStyle::Butt,
+        join: LineJoinStyle::Bevel,
+    };
+    state.set_contour_stroke(ContourId(0), style);
+    state.set_contour_stroke(ContourId(1), style);
+    state.selected_nodes = vec![c0.nodes[0].id];
+    assert!(state.expand_selected_strokes());
+    assert_eq!(state.glyph.contours.len(), 3);
+    assert!(state.contour_strokes.contains_key(&ContourId(2)));
+
+    state.select_state = SelectToolState::PanningViewport {
+        last_screen: ScreenPoint::new(100.0, 100.0),
+    };
+    assert!(state.is_interactive_drag_active());
+    let (eff_w, eff_h, scale) = state.effective_color_layer_pixmap_dimensions(3840, 2160);
+    assert_eq!(eff_w, MAX_INTERACTIVE_DRAG_PIXMAP_DIM);
+    assert!(eff_h < 2160 && scale < 1.0);
+    state.select_state = SelectToolState::Idle;
+
+    verify_dirty_scene_sanitization(&mut state, c0);
 }

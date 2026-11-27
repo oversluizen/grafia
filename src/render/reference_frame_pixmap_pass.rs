@@ -86,6 +86,41 @@ pub fn paint_custom_reference_frame_pixmap_pass(
     }
 
     paint_frame_boxes_and_circles_ts(pixmap, frame, state.glyph.width, &vp, stroke_w, palette);
+    paint_icon_optical_balance_ts(pixmap, frame, state, &vp, stroke_w, palette);
+}
+
+fn paint_icon_optical_balance_ts(
+    pixmap: &mut Pixmap,
+    frame: &crate::core::CustomReferenceFrame,
+    state: &GrafiaCanvasState,
+    vp: &crate::core::ViewportTransform,
+    stroke_w: f32,
+    palette: ReferenceFramePalette,
+) {
+    if !frame.show_diagonals {
+        return;
+    }
+    if let Some(rep) = state.compute_active_icon_optical_balance() {
+        let b_scr = vp.to_screen(rep.bbox_center_upm);
+        let o_scr = vp.to_screen(rep.optical_centroid_upm);
+        let half = ref_frame_crosshair_half_dp();
+        ts_stroke_line(pixmap, b_scr, o_scr, palette.keyline, stroke_w);
+        ts_stroke_circle(pixmap, o_scr, half, palette.keyline, stroke_w);
+        ts_stroke_line(
+            pixmap,
+            ScreenPoint::new(o_scr.x.0 - half, o_scr.y.0),
+            ScreenPoint::new(o_scr.x.0 + half, o_scr.y.0),
+            palette.keyline,
+            stroke_w,
+        );
+        ts_stroke_line(
+            pixmap,
+            ScreenPoint::new(o_scr.x.0, o_scr.y.0 - half),
+            ScreenPoint::new(o_scr.x.0, o_scr.y.0 + half),
+            palette.keyline,
+            stroke_w,
+        );
+    }
 }
 
 fn paint_frame_boxes_and_circles_ts(
@@ -114,6 +149,20 @@ fn paint_frame_boxes_and_circles_ts(
             outer_col,
             stroke_w,
         );
+        if frame.show_diagonals {
+            for (a, b) in [
+                (
+                    ScreenPoint::new(r.left(), r.top()),
+                    ScreenPoint::new(r.right(), r.bottom()),
+                ),
+                (
+                    ScreenPoint::new(r.right(), r.top()),
+                    ScreenPoint::new(r.left(), r.bottom()),
+                ),
+            ] {
+                ts_stroke_dashed_line(pixmap, a, b, subdiv_col, stroke_w, dash_dp, gap_dp);
+            }
+        }
     }
     if let Some(inner) = frame.inner_box {
         let r = project_rect_upm_to_screen(inner, vp);
@@ -127,6 +176,18 @@ fn paint_frame_boxes_and_circles_ts(
             stroke_w,
         );
     }
+    for kr in &frame.keyline_rects {
+        let r = project_rect_upm_to_screen(*kr, vp);
+        ts_stroke_rect(
+            pixmap,
+            r.left(),
+            r.top(),
+            r.right(),
+            r.bottom(),
+            keyline_col,
+            stroke_w,
+        );
+    }
     if let Some((nx, ny)) = frame.inner_grid_subdivisions {
         if let Some(target_box) = frame.inner_box.or(frame.outer_box) {
             for (a, b) in project_subdivision_segments_screen(target_box, nx, ny, vp) {
@@ -134,8 +195,19 @@ fn paint_frame_boxes_and_circles_ts(
             }
         }
     }
+    paint_frame_circles_and_crosshair_ts(pixmap, frame, default_width_upm, vp, stroke_w, palette);
+}
+
+fn paint_frame_circles_and_crosshair_ts(
+    pixmap: &mut Pixmap,
+    frame: &crate::core::CustomReferenceFrame,
+    default_width_upm: f64,
+    vp: &crate::core::ViewportTransform,
+    stroke_w: f32,
+    palette: ReferenceFramePalette,
+) {
     for (center_scr, radius_px) in project_keyline_circles_screen(frame, default_width_upm, vp) {
-        ts_stroke_circle(pixmap, center_scr, radius_px, keyline_col, stroke_w);
+        ts_stroke_circle(pixmap, center_scr, radius_px, palette.keyline, stroke_w);
     }
     if frame.center_crosshair {
         let c = vp.to_screen(reference_frame_center_upm(frame, default_width_upm));
@@ -144,14 +216,14 @@ fn paint_frame_boxes_and_circles_ts(
             pixmap,
             ScreenPoint::new(c.x.0 - half, c.y.0),
             ScreenPoint::new(c.x.0 + half, c.y.0),
-            inner_col,
+            palette.inner,
             stroke_w,
         );
         ts_stroke_line(
             pixmap,
             ScreenPoint::new(c.x.0, c.y.0 - half),
             ScreenPoint::new(c.x.0, c.y.0 + half),
-            inner_col,
+            palette.inner,
             stroke_w,
         );
     }

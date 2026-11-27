@@ -34,6 +34,14 @@ pub const DEMO_SCALE_UP_FACTOR: f64 = 1.1;
 pub const DEMO_SLANT_STEP_DEG: f64 = 12.0;
 pub const DEMO_GUIDE_X_UPM: f64 = 300.0;
 pub const DEMO_GUIDE_Y_UPM: f64 = 250.0;
+pub const EVENT_LOG_MAX_HEIGHT_DP: f32 = 110.0;
+pub const PREVIEW_STRIP_MIN_WIDTH_DP: f32 = 64.0;
+pub const PREVIEW_STRIP_MAX_WIDTH_DP: f32 = 2048.0;
+pub const MOBILE_RESPONSIVE_BREAKPOINT_WIDTH_DP: f32 = 900.0;
+pub const MIN_FIT_CANVAS_DIM_DP: f32 = 64.0;
+pub const CANVAS_RESIZE_EPSILON_SQ_DP: f32 = 16.0;
+pub const PRESETS_MENU_MAX_HEIGHT_DP: f32 = 320.0;
+pub const TOUCH_LOUPE_FINGER_OFFSET_DP: f32 = 44.0;
 pub const APP_TITLE: &str = "Grafia Vector Canvas — Host-Port (Stekkers) Testbank";
 
 /// Installs a deterministic panic hook writing `grafia_canvas_crash.log` beside the executable.
@@ -87,8 +95,8 @@ pub const METRICS_ORIGIN_SPECS: [(MetricsOrigin, &str, &str); 3] = [
     ),
 ];
 
-/// Tool icon and tooltip table covering all 19 `CanvasTool` variants.
-pub const TOOL_ICON_SPECS: [(CanvasTool, &str, &str); 19] = [
+/// Tool icon and tooltip table covering all 20 `CanvasTool` variants.
+pub const TOOL_ICON_SPECS: [(CanvasTool, &str, &str); 20] = [
     (
         CanvasTool::Select,
         "\u{f61e}",
@@ -183,6 +191,11 @@ pub const TOOL_ICON_SPECS: [(CanvasTool, &str, &str); 19] = [
         CanvasTool::Cleaner,
         "\u{f80a}",
         "Cleaner Brush Tool — Drag circular brush to excise micro-loops, spikes & duplicate nodes",
+    ),
+    (
+        CanvasTool::ShapeBuilder,
+        "\u{f618}",
+        "Shape Builder Tool — Drag across planar regions to merge (Alt: erase region)",
     ),
 ];
 

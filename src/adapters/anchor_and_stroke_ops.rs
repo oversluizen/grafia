@@ -152,13 +152,17 @@ impl GrafiaCanvasState {
         };
         let dx = target_pt.x.0 - lead_pos.x.0;
         let dy = target_pt.y.0 - lead_pos.y.0;
-        let before = self.snapshot();
+        let record_now = !self.drag_transients.active_anchor_drag;
+        let before = record_now.then(|| self.snapshot());
         for a in self.anchors.iter_mut().filter(|a| a.selected) {
             a.position.x.0 += dx;
             a.position.y.0 += dy;
         }
         self.glyph.anchors = self.anchors.clone();
-        self.record_mutation("Move Anchor", before);
+        self.bump_content_generation();
+        if let Some(b) = before {
+            self.record_mutation("Move Anchor", b);
+        }
     }
 
     /// Deletes all currently selected `CanvasAnchor`s with Undo support (`Delete` / `Backspace`).
@@ -300,11 +304,13 @@ impl GrafiaCanvasState {
         self.fit_selected_curves(ratio)
     }
 
-    /// Applies a uniform Fit Curve ratio `ratio` to all selected cubic segments (`SPEC-008 §2.4.2`).
-    pub fn fit_selected_curves(&mut self, ratio: f64) -> bool {
-        let before = self.snapshot();
-        if apply_fit_curve_ratio_to_contours(&mut self.glyph.contours, &self.selected_nodes, ratio)
-        {
+    fn finish_glyph_contours_mutation(
+        &mut self,
+        changed: bool,
+        label: &'static str,
+        before: crate::interaction::GlyphSnapshot,
+    ) -> bool {
+        if changed {
             self.contours = self
                 .glyph
                 .contours
@@ -312,7 +318,7 @@ impl GrafiaCanvasState {
                 .map(|c| c.nodes.clone())
                 .collect();
             self.sync_paths_from_contours();
-            self.record_mutation("Fit Curve", before);
+            self.record_mutation(label, before);
             self.assert_invariants();
             true
         } else {
@@ -320,6 +326,17 @@ impl GrafiaCanvasState {
             self.selected_nodes.retain(|id| valid.contains(id));
             false
         }
+    }
+
+    /// Applies a uniform Fit Curve ratio `ratio` to all selected cubic segments (`SPEC-008 §2.4.2`).
+    pub fn fit_selected_curves(&mut self, ratio: f64) -> bool {
+        let before = self.snapshot();
+        let changed = apply_fit_curve_ratio_to_contours(
+            &mut self.glyph.contours,
+            &self.selected_nodes,
+            ratio,
+        );
+        self.finish_glyph_contours_mutation(changed, "Fit Curve", before)
     }
 
     /// Steps selected cubic curve handles longer (`longer == true`) or shorter (`longer == false`) by `12.5%` of the Fit Curve range.
@@ -327,49 +344,22 @@ impl GrafiaCanvasState {
         let cfg = self.drag_transients.fit_curve_config.sanitized();
         let delta = cfg.step_delta(longer);
         let before = self.snapshot();
-        if apply_fit_curve_delta_to_contours(
+        let changed = apply_fit_curve_delta_to_contours(
             &mut self.glyph.contours,
             &self.selected_nodes,
             delta,
             cfg.min_ratio,
             cfg.max_ratio,
-        ) {
-            self.contours = self
-                .glyph
-                .contours
-                .iter()
-                .map(|c| c.nodes.clone())
-                .collect();
-            self.sync_paths_from_contours();
-            self.record_mutation("Step Fit Curve", before);
-            self.assert_invariants();
-            true
-        } else {
-            let valid: HashSet<NodeId> = self.contours.iter().flatten().map(|n| n.id).collect();
-            self.selected_nodes.retain(|id| valid.contains(id));
-            false
-        }
+        );
+        self.finish_glyph_contours_mutation(changed, "Step Fit Curve", before)
     }
 
     /// Normalizes each selected cubic segment's handle ratios to their arithmetic mean $\bar{t} = 0.5(t_1 + t_2)$ (`SPEC-008 §2.4.3`).
     pub fn normalize_selected_cubic_handles(&mut self) -> bool {
         let before = self.snapshot();
-        if normalize_cubic_handles_in_contours(&mut self.glyph.contours, &self.selected_nodes) {
-            self.contours = self
-                .glyph
-                .contours
-                .iter()
-                .map(|c| c.nodes.clone())
-                .collect();
-            self.sync_paths_from_contours();
-            self.record_mutation("Normalize Cubic Handles", before);
-            self.assert_invariants();
-            true
-        } else {
-            let valid: HashSet<NodeId> = self.contours.iter().flatten().map(|n| n.id).collect();
-            self.selected_nodes.retain(|id| valid.contains(id));
-            false
-        }
+        let changed =
+            normalize_cubic_handles_in_contours(&mut self.glyph.contours, &self.selected_nodes);
+        self.finish_glyph_contours_mutation(changed, "Normalize Cubic Handles", before)
     }
 
     /// Attaches or updates a non-destructive `ContourStrokeStyle` on `contour_id` (`SPEC-008 §2.5.2`).
@@ -379,10 +369,12 @@ impl GrafiaCanvasState {
         self.record_mutation("Set Contour Stroke", before);
     }
 
-    /// Computes non-destructive expanded stroke preview contours for all stroked contours (`SPEC-008 §2.5.2`).
+    /// Computes non-destructive expanded stroke preview contours for all stroked contours (`SPEC-008 §2.5.2`, `SPEC-016 §3.2`).
     #[must_use]
     pub fn compute_expanded_stroke_contours(&self) -> Vec<GlyphContour> {
-        expand_stroked_contours_preview(&self.glyph.contours, &self.contour_strokes)
+        let mut out = expand_stroked_contours_preview(&self.glyph.contours, &self.contour_strokes);
+        self.append_variable_width_stroke_previews(&mut out);
+        out
     }
 
     /// Destructively expands stroked contours into closed outlines and removes their stroke attributes (`SPEC-008 §2.5.3`).
@@ -418,6 +410,7 @@ impl GrafiaCanvasState {
         let mut next_cid = 0usize;
         let mut next_nid = self.next_node_id.max(DECOMPOSE_NODE_ID_OFFSET);
         let mut new_g_contours = Vec::new();
+        let mut new_contour_strokes = std::collections::BTreeMap::new();
         for gc in &self.glyph.contours {
             if target_ids.contains(&gc.id) {
                 if let Some(style) = self.contour_strokes.remove(&gc.id) {
@@ -427,11 +420,15 @@ impl GrafiaCanvasState {
                     continue;
                 }
             }
+            if let Some(style) = self.contour_strokes.remove(&gc.id) {
+                new_contour_strokes.insert(ContourId(next_cid), style);
+            }
             let mut copy = gc.clone();
             copy.id = ContourId(next_cid);
             next_cid += 1;
             new_g_contours.push(copy);
         }
+        self.contour_strokes = new_contour_strokes;
         self.next_node_id = next_nid;
         self.contours = new_g_contours.iter().map(|c| c.nodes.clone()).collect();
         self.active_contour_closed = new_g_contours.last().is_none_or(|c| c.closed);

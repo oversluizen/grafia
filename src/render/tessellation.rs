@@ -2,6 +2,7 @@
 //!
 //! Provides Non-Zero Winding (`FillRule::NonZero`) fill tessellation for multi-contour compound glyphs with counter-holes.
 
+use crate::core::math_consts::LYON_FILL_TESSELLATION_TOLERANCE_DP;
 use crate::core::{FontPoint, Node, ViewportTransform};
 use egui::epaint::{Vertex, WHITE_UV};
 use egui::{pos2, Mesh};
@@ -94,7 +95,9 @@ where
     let lyon_path = builder.build();
     let mut buffers: VertexBuffers<Vertex, u32> = VertexBuffers::new();
     let mut tessellator = FillTessellator::new();
-    let options = FillOptions::default().with_fill_rule(FillRule::NonZero);
+    let options = FillOptions::default()
+        .with_fill_rule(FillRule::NonZero)
+        .with_tolerance(LYON_FILL_TESSELLATION_TOLERANCE_DP);
 
     if tessellator
         .tessellate_path(
@@ -224,7 +227,9 @@ pub fn tessellate_bez_path_nonzero(
     let lyon_path = builder.build();
     let mut buffers: VertexBuffers<Vertex, u32> = VertexBuffers::new();
     let mut tessellator = FillTessellator::new();
-    let options = FillOptions::default().with_fill_rule(FillRule::NonZero);
+    let options = FillOptions::default()
+        .with_fill_rule(FillRule::NonZero)
+        .with_tolerance(LYON_FILL_TESSELLATION_TOLERANCE_DP);
     if tessellator
         .tessellate_path(
             &lyon_path,

@@ -156,11 +156,10 @@ impl GrafiaCanvasState {
             ) {
                 self.active_snappers.clear();
                 self.curve_harmony.active_tangent_snap = Some(tsnap);
-                self.drawing_tool_state.controller_ports.push_haptic(
-                    crate::core::CanvasHapticEvent::SnapAlignment {
+                self.controller_ports
+                    .push_haptic(crate::core::CanvasHapticEvent::SnapAlignment {
                         kind: crate::core::SnapTargetKind::Guide,
-                    },
-                );
+                    });
                 return (
                     tsnap.snap_point.x.0 - lead_start.x.0,
                     tsnap.snap_point.y.0 - lead_start.y.0,
@@ -176,13 +175,12 @@ impl GrafiaCanvasState {
             .collect();
         let res = self.evaluate_magnetic_snap(query, &excluded, false);
         if let Some(first_snap) = res.active_snappers.first() {
-            self.drawing_tool_state.controller_ports.push_haptic(
-                crate::core::CanvasHapticEvent::SnapAlignment {
+            self.controller_ports
+                .push_haptic(crate::core::CanvasHapticEvent::SnapAlignment {
                     kind: first_snap
                         .target_kind
                         .unwrap_or(crate::core::SnapTargetKind::Guide),
-                },
-            );
+                });
         }
         self.active_snappers = res.active_snappers;
         (raw_dx + res.delta.0, raw_dy + res.delta.1)

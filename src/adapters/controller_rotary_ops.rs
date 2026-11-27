@@ -59,11 +59,11 @@ impl GrafiaCanvasState {
             }
         }
         if matches!(self.active_tool, CanvasTool::Trowel | CanvasTool::Cleaner) {
-            let old_r = self.drawing_tool_state.controller_ports.brush_radius_dp;
+            let old_r = self.controller_ports.brush_radius_dp;
             let raw_r = old_r + (delta_ticks as f32) * ROTARY_BRUSH_RADIUS_STEP_DP;
             let new_r = raw_r.clamp(BRUSH_MIN_RADIUS_DP, BRUSH_MAX_RADIUS_DP);
             let clamped = (new_r - raw_r).abs() > f32::EPSILON;
-            self.drawing_tool_state.controller_ports.brush_radius_dp = new_r;
+            self.controller_ports.brush_radius_dp = new_r;
             self.bump_content_generation();
             return ((new_r - old_r).abs() > f32::EPSILON, clamped);
         }
@@ -77,6 +77,7 @@ impl GrafiaCanvasState {
     fn step_curve_tension_or_radius_rotary(&mut self, delta_ticks: f64) -> (bool, bool) {
         if let Some(&sel_id) = self.selected_nodes.first() {
             if let Some(existing) = self
+                .curve_harmony
                 .smart_corners
                 .iter()
                 .find(|s| s.node_id == sel_id)
@@ -128,6 +129,9 @@ impl GrafiaCanvasState {
                     return (changed, clamped);
                 }
             }
+        }
+        if let Some(res) = self.try_step_icon_studio_rotary(delta_ticks) {
+            return res;
         }
         let overlays = self.compute_tunni_overlays();
         if let Some(ov) = overlays.first() {
@@ -228,28 +232,30 @@ impl GrafiaCanvasState {
         }
         if matches!(self.active_tool, CanvasTool::Trowel | CanvasTool::Cleaner) {
             let r = self.effective_brush_radius_dp();
+            let span = BRUSH_MAX_RADIUS_DP - BRUSH_MIN_RADIUS_DP;
             return RotaryTelemetryInfo {
                 parameter_name: "Brush Radius",
                 formatted_value: format!("{r:.0} dp"),
-                normalized_ratio: f64::from(
-                    (r - BRUSH_MIN_RADIUS_DP) / (BRUSH_MAX_RADIUS_DP - BRUSH_MIN_RADIUS_DP),
-                )
-                .clamp(0.0, 1.0),
+                normalized_ratio: f64::from((r - BRUSH_MIN_RADIUS_DP) / span).clamp(0.0, 1.0),
             };
         }
         if let Some(&sel_id) = self.selected_nodes.first() {
-            if let Some(sc) = self.smart_corners.iter().find(|s| s.node_id == sel_id) {
-                let span = ROTARY_CORNER_MAX_RADIUS_UPM - ROTARY_CORNER_MIN_RADIUS_UPM;
+            let span = ROTARY_CORNER_MAX_RADIUS_UPM - ROTARY_CORNER_MIN_RADIUS_UPM;
+            let sc = self
+                .curve_harmony
+                .smart_corners
+                .iter()
+                .find(|s| s.node_id == sel_id);
+            if let Some(sc) = sc {
+                let ratio = ((sc.radius_upm - ROTARY_CORNER_MIN_RADIUS_UPM) / span).clamp(0.0, 1.0);
                 return RotaryTelemetryInfo {
                     parameter_name: "Corner Radius",
                     formatted_value: format!("{:+.0} UPM", sc.radius_upm),
-                    normalized_ratio: ((sc.radius_upm - ROTARY_CORNER_MIN_RADIUS_UPM) / span)
-                        .clamp(0.0, 1.0),
+                    normalized_ratio: ratio,
                 };
             }
             if let Some(node) = self.find_node(sel_id) {
                 if node.node_type == NodeType::Corner {
-                    let span = ROTARY_CORNER_MAX_RADIUS_UPM - ROTARY_CORNER_MIN_RADIUS_UPM;
                     return RotaryTelemetryInfo {
                         parameter_name: "Corner Radius",
                         formatted_value: "+0 UPM".to_string(),
@@ -257,34 +263,143 @@ impl GrafiaCanvasState {
                     };
                 }
                 if let NodeType::HobbyStar { tension_in, .. } = node.node_type {
-                    let span = HOBBY_TENSION_MAX - HOBBY_TENSION_MIN;
+                    let h_span = HOBBY_TENSION_MAX - HOBBY_TENSION_MIN;
                     return RotaryTelemetryInfo {
                         parameter_name: "Hobby Tension",
                         formatted_value: format!("{tension_in:.2}"),
-                        normalized_ratio: ((tension_in - HOBBY_TENSION_MIN) / span).clamp(0.0, 1.0),
+                        normalized_ratio: ((tension_in - HOBBY_TENSION_MIN) / h_span)
+                            .clamp(0.0, 1.0),
                     };
                 }
             }
         }
+        if let Some(info) = self.try_icon_studio_rotary_telemetry() {
+            return info;
+        }
         if let Some(ov) = self.compute_tunni_overlays().first() {
             let r = 0.5 * (ov.ratio_p1 + ov.ratio_p2);
+            let ratio =
+                ((r - TUNNI_MIN_RATIO) / (TUNNI_MAX_RATIO - TUNNI_MIN_RATIO)).clamp(0.0, 1.0);
             return RotaryTelemetryInfo {
                 parameter_name: "Tunni Ratio",
                 formatted_value: format!("{:.0}%", r * PERCENT_SCALE_FACTOR),
-                normalized_ratio: ((r - TUNNI_MIN_RATIO) / (TUNNI_MAX_RATIO - TUNNI_MIN_RATIO))
-                    .clamp(0.0, 1.0),
+                normalized_ratio: ratio,
             };
         }
+        let z = self.viewport.zoom;
+        let z_ratio = f64::from((z - MIN_VIEWPORT_ZOOM) / (MAX_VIEWPORT_ZOOM - MIN_VIEWPORT_ZOOM))
+            .clamp(0.0, 1.0);
         RotaryTelemetryInfo {
             parameter_name: "Zoom",
-            formatted_value: format!(
-                "{:.0}%",
-                f64::from(self.viewport.zoom) * PERCENT_SCALE_FACTOR
-            ),
-            normalized_ratio: f64::from(
-                (self.viewport.zoom - MIN_VIEWPORT_ZOOM) / (MAX_VIEWPORT_ZOOM - MIN_VIEWPORT_ZOOM),
-            )
-            .clamp(0.0, 1.0),
+            formatted_value: format!("{:.0}%", f64::from(z) * PERCENT_SCALE_FACTOR),
+            normalized_ratio: z_ratio,
         }
+    }
+
+    #[must_use]
+    pub(crate) fn active_primary_drag_raw_pos(&self) -> Option<egui::Pos2> {
+        let ts = &self.drag_transients.touch_state;
+        if let Some(id) = ts.active_primary_touch_id {
+            if let Some((_, cur)) = ts.contacts.get(&id) {
+                return Some(*cur);
+            }
+        }
+        if ts.native_pointer_drag_active {
+            return ts.native_pointer_raw_pos;
+        }
+        None
+    }
+
+    #[must_use]
+    pub(crate) fn should_reject_new_touch_as_palm(&self, key: u64, pos: egui::Pos2) -> bool {
+        let ts = &self.drag_transients.touch_state;
+        if ts.rejected_palm_contacts.contains_key(&key) {
+            return true;
+        }
+        if ts.contacts.contains_key(&key) {
+            return false;
+        }
+        let min_d = crate::core::math_consts::TOUCH_PALM_REJECT_MIN_DIST_DP;
+        if ts.native_pointer_drag_active {
+            return ts
+                .native_pointer_raw_pos
+                .is_some_and(|np| np.distance(pos) > min_d);
+        }
+        if !ts.contacts.is_empty()
+            && (self.active_input_device() == crate::core::InputDeviceKind::Stylus
+                || ts.max_contact_excursion_dp
+                    > crate::core::math_consts::TOUCH_SINGLE_DRAG_COMMIT_EXCURSION_DP)
+        {
+            return self
+                .active_primary_drag_raw_pos()
+                .is_some_and(|p| p.distance(pos) > min_d);
+        }
+        false
+    }
+
+    pub(crate) fn classify_palm_touch_event(
+        &mut self,
+        key: u64,
+        phase: egui::TouchPhase,
+        pos: egui::Pos2,
+    ) -> bool {
+        if let Some(p) = self
+            .drag_transients
+            .touch_state
+            .rejected_palm_contacts
+            .get_mut(&key)
+        {
+            *p = pos;
+            return true;
+        }
+        if phase == egui::TouchPhase::Start {
+            if self.should_reject_new_touch_as_palm(key, pos) {
+                self.drag_transients
+                    .touch_state
+                    .rejected_palm_contacts
+                    .insert(key, pos);
+                return true;
+            }
+            return false;
+        }
+        !self.drag_transients.touch_state.contacts.contains_key(&key)
+    }
+
+    pub(crate) fn is_palm_companion_pointer_event(
+        &mut self,
+        pos: egui::Pos2,
+        is_press: Option<bool>,
+    ) -> bool {
+        if self.active_input_device() == crate::core::InputDeviceKind::Mouse
+            && self.drag_transients.touch_state.contacts.is_empty()
+            && self
+                .drag_transients
+                .touch_state
+                .rejected_palm_contacts
+                .is_empty()
+        {
+            return false;
+        }
+        let Some(drag_pos) = self.active_primary_drag_raw_pos() else {
+            return false;
+        };
+        let min_d = crate::core::math_consts::TOUCH_PALM_REJECT_MIN_DIST_DP;
+        if drag_pos.distance(pos) <= min_d {
+            return false;
+        }
+        let ts = &mut self.drag_transients.touch_state;
+        if is_press == Some(true) && (ts.primary_press_active || !ts.contacts.is_empty()) {
+            ts.rejected_palm_contacts.insert(u64::MAX, pos);
+            return true;
+        }
+        if ts
+            .rejected_palm_contacts
+            .values()
+            .any(|p| p.distance(pos) <= min_d)
+        {
+            ts.rejected_palm_contacts.insert(u64::MAX, pos);
+            return true;
+        }
+        false
     }
 }

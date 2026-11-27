@@ -125,6 +125,44 @@ fn render_preview_contours_into_rect_ts(
     let mut compound = BezPath::new();
     let flip_affine = kurbo::Affine::translate((0.0, 2.0 * center_y as f64))
         * kurbo::Affine::scale_non_uniform(1.0, -1.0);
+    if state.has_active_non_destructive_preview_effects() {
+        for (gc, alpha) in state.evaluate_active_preview_silhouette_contours() {
+            if !gc.visible || gc.nodes.len() < 2 {
+                continue;
+            }
+            let bez = crate::core::contour_to_bezpath_with_splines(&gc.nodes, gc.closed, 0.0, &[]);
+            let proj = PreviewFilledProjection::compute(&bez, temp_vp);
+            let final_path = if config.flipped {
+                flip_affine * proj.screen_path
+            } else {
+                proj.screen_path
+            };
+            let Some(ts_path) = kurbo_to_tiny_skia_path(&final_path) else {
+                continue;
+            };
+            let mut paint = Paint::default();
+            paint.set_color(color32_to_tiny_skia(
+                fill_color.gamma_multiply(alpha.clamp(0.0, 1.0)),
+            ));
+            paint.anti_alias = true;
+            if gc.closed {
+                pixmap.fill_path(
+                    &ts_path,
+                    &paint,
+                    FillRule::Winding,
+                    Transform::identity(),
+                    None,
+                );
+            } else {
+                let st = TsStroke {
+                    width: PREVIEW_PANEL_BASELINE_STROKE_WIDTH_DP * 2.0,
+                    ..Default::default()
+                };
+                pixmap.stroke_path(&ts_path, &paint, &st, Transform::identity(), None);
+            }
+        }
+        return;
+    }
     for (c_idx, path) in state.paths.iter().enumerate() {
         if !state.is_contour_closed(c_idx) {
             continue;

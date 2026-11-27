@@ -133,7 +133,6 @@ fn handle_pen_close_or_resume_press(
         }
         state.set_contour_closed(c_idx, true);
         state
-            .drawing_tool_state
             .controller_ports
             .push_haptic(crate::core::CanvasHapticEvent::ContourClosed);
         state.pen_transients.alt_frozen_bcp_in = opt_first_in.or(Some(target_node.point));
@@ -219,7 +218,8 @@ fn append_new_pen_anchor_node(state: &mut GrafiaCanvasState, font_pt: FontPoint)
         state.contours.push(vec![node.clone()]);
         let mut gc = crate::core::GlyphContour::new(crate::core::ContourId(c_idx), vec![node]);
         gc.closed = false;
-        state.glyph.contours.push(gc);
+        state.glyph.contours.push(gc.clone());
+        state.try_auto_adopt_drawn_contours_into_sublayers(&[gc]);
         state.active_open_contour = Some(c_idx);
         state.set_contour_closed(c_idx, false);
         state.pending_pen_bcp_out = None;

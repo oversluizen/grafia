@@ -93,6 +93,36 @@ pub fn paint_custom_reference_frame_pass(
     }
 
     paint_frame_boxes_and_circles_egui(painter, frame, state.glyph.width, &vp, stroke_w, palette);
+    if frame.show_diagonals {
+        if let Some(rep) = state.compute_active_icon_optical_balance() {
+            let b_scr = vp.to_screen(rep.bbox_center_upm);
+            let o_scr = vp.to_screen(rep.optical_centroid_upm);
+            let half = ref_frame_crosshair_half_dp();
+            let st = Stroke::new(stroke_w, palette.keyline);
+            painter.line_segment(
+                [
+                    Pos2::new(b_scr.x.0, b_scr.y.0),
+                    Pos2::new(o_scr.x.0, o_scr.y.0),
+                ],
+                st,
+            );
+            painter.circle_stroke(Pos2::new(o_scr.x.0, o_scr.y.0), half, st);
+            painter.line_segment(
+                [
+                    Pos2::new(o_scr.x.0 - half, o_scr.y.0),
+                    Pos2::new(o_scr.x.0 + half, o_scr.y.0),
+                ],
+                st,
+            );
+            painter.line_segment(
+                [
+                    Pos2::new(o_scr.x.0, o_scr.y.0 - half),
+                    Pos2::new(o_scr.x.0, o_scr.y.0 + half),
+                ],
+                st,
+            );
+        }
+    }
 }
 
 fn paint_parallel_line_egui(
@@ -178,10 +208,40 @@ fn paint_frame_boxes_and_circles_egui(
     if let Some(outer) = frame.outer_box {
         let r = project_rect_upm_to_screen(outer, vp);
         painter.rect_stroke(r, 0.0, Stroke::new(stroke_w, outer_col), StrokeKind::Middle);
+        if frame.show_diagonals {
+            for (a, b) in [
+                (
+                    ScreenPoint::new(r.left(), r.top()),
+                    ScreenPoint::new(r.right(), r.bottom()),
+                ),
+                (
+                    ScreenPoint::new(r.right(), r.top()),
+                    ScreenPoint::new(r.left(), r.bottom()),
+                ),
+            ] {
+                paint_dashed_line_egui(
+                    painter,
+                    a,
+                    b,
+                    Stroke::new(stroke_w, subdiv_col),
+                    dash_dp,
+                    gap_dp,
+                );
+            }
+        }
     }
     if let Some(inner) = frame.inner_box {
         let r = project_rect_upm_to_screen(inner, vp);
         painter.rect_stroke(r, 0.0, Stroke::new(stroke_w, inner_col), StrokeKind::Middle);
+    }
+    for kr in &frame.keyline_rects {
+        let r = project_rect_upm_to_screen(*kr, vp);
+        painter.rect_stroke(
+            r,
+            0.0,
+            Stroke::new(stroke_w, keyline_col),
+            StrokeKind::Middle,
+        );
     }
     if let Some((nx, ny)) = frame.inner_grid_subdivisions {
         if let Some(target_box) = frame.inner_box.or(frame.outer_box) {
@@ -197,29 +257,48 @@ fn paint_frame_boxes_and_circles_egui(
             }
         }
     }
+    paint_frame_circles_and_crosshair_egui(
+        painter,
+        frame,
+        default_width_upm,
+        vp,
+        stroke_w,
+        palette,
+    );
+}
+
+fn paint_frame_circles_and_crosshair_egui(
+    painter: &Painter,
+    frame: &crate::core::CustomReferenceFrame,
+    default_width_upm: f64,
+    vp: &crate::core::ViewportTransform,
+    stroke_w: f32,
+    palette: ReferenceFramePalette,
+) {
     for (center_scr, radius_px) in project_keyline_circles_screen(frame, default_width_upm, vp) {
         painter.circle_stroke(
             Pos2::new(center_scr.x.0, center_scr.y.0),
             radius_px,
-            Stroke::new(stroke_w, keyline_col),
+            Stroke::new(stroke_w, palette.keyline),
         );
     }
     if frame.center_crosshair {
         let c = vp.to_screen(reference_frame_center_upm(frame, default_width_upm));
         let half = ref_frame_crosshair_half_dp();
+        let st = Stroke::new(stroke_w, palette.inner);
         painter.line_segment(
             [
                 Pos2::new(c.x.0 - half, c.y.0),
                 Pos2::new(c.x.0 + half, c.y.0),
             ],
-            Stroke::new(stroke_w, inner_col),
+            st,
         );
         painter.line_segment(
             [
                 Pos2::new(c.x.0, c.y.0 - half),
                 Pos2::new(c.x.0, c.y.0 + half),
             ],
-            Stroke::new(stroke_w, inner_col),
+            st,
         );
     }
 }

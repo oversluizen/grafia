@@ -14,6 +14,7 @@ pub mod guides_pixmap_pass;
 pub mod harmony_overlays;
 pub mod hinting_and_hoi_pass;
 pub mod hinting_and_hoi_pixmap_pass;
+pub mod liquid_glass_pass;
 pub mod loupe_pixmap_pass;
 pub mod preview_bands;
 pub mod preview_canvas;
@@ -75,6 +76,11 @@ pub use harmony_overlays::{paint_harmony_overlays_egui, render_harmony_overlays_
 pub use hinting_and_hoi_pass::{paint_hinting_and_hoi_pass, paint_pixel_preview_and_ghost_pass};
 pub use hinting_and_hoi_pixmap_pass::{
     paint_hinting_and_hoi_pixmap_pass, paint_pixel_preview_and_ghost_pixmap_pass,
+};
+pub use liquid_glass_pass::{
+    collect_active_liquid_glass_contours, evaluate_liquid_glass_point_upm,
+    paint_liquid_glass_pass_egui, rasterize_liquid_glass_rgba, render_liquid_glass_pass_tiny_skia,
+    LiquidGlassSurfaceEval,
 };
 pub use preview_bands::{
     paint_curved_trajectories_egui, paint_measurement_rainbow_egui, paint_optical_rhythm_fill_egui,

@@ -267,7 +267,7 @@ impl GrafiaCanvasState {
                 }
             }
             self.select_state = crate::interaction::SelectToolState::Idle;
-            self.drag_transients.active_drag_before_snapshot = None;
+            self.drag_transients.active_anchor_drag = true;
             return true;
         }
         if self.select_component_at_upm(font_pt, is_shift) {
@@ -282,6 +282,27 @@ impl GrafiaCanvasState {
             return true;
         }
         false
+    }
+
+    pub(crate) fn try_update_anchor_drag(&mut self, font_pt: FontPoint, bypass_snap: bool) -> bool {
+        if !self.drag_transients.active_anchor_drag {
+            return false;
+        }
+        self.drag_selected_anchors_to_upm(font_pt, bypass_snap);
+        true
+    }
+
+    pub(crate) fn try_finish_anchor_drag_release(&mut self) -> bool {
+        if !self.drag_transients.active_anchor_drag {
+            return false;
+        }
+        self.drag_transients.active_anchor_drag = false;
+        self.active_snappers.clear();
+        if let Some(before) = self.drag_transients.active_drag_before_snapshot.take() {
+            self.record_mutation("Move Anchor", before);
+        }
+        self.assert_invariants();
+        true
     }
 
     pub(crate) fn sync_companion_marquee_selection(&mut self, rect: kurbo::Rect) {

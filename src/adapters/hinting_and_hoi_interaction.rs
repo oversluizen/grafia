@@ -143,7 +143,11 @@ impl GrafiaCanvasState {
 
     #[must_use]
     pub const fn truetype_projection_axis(&self) -> (f64, f64) {
-        if self.drag_transients.truetype_x_axis_projection {
+        if self
+            .drag_transients
+            .session_config
+            .truetype_x_axis_projection
+        {
             (1.0, 0.0)
         } else {
             (0.0, 1.0)

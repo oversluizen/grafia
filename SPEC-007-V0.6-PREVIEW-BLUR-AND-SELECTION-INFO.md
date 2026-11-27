@@ -67,6 +67,7 @@ All mathematical invariants, filter parameters, and selection inspection rules f
 4. **Battery-Efficient Dirty-State Caching (`PreviewStripCache` & `content_generation()`):**
    - `GrafiaCanvasState::content_generation(&self) -> u64` maintains a monotonically increasing content revision counter incremented whenever geometry, text stream slots, anchors, components, live strokes, companion master layers, or light/dark appearance change, while remaining constant during idle pointer hover, viewport pan/zoom, and node selection changes.
    - `PreviewStripCache` caches the rasterized RGBA buffer and optional `egui::TextureHandle` keyed by `(state.content_generation(), state.theme.is_dark(), cfg)` so `render_preview_strip_rgba` and GPU texture upload (`TextureHandle::set`) execute only on cache miss (0.0 ms CPU and 0 GPU uploads on cache hit).
+   - Host shells embedding `PreviewStripCache` in a responsive bottom panel MUST synchronize `PreviewRenderConfig::width_px = ui.available_width().round().clamp(64.0, 2048.0) as u32` *before* calling `get_or_update_texture` and allocate the `egui::Image` with `Vec2::new(cfg.width_px as f32, cfg.height_px as f32)`, guaranteeing a strict 1:1 isotropic aspect ratio with zero horizontal squeezing on narrow mobile or tablet viewports (`TC-V0130-013`).
 
 ---
 

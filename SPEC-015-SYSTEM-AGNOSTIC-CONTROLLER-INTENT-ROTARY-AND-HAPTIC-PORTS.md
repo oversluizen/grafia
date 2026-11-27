@@ -114,6 +114,48 @@ Hardware controllers with built-in displays (Wacom Intuos 4 OLEDs, Loupedeck CT 
   - `formatted_value: String` (e.g. `"+24 UPM"`, `"1.25"`, `"65%"`, `"80 UPM"`, `"40 dp"`, `"100%"`)
   - `normalized_ratio: f64` in `[0.0, 1.0]` for rendering circular dial progress arcs on Loupedeck CT or `egui-macview`.
 
+### 4.1 Normative Bimanual `ContextThumbDial` / Radial Clover Mapping (`egui-macview` `SPEC-014`)
+
+Across all 19 tools in `grafia`, keyboard modifier combinations (`Shift`, `Alt/Option`, `Cmd/Ctrl`, `Space`) map onto **4 invariant cardinal directions** (building instant directional muscle memory per Kurtenbach & Buxton) interleaved with **diagonal single-thumb combination sectors** (`NorthEast` and `SouthEast`):
+
+| Fixed Direction (Muscle Memory) | Universal Geometric Intention | `Pen` (`P`) | `Select` (`V`) | `Primitives` (`F`) / `BBox` | `Knife` (`E`) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **1. Top (`North`, `⇧`)** | **CONSTRAIN** *(Lock direction / aspect)* | **`∠ 45°`** *(Lock angle)* | **`∠ Axis`** *(H / V / $45^\circ$)* | **`1:1` / `∠ 15°`** *(Square/Circle or $15^\circ$)* | **`∠ 15°`** *(Lock cut angle)* |
+| **1+2. `NorthEast` (`⇧+⌥` Combo)** | **CONSTRAIN + ALTER** *(1-Thumb Chord)* | **`∠ 45° + ∧ Cusp`** | **`∠ Axis + ⧉ Clone`** | **`1:1 + ⊙ Center`** | **`∠ 15° + ⊕ Nodes`** |
+| **2. Inner (`East`, `⌥`)** | **ALTER / BREAK** *(Topology / anchor)* | **`∧ Cusp`** *(Break handle to corner)* | **`⧉ Clone` / `1-Side`** *(Duplicate / 1-side)* | **`⊙ Center`** *(Scale/draw from center)* | **`⊕ Nodes`** *(Add nodes without cutting)* |
+| **2+3. `SouthEast` (`⌘+⌥` Combo)** | **GLIDE + ALTER** *(1-Thumb Chord)* | **`★ Genius + ∧ Cusp`** | **`↝ Slide + 1-Side`** | **`⇄ Shear`** *(Slant/shear BBox)* | **`⌖ Snap + ⊕ Nodes`** |
+| **3. Bottom (`South`, `⌘` / `C`)** | **GLIDE / SERVO** *(Along curve / neighbours)* | **`★ Genius`** *($G^2$ coupling)* | **`↝ Slide`** *(Slide node on curve)* | **`⇄ Shear`** *(Shear)* | **`⌖ Snap`** *(Force node snap)* |
+| **4. Outer (`West`, `␣`)** | **MOVE / PAN** *(Move origin / canvas)* | **`✥ Move Pt`** *(Move placed anchor)* | **`✋ Pan`** *(Pan canvas)* | **`✥ Move`** *(Move shape while dragging)* | **`✋ Pan`** *(Pan canvas)* |
+
+```mermaid
+flowchart TD
+    subgraph Dial["Context-Adaptive Thumb Dial (Bottom-Left or Bottom-Right Thumb Arc)"]
+        N["North (⇧ Constrain)<br/>Pen: ∠ 45° | Select: ∠ Axis | Prim: 1:1"]
+        NE["North-East (⇧+⌥ Combo)<br/>Prim: 1:1 + ⊙ Center | Pen: ∠ 45° + ∧ Cusp"]
+        W["West (␣ Spatial)<br/>Pen/Prim: ✥ Move Pt | Otherwise: ✋ Pan"]
+        C(("Thumb Rest Hub<br/>(Slide from center to Hold<br/>or Tap to Latch)"))
+        E["East (⌥ Alter)<br/>Pen: ∧ Cusp | Select: ⧉ Clone | Prim: ⊙ Center | Knife: ⊕ Nodes"]
+        SE["South-East (⌘+⌥ Combo)<br/>BBox: ⇄ Shear | Select: Slide + 1-Side"]
+        S["South (⌘ Kinematic)<br/>Select: ↝ Slide on Curve | Nudge: ⇄ Power"]
+        UndoRedo["Bottom Arc:  ↶ Undo   |   ↷ Redo"]
+    end
+    C --- N
+    C --- NE
+    C --- E
+    C --- SE
+    C --- S
+    C --- W
+```
+
+- **Hybrid Interaction Model & 4-Layer Concentric Geometry (`egui-macview::MacContextThumbDial`)**:
+  - **Layer 1 (Central Thumb-Rest Hub)** + **Layer 2 (Inner Compass / Clover Sectors `N`, `NE`, `E`, `SE`, `S`, `W`)**:
+    - **Hold / Slide-Out from Center (`>= 180 ms`)**: Drives `state.set_external_intents(momentary_mask)` while the thumb rests on or slides into a sector, clearing automatically upon thumb release.
+    - **Quick Tap (`< 180 ms`)**: Toggles sticky latching via `state.set_intent_latched(intent, latched)` with a visible latch dot, allowing multiple sectors (e.g. `1:1` + `⊙ Center`) to be latched sequentially for one-handed phone or relaxed tablet operation.
+  - **Layer 3 (Outer 360° Tactile Rotary Wheel Around All Compass Directions)**:
+    - Wrapping around the outside of the compass sectors, the thumb rotary ring scrubs values continuously up/down with 24 detent ticks — driving `ContextPrimary` (Smart Corner radius, Hobby tension, Tunni ratio, Stem width, or fast directional point translation/nudging along the North/South $\Delta Y$ or East/West $\Delta X$ compass axis).
+  - **Layer 4 (Concentrically Wrapped Bottom `↶ Undo | ↷ Redo` Arc Buttons)**:
+    - Two curved, trackball-style "mouse buttons" wrapped around the bottom contour of the outer rotary wheel (`[92°..148°]` for `↶ Undo` and `[32°..88°]` for `↷ Redo`) provide instant one-thumb history stepping.
+
 ---
 
 ## 5. Port 4: Haptic Feedback Event Queue (`drain_haptic_events`)
@@ -156,6 +198,11 @@ Hardware controllers with built-in displays (Wacom Intuos 4 OLEDs, Loupedeck CT 
    - `StylusAccessoryEvent::DoubleTap`: swaps `active_tool` between `CanvasTool::Select` and the last active drawing tool (default `CanvasTool::Pen`).
    - `StylusAccessoryEvent::BarrelHold(bool)`: activates/deactivates `CanvasIntent::BreakCuspHandle` (`Alt`).
    - `StylusAccessoryEvent::Squeeze { pos }`: updates `cursor_screen_pos` to `pos` for instant radial menu invocation at the stylus tip.
+7. **Stylus Palm Rejection, Post-Tap Compatibility Click Deduplication, Orthogonal Tablet Marquee & Non-Convex Lasso Fill**:
+   - **Post-Tap Compatibility `PointerButton` Deduplication (`last_touch_event_time_sec`)**: A realistic single-finger touch tap (`TouchPhase::Start` followed `0.15s..0.35s` later by `TouchPhase::End`, including when `eframe`'s `pointerdown` + `mousemove` precede `touchstart` at the same tap coordinate) followed within `TOUCH_COMPANION_MOUSE_DEDUP_SEC` (`0.50s`) by a browser-synthesized compatibility `Event::PointerButton { pressed: true }` (when no `TouchPhase::Start` is present in that frame) MUST be deduplicated so a single finger tap on a node selects only that single node and never triggers a false double-click selecting the entire contour.
+   - **Stylus & Committed-Drag Palm Rejection (`native_pointer_drag_active`, `rejected_palm_contacts`)**: While a native pointer drag (`Event::PointerButton { pressed: true }` initiated without touch contacts) or a committed single-contact drag (`max_contact_excursion_dp > 24.0 dp` or `InputDeviceKind::Stylus`) is active, distant palm/resting-finger `Event::Touch` contacts (`> 32.0 dp` from the active pointer) AND their `eframe`-synthesized companion `Event::PointerButton` / `Event::PointerMoved` events at the palm coordinates MUST be ignored so they neither jump the active `MarqueeSelecting`/`DraggingNodes` coordinate to the palm, nor clobber `last_pointer_screen_pos`, nor cancel the active drag via `two_finger_peak` or premature release.
+   - **Orthogonal Tablet & Latched-Intent Marquee (`show_bounding_box_slanted == false`)**: Starting a marquee selection resets `show_bounding_box_slanted = false` and `selection_angle_deg = 0.0`, and `ctrl_slant` is restricted to desktop `InputDeviceKind::Mouse` without active touch contacts or latched `SlideAlongCurve`/`ShearTransform` intents so tablet/stylus marquee drags are always orthogonal rectangles.
+   - **Non-Convex `LassoTool` Polygon Tessellation**: Freeform `LassoDragging` overlays in `egui` tessellate the closed polygon with `tessellate_bez_path_nonzero` (`FillRule::NonZero`) rather than `egui`'s convex fan fill so concave stylus lasso selections never skew.
 
 ---
 
@@ -281,7 +328,7 @@ impl GrafiaCanvasState {
 
 ---
 
-## 8. Complete Normative Test Matrix (`TC-V0130-001` .. `TC-V0130-012`)
+## 8. Complete Normative Test Matrix (`TC-V0130-001` .. `TC-V0130-013`)
 
 | Test Case ID | Requirement / Controller Port Contract | Input / Action | Expected Normative Outcome |
 | :--- | :--- | :--- | :--- |
@@ -297,3 +344,4 @@ impl GrafiaCanvasState {
 | **`TC-V0130-010`** | `OffCurve` Handle Hit-Priority Over Nearby `OnCurve` Nodes & Tunni Lines | Place an `OffCurve` handle and an `OnCurve` node `10.0 dp` apart on screen (and a previously selected `OffCurve` handle `14.0 dp` away) and touch-press within `16.0 dp`. | Prioritizes and selects the closest `OffCurve` handle over nearby `OnCurve` nodes, farther-away selected `OffCurve` handles, and Tunni lines. |
 | **`TC-V0130-011`** | Universal Touch Hit-Radius Scaling (`>= 14.0 dp`) Across Segments, Anchors & Guides | Touch-tap `11.0 dp` away from a contour segment, a `CanvasAnchor`, and a `Guide`. | Hits and selects the segment, anchor, and guide in `TouchFinger` mode instead of missing and starting an empty `MarqueeSelecting` box. |
 | **`TC-V0130-012`** | Touch Double-Tap Slop (`20.0 dp`), Tap-Slop Segment Selection (`6.0 dp`) & Double-Tap Line-to-Cubic Handle Creation | Single-tap a segment with `4.0 dp` finger roll; double-tap a straight `ContourSegment::Line` with `12.0 dp` finger slop between taps. | Single-tap selects the segment's nodes/handles; double-tap converts the `Line` segment into a 4-node `Cubic` with 2 `OffCurve` handles at $1/3$ and $2/3$, selects both handles, and round-trips through `Undo`/`Redo`. |
+| **`TC-V0130-013`** | Responsive Phone/Tablet/Desktop Demo Shell Layout (`< 900.0 dp` Auto-Collapse, Single-Row Scroll Bars & Dynamic Viewport Auto-Fit) | Render `GrafiaVectorCanvasDemo` on a `390x844` portrait mobile screen rect, rotate to `844x390` landscape, and render on a `1280x840` desktop screen rect. | On `< 900.0 dp` mobile screens, `show_left_sidebar`, `show_right_inspector`, and `show_preview_panel` auto-collapse, single-row horizontal scroll bars replace multi-row wrapped preset bars, `CentralPanel` allocates the majority of screen height (`> 650.0 dp` of `844.0 dp`), `fit_viewport_to_glyph` bounds zoom by both width and height (`pan_offset.x > 0.0`), and rotating to `844x390` landscape automatically re-fits the viewport so the glyph stays within the visible canvas (`pan_offset.y < canvas_sz.y`). |

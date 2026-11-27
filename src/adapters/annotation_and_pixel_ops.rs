@@ -244,6 +244,8 @@ impl GrafiaCanvasState {
         }
         self.active_contour_closed = closed;
         self.sync_paths_from_contours();
+        let added: Vec<_> = self.glyph.contours[c_idx..].to_vec();
+        self.try_auto_adopt_drawn_contours_into_sublayers(&added);
         self.record_mutation("Draw Freehand Path", before);
         self.assert_invariants();
         true
