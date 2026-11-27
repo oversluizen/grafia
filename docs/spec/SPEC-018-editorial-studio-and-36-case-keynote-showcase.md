@@ -136,10 +136,21 @@ Elke case in `DemoPreset::ALL` (`36` varianten, `01` t/m `36`) activeert determi
 6. **Multi-Slot `Text Stream` (`"AOVA"`) Coördinaat- & Viewport-Pariteit:**
    - Alle interactie- en render-paden voor de actieve slot (marquee-selectie, schuine marquee, 8-knob BBox hit-test & weergave, origin-reticle, dubbele-knoop waarschuwingen, Pen-sluitcirkel, meetlat-snap en open-eindpunt koppeling) gebruiken consequent `state.active_slot_viewport()`.
    - Wanneer `text_stream.slots.len() > 1`, centreert `fit_viewport_to_glyph` het canvas over de volledige multi-glyph breedte/hoogte van de tekststroom zodat alle letters van `"AOVA"` volledig zichtbaar en direct aanraakbaar zijn.
+7. **5-Workspace Minimalist Glyphs-4 Daylight + Frosted White Liquid Glass Hierarchy (`SPEC-018 §3.7`):**
+   - **Daylight-First Minimalist Canvas (85%+ Open Paper `#FAF9F6` / `#FFFFFF`):** Geen vaste linker zijbalk (`show_left_sidebar == false` by default); alleen een slank rechter Frosted Glass Icon-Palet (`show_right_inspector == true` op landscape) met vierkante `32×32 dp` glazen icoon-tegels (4 per rij) en Nederlandse S-Pen/Muis Hover Uitlegballonnetjes (titel + Glyphs 4 / FontLab 9 sneltoets + uitleg).
+   - **5 Taakgerichte Workspaces (`StudioSubWorkspace`):**
+     1. `LetterContourAndSpacing` (`1. Contour`, Cases `01–06`)
+     2. `LetterCagdAndStems` (`2. Bochten`, Cases `07–18`)
+     3. `LetterMastersAndHinting` (`3. Masters`, Cases `19–24`)
+     4. `IconVectorAndGlass` (`4. Vector & Glas`, Cases `25–30`)
+     5. `IconKineticAndTouch` (`5. Kinetisch`, Cases `31–36`)
+   - **Variant-2 Smart Context Horizontaal `MacEdgeThumbwheel` met Gecentreerd Actief Context-Icoon + Organische 6-Sector `MacContextThumbDial` (`SPEC-014` & `SPEC-015`):**
+     - Het cilinder-wiel (`MacEdgeThumbwheel`) wordt gerenderd als een **horizontale geribbelde cilinder-capsule** die symmetrisch gecentreerd **direct boven de `↶ Undo | ↷ Redo` kroon van het 6-sector `MacContextThumbDial`** zweeft (linksonder voor rechtshandige S-Pen gebruikers, of rechtsonder via `L/R`), zodat de S-Pen hand aan de andere kant 100% vrij is en de duim een natuurlijke horizontale veegbeweging maakt.
+     - **Gecentreerd Actief Context-Icoon Medaillon:** Midden op het horizontale scrollwheel bevindt zich een Frosted Liquid Glass medaillon dat live het **icoon toont van de functie/tool die op dat moment op het wiel speelt** (`Kerning/Tekst` bij `"AOVA"`, `Kinetische Fase t / Golf` bij Kinetische SF-Symbolen, het actieve `Curve/Stam/Borstel`-icoon bij `ContextPrimary`, en `Zoom` bij vrij canvas), met links en rechts de cilindrisch verkorte verticale ribbels.
 
 ---
 
-## 4. Verificatie & COTS Test-Matrix (`TC-V0180-001` t/m `TC-V0180-004`)
+## 4. Verificatie & COTS Test-Matrix (`TC-V0180-001` t/m `TC-V0180-006`)
 
 1. **`TC-V0180-001` (`36-Case Completeness & Invariant Guard`):**
    - `DemoPreset::ALL.len() == 36`, verdeeld in exact `6` hoofdstukken (`ShowcaseChapter::ALL`) van elk `6` cases (`ShowcaseChapter::presets(ch).len() == 6`).
@@ -149,4 +160,8 @@ Elke case in `DemoPreset::ALL` (`36` varianten, `01` t/m `36`) activeert determi
 3. **`TC-V0180-003` (`Calm Editorial Hero Icon Palette & Vector Handle Visibility`):**
    - Alle 5 hero-iconen hebben gedempte editoriale kleuren (geen enkel primair RGB-kanaal op schreeuwend `255` behalve alpha) en openen in `EditWireframe` met zichtbare vector-knopen én sublagen.
 4. **`TC-V0180-004` (`Desktop Navigator Open by Default, Mobile Collapse < 900 dp`):**
-   - Op desktop (`1280×840 dp`) staat de linker `36-Case Studio-Navigator + Shape Locator` standaard open (`show_left_sidebar == true`) en de zwevende InfoBox onderin aan (`show_selection_info_hud == true`); op smalle mobiele schermen (`390×844 dp`) klapt de linker sidebar automatisch in zodat het canvas en het Liquid Glass Thumb Pie Menu maximale ruimte hebben.
+   - Op desktop (`1280×840 dp`, `1480×924 dp`, `1980×1080 dp`) staan de linker Studio-Sidebar (`show_left_sidebar == true`), het onderste 70/30 Specimen & Info-paneel (`show_preview_panel == true`) en de zwevende InfoBox (`show_selection_info_hud == true`) standaard open; op smalle mobiele schermen (`< 900 dp`) klapt de linker sidebar automatisch in zodat het canvas en het Liquid Glass Thumb Pie Menu maximale ruimte hebben.
+5. **`TC-V0180-005` (`Arbtest Multi-Slot "AOVA" Touch, One-Shot Modifiers & Active-Slot Viewport`):**
+   - Property-based `arbtest` verificatie dat multi-slot `"AOVA"` volledig binnen het mobiele canvas past, dat `active_slot_viewport()` voor elke slot `0..4` exacte hit-test en marquee-selectie levert, en dat one-shot touch-modifiers automatisch terugveren bij pointer-release.
+6. **`TC-V0180-006` (`Pixel-Exact Full-Window Liquid Glass Framebuffer Renders for 1980×1080 Het Baken & 1480×924 S9 Ultra`):**
+   - Deterministische software-rasterisatie van de volledige `GrafiaVectorCanvasDemo` (`egui` + `egui-macview` `MacContextThumbDial` + `MacEdgeThumbwheel` + 4-Zone Liquid Glass capsules + 70/30 Specimen & 2-Koloms Info-Kaart) op `1980×1080` (Het Baken) en `1480×924` (Samsung Galaxy Tab S9 Ultra Fullscreen Browser) voor zowel `LetterStudio` als `IconStudio`.
