@@ -140,7 +140,7 @@ impl MockFontHost {
             }
             StudioThemePreset::SonomaDark => (AppearanceMode::Dark, GrafiaTheme::sonoma_dark()),
         };
-        state.set_appearance_mode(mode);
+        state.set_appearance_with_system(mode, mode == AppearanceMode::Dark);
         *theme = next_theme.clone();
         state.theme = next_theme;
         state.bump_content_generation();
@@ -154,6 +154,7 @@ impl MockFontHost {
     ) {
         if let Some(idx) = DemoPreset::ALL.iter().position(|(p, _)| *p == preset) {
             self.tour_index = idx;
+            self.active_workspace = super::sonoma_top_bar::StudioSubWorkspace::from_tour_index(idx);
         }
         self.active_chapter = super::coach_card(preset).chapter;
         self.studio_mode = if self.tour_index >= 24

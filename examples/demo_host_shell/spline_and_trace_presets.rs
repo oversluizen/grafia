@@ -137,6 +137,8 @@ impl MockFontHost {
             self.last_canvas_size = Some(avail);
             if !self.initial_canvas_fitted || resized {
                 state.fit_viewport_to_glyph(avail.x, avail.y);
+                state.viewport.pan_offset.x.0 += self.last_canvas_origin.x;
+                state.viewport.pan_offset.y.0 += self.last_canvas_origin.y;
                 self.initial_canvas_fitted = true;
             }
         }

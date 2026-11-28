@@ -75,11 +75,11 @@ fn map_tool_to_thumb_preset(tool: CanvasTool) -> MacThumbContextPreset {
 }
 
 impl MockFontHost {
+    #[rustfmt::skip]
     pub fn set_mobile_thumb_hud_enabled(&mut self, enabled: bool, state: &mut GrafiaCanvasState) {
         self.show_mobile_thumb_hud = enabled;
         let mut prefs = state.preferences.clone();
-        prefs.show_touch_precision_loupe = false;
-        prefs.touch_finger_offset_dp = 0.0;
+        (prefs.show_touch_precision_loupe, prefs.touch_finger_offset_dp) = (false, 0.0);
         state.apply_preferences(&prefs);
         if enabled {
             state.set_active_input_device(InputDeviceKind::TouchFinger);
@@ -87,34 +87,24 @@ impl MockFontHost {
         } else {
             state.set_active_input_device(InputDeviceKind::Mouse);
             let ts = &mut state.drag_transients.touch_state;
-            (ts.touch_shift_latched, ts.touch_alt_latched) = (false, false);
-            (ts.touch_cmd_latched, ts.touch_space_pan_latched) = (false, false);
+            (ts.touch_shift_latched, ts.touch_alt_latched, ts.touch_cmd_latched, ts.touch_space_pan_latched) = (false, false, false, false);
             self.thumb_latched_mask = MacThumbIntentMask::NONE;
         }
     }
 
+    #[rustfmt::skip]
     pub fn take_mobile_hud_guarded_events(&self, ui: &Ui, avail: Vec2) -> Vec<Event> {
-        if !self.show_mobile_thumb_hud {
-            return Vec::new();
-        }
+        if !self.show_mobile_thumb_hud { return Vec::new(); }
         let canvas_rect = Rect::from_min_size(ui.cursor().min, avail);
-        let (dial_r, wheel_r) = compute_mobile_hud_hit_rects(
-            canvas_rect,
-            effective_dial_scale(canvas_rect),
-            self.thumb_dock_right,
-        );
+        let (dial_r, wheel_r) = compute_mobile_hud_hit_rects(canvas_rect, effective_dial_scale(canvas_rect), self.thumb_dock_right);
         ui.ctx().input_mut(|i| {
             let mut stashed = Vec::new();
             i.events.retain(|ev| {
                 let in_hud = match ev {
-                    Event::PointerButton { pos, .. }
-                    | Event::PointerMoved(pos)
-                    | Event::Touch { pos, .. } => dial_r.contains(*pos) || wheel_r.contains(*pos),
+                    Event::PointerButton { pos, .. } | Event::PointerMoved(pos) | Event::Touch { pos, .. } => dial_r.contains(*pos) || wheel_r.contains(*pos),
                     _ => false,
                 };
-                if in_hud {
-                    stashed.push(ev.clone());
-                }
+                if in_hud { stashed.push(ev.clone()); }
                 !in_hud
             });
             stashed
@@ -265,13 +255,24 @@ impl MockFontHost {
         let icon = resolve_active_wheel_icon(state, is_ic, (kin, krn, ctx));
         let builder = UiBuilder::new().id_salt("grafia_smart_wheel_scope").max_rect(wheel_r);
         let w_resp = ui.scope_builder(builder, |w_ui| {
-            MacEdgeThumbwheel::new(id, &mut self.edge_wheel_value_pct, range)
+            let r = MacEdgeThumbwheel::new(id, &mut self.edge_wheel_value_pct, range)
                 .wide_drum_width(wheel_r.width())
-                .center_icon(icon)
                 .scale(scale)
                 .theme(mac_theme)
-                .show(w_ui)
+                .show(w_ui);
+            let med_sz = Vec2::new((r.response.rect.height() * 1.15).max(18.0), (r.response.rect.height() - 4.0).max(14.0));
+            let med_r = Rect::from_center_size(r.response.rect.center(), med_sz);
+            let cr = egui::CornerRadius::same((med_sz.y * 0.45) as u8);
+            w_ui.painter().rect(med_r, cr, mac_theme.control_background(), egui::Stroke::new(1.0, r.effective_glass_accent), egui::StrokeKind::Inside);
+            w_ui.painter().text(med_r.center(), egui::Align2::CENTER_CENTER, icon, egui::FontId::proportional((med_sz.y * 0.62).clamp(10.0, 15.0)), mac_theme.label());
+            r
         }).inner;
+        let tel = state.controller_telemetry();
+        let tip = if kin { format!("Horizontaal Context-Wiel — Kinetische Fase t: {:.0}%", self.edge_wheel_value_pct) }
+            else if krn { "Horizontaal Context-Wiel — Live Kerning & Spatiëring (±1 / ±10 UPM)".to_owned() }
+            else if ctx { format!("Horizontaal Context-Wiel — {}: {}", tel.primary_rotary.parameter_name, tel.primary_rotary.formatted_value) }
+            else { format!("Horizontaal Context-Wiel — Canvas Zoom: {:.0}%", self.edge_wheel_value_pct) };
+        w_resp.response.on_hover_text(tip);
         if w_resp.value_delta.abs() > f32::EPSILON || w_resp.delta_ticks.abs() > f32::EPSILON {
             Self::apply_smart_context_wheel_delta(state, canvas_rect, self.edge_wheel_value_pct, w_resp.delta_ticks, (kin, krn, ctx));
         }

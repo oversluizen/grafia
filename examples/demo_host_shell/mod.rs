@@ -3,6 +3,8 @@
 pub mod cagd_and_controller_presets;
 pub mod color_and_hinting_presets;
 pub mod demo_panels;
+pub mod frame_renderer;
+pub mod glyph_info_card_ui;
 pub mod guided_showcase;
 pub mod guided_showcase_cards;
 pub mod host_ports;
@@ -14,11 +16,13 @@ pub mod mobile_thumb_hud;
 pub mod presets;
 pub mod sonoma_top_bar;
 pub mod spline_and_trace_presets;
+pub mod studio_project_ui;
 pub mod toolbar_specs;
 
 pub use guided_showcase::{coach_card, tool_dutch_guide, ShowcaseChapter};
 pub use presets::{DemoPreset, StudioThemePreset};
-pub use sonoma_top_bar::StudioWorkspaceMode;
+pub use sonoma_top_bar::{StudioSubWorkspace, StudioWorkspaceMode};
+pub use studio_project_ui::{FontGridFilter, StudioCanvasTab};
 
 use grafia::adapters::GrafiaCanvasState;
 use grafia::core::{
@@ -47,8 +51,10 @@ pub struct MockFontHost {
     pub responsive_layout_initialized: bool,
     pub initial_canvas_fitted: bool,
     pub last_canvas_size: Option<egui::Vec2>,
+    pub last_canvas_origin: egui::Pos2,
     pub active_chapter: ShowcaseChapter,
     pub studio_mode: StudioWorkspaceMode,
+    pub active_workspace: StudioSubWorkspace,
     pub studio_theme: StudioThemePreset,
     pub tour_index: usize,
     pub show_coach_banner: bool,
@@ -56,11 +62,17 @@ pub struct MockFontHost {
     pub show_mobile_thumb_hud: bool,
     pub thumb_dock_right: bool,
     pub is_fullscreen: bool,
+    pub mobile_bottom_tab_info: bool,
     pub preview_panel_height_dp: f32,
     pub thumb_dial_layer: egui_macview::MacThumbDialLayer,
     pub thumb_latched_mask: egui_macview::MacThumbIntentMask,
     pub thumb_rotary_norm: f32,
     pub edge_wheel_value_pct: f32,
+    pub show_font_grid_view: bool,
+    pub font_grid_filter: FontGridFilter,
+    pub open_tabs: Vec<StudioCanvasTab>,
+    pub active_tab_index: usize,
+    pub last_exported_svg: String,
 }
 
 impl Default for MockFontHost {
@@ -94,26 +106,41 @@ impl MockFontHost {
             ),
             preview_cache: PreviewStripCache::new(),
             event_log: VecDeque::new(),
-            show_left_sidebar: true,
-            show_right_inspector: false,
+            show_left_sidebar: false,
+            show_right_inspector: true,
             responsive_layout_initialized: false,
             initial_canvas_fitted: false,
             last_canvas_size: None,
+            last_canvas_origin: egui::Pos2::ZERO,
             active_chapter: ShowcaseChapter::BasisTekenen,
             studio_mode: StudioWorkspaceMode::LetterStudio,
+            active_workspace: StudioSubWorkspace::LetterContourAndSpacing,
             studio_theme: StudioThemePreset::PaperLight,
             tour_index: 0,
-            show_coach_banner: true,
+            show_coach_banner: false,
             crispness_badge_cache: None,
             show_mobile_thumb_hud: true,
             thumb_dock_right: false,
             is_fullscreen: false,
-            preview_panel_height_dp: 200.0,
+            mobile_bottom_tab_info: false,
+            preview_panel_height_dp: self::toolbar_specs::PREVIEW_HEIGHT_M_DP,
             thumb_dial_layer: egui_macview::MacThumbDialLayer::CompassModifiers,
             thumb_latched_mask: egui_macview::MacThumbIntentMask::NONE,
             thumb_rotary_norm: 0.5,
             edge_wheel_value_pct: 48.0,
+            show_font_grid_view: false,
+            font_grid_filter: FontGridFilter::All,
+            open_tabs: vec![
+                StudioCanvasTab::glyph("A"),
+                StudioCanvasTab::glyph("O"),
+                StudioCanvasTab::word_stream("AOVA"),
+                StudioCanvasTab::glyph("wifi.signal"),
+                StudioCanvasTab::glyph("mic.slash"),
+            ],
+            active_tab_index: 0,
+            last_exported_svg: String::new(),
         };
+        host.populate_extended_studio_catalog();
         host.push_log(
             "HostPort Ready: Cmd+U, Text Tool (T), Components, Spacing/Kerning connected",
         );
@@ -123,6 +150,8 @@ impl MockFontHost {
     pub fn fit_canvas_viewport(&self, state: &mut GrafiaCanvasState) {
         if let Some(sz) = self.last_canvas_size.filter(|s| s.x > 64.0 && s.y > 64.0) {
             state.fit_viewport_to_glyph(sz.x, sz.y);
+            state.viewport.pan_offset.x.0 += self.last_canvas_origin.x;
+            state.viewport.pan_offset.y.0 += self.last_canvas_origin.y;
         } else {
             self::toolbar_specs::fit_demo_canvas_viewport(state);
         }
@@ -130,88 +159,58 @@ impl MockFontHost {
 
     fn build_default_glyph_library() -> BTreeMap<String, Glyph> {
         let mut glyph_library = BTreeMap::new();
-        let archetypes = [
+        for (name, arch) in [
             ("A", GlyphArchetype::A),
             ("O", GlyphArchetype::O),
             ("N", GlyphArchetype::N),
             ("S", GlyphArchetype::S),
-        ];
-        for (name, arch) in archetypes {
+        ] {
             let mut st = GrafiaCanvasState::init_glyph_a();
             st.load_glyph_archetype(arch);
             st.glyph.name = name.to_owned();
             glyph_library.insert(name.to_owned(), st.glyph);
         }
-        glyph_library.insert(
-            "V".to_owned(),
-            Self::make_box_glyph(
-                "V",
-                640.0,
-                vec![Self::make_quad_contour([
-                    (80.0, 700.0),
-                    (320.0, 0.0),
-                    (560.0, 700.0),
-                ])],
-            ),
-        );
-        glyph_library.insert(
-            "acutecomb".to_owned(),
-            Self::make_box_glyph(
+        let v_c = Self::make_quad_contour([(80.0, 700.0), (320.0, 0.0), (560.0, 700.0)]);
+        glyph_library.insert("V".to_owned(), Self::make_box_glyph("V", 640.0, vec![v_c]));
+        for (name, cs) in [
+            (
                 "acutecomb",
-                0.0,
                 vec![Self::make_rect_contour(1, 20, -25.0, 30.0, 45.0, 140.0)],
             ),
-        );
-        glyph_library.insert(
-            "dieresiscomb".to_owned(),
-            Self::make_box_glyph(
+            (
                 "dieresiscomb",
-                0.0,
                 vec![
                     Self::make_rect_contour(1, 30, -55.0, 40.0, -15.0, 90.0),
                     Self::make_rect_contour(2, 40, 15.0, 40.0, 55.0, 90.0),
                 ],
             ),
-        );
-        glyph_library.insert(
-            "cedillacomb".to_owned(),
-            Self::make_box_glyph(
+            (
                 "cedillacomb",
-                0.0,
                 vec![Self::make_rect_contour(1, 50, -20.0, -140.0, 25.0, 0.0)],
             ),
-        );
+        ] {
+            glyph_library.insert(name.to_owned(), Self::make_box_glyph(name, 0.0, cs));
+        }
         glyph_library
     }
 
-    fn make_rect_contour(
-        cid: usize,
-        base_nid: u64,
-        x0: f64,
-        y0: f64,
-        x1: f64,
-        y1: f64,
-    ) -> GlyphContour {
-        GlyphContour::new(
-            ContourId(cid),
-            vec![
-                Node::new(NodeId(base_nid), x0, y0, NodeType::Corner),
-                Node::new(NodeId(base_nid + 1), x1, y0, NodeType::Corner),
-                Node::new(NodeId(base_nid + 2), x1, y1, NodeType::Corner),
-                Node::new(NodeId(base_nid + 3), x0, y1, NodeType::Corner),
-            ],
-        )
+    #[rustfmt::skip]
+    fn make_rect_contour(cid: usize, base_nid: u64, x0: f64, y0: f64, x1: f64, y1: f64) -> GlyphContour {
+        GlyphContour::new(ContourId(cid), vec![
+            Node::new(NodeId(base_nid), x0, y0, NodeType::Corner),
+            Node::new(NodeId(base_nid + 1), x1, y0, NodeType::Corner),
+            Node::new(NodeId(base_nid + 2), x1, y1, NodeType::Corner),
+            Node::new(NodeId(base_nid + 3), x0, y1, NodeType::Corner),
+        ])
     }
 
+    #[rustfmt::skip]
     fn make_quad_contour(pts: [(f64, f64); 3]) -> GlyphContour {
-        GlyphContour::new(
-            ContourId(1),
-            vec![
-                Node::new(NodeId(10), pts[0].0, pts[0].1, NodeType::Corner),
-                Node::new(NodeId(11), pts[1].0, pts[1].1, NodeType::Corner),
-                Node::new(NodeId(12), pts[2].0, pts[2].1, NodeType::Corner),
-            ],
-        )
+        GlyphContour::new(ContourId(1), vec![
+            Node::new(NodeId(10), pts[0].0, pts[0].1, NodeType::Corner),
+            Node::new(NodeId(11), pts[1].0, pts[1].1, NodeType::Corner),
+            Node::new(NodeId(12), pts[2].0, pts[2].1, NodeType::Corner),
+        ])
     }
 
     fn make_box_glyph(name: &str, width: f64, contours: Vec<GlyphContour>) -> Glyph {
@@ -262,30 +261,23 @@ impl MockFontHost {
 
     #[must_use]
     pub fn default_ghost_marks(&self) -> Vec<GhostMarkPath> {
-        let get_contours = |key: &str| {
+        let get = |k: &str| {
             self.glyph_library
-                .get(key)
+                .get(k)
                 .map_or_else(Vec::new, |g| g.contours.clone())
         };
-        let cedilla = get_contours("cedillacomb");
-        vec![
-            GhostMarkPath {
-                anchor_name: "top".into(),
-                contours: get_contours("acutecomb"),
-            },
-            GhostMarkPath {
-                anchor_name: "top".into(),
-                contours: get_contours("dieresiscomb"),
-            },
-            GhostMarkPath {
-                anchor_name: "bottom".into(),
-                contours: cedilla.clone(),
-            },
-            GhostMarkPath {
-                anchor_name: "ogonek".into(),
-                contours: cedilla,
-            },
+        [
+            ("top", "acutecomb"),
+            ("top", "dieresiscomb"),
+            ("bottom", "cedillacomb"),
+            ("ogonek", "cedillacomb"),
         ]
+        .into_iter()
+        .map(|(anchor_name, key)| GhostMarkPath {
+            anchor_name: anchor_name.into(),
+            contours: get(key),
+        })
+        .collect()
     }
 
     #[must_use]
@@ -302,21 +294,21 @@ impl MockFontHost {
 
     #[must_use]
     pub fn build_slots_for_text(&self, text: &str) -> Vec<GlyphSlot> {
-        let mut slots = Vec::new();
         let mut prev_name: Option<String> = None;
-        for ch in text.chars() {
-            let glyph = self.resolve_glyph(ch);
-            let kern = prev_name
-                .as_ref()
-                .and_then(|l| {
-                    self.kerning_pairs
-                        .get(&(l.clone(), glyph.name.clone()))
-                        .copied()
-                })
-                .unwrap_or(0);
-            prev_name = Some(glyph.name.clone());
-            slots.push(GlyphSlot::new(glyph, kern));
-        }
-        slots
+        text.chars()
+            .map(|ch| {
+                let g = self.resolve_glyph(ch);
+                let k = prev_name
+                    .as_ref()
+                    .and_then(|l| {
+                        self.kerning_pairs
+                            .get(&(l.clone(), g.name.clone()))
+                            .copied()
+                    })
+                    .unwrap_or(0);
+                prev_name = Some(g.name.clone());
+                GlyphSlot::new(g, k)
+            })
+            .collect()
     }
 }

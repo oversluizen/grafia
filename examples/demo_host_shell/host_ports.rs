@@ -1,12 +1,20 @@
 //! Host-Port ("Stekkers") request, spacing, and kerning event pump for `MockFontHost`.
 
 use super::icon_studio_showcase::{demo_kinetic_effect_by_idx, DEMO_KINETIC_DEFAULT_PHASE};
+use super::sonoma_top_bar::{section_header_text, StudioWorkspaceMode};
+use super::toolbar_specs::{
+    PREVIEW_HEADER_CHROME_DP, PREVIEW_HEIGHT_L_DP, PREVIEW_HEIGHT_MATCH_TOL_DP,
+    PREVIEW_HEIGHT_M_DP, PREVIEW_HEIGHT_S_DP, PREVIEW_STRIP_MAX_HEIGHT_DP,
+    PREVIEW_STRIP_MIN_HEIGHT_DP,
+};
 use super::MockFontHost;
-use egui::{Slider, Ui};
+use egui::{Image, ScrollArea, Separator, Slider, Ui, Vec2};
+use egui_macview::MacTheme;
 use grafia::adapters::GrafiaCanvasState;
 use grafia::core::{
     CanvasHostRequest, KineticPlaybackMode, TextStreamEditKind, TextStreamEditRequest,
 };
+use grafia::tokens::{PREVIEW_BLUR_MAX_RADIUS_PX, PREVIEW_BLUR_MIN_RADIUS_PX};
 
 impl MockFontHost {
     pub fn poll_host_ports(&mut self, state: &mut GrafiaCanvasState) {
@@ -225,5 +233,73 @@ impl MockFontHost {
             st.icon_studio.kinetic.playing = false;
             st.bump_content_generation();
         }
+    }
+
+    pub(crate) fn render_preview_size_presets(&mut self, ui: &mut Ui) {
+        for (lbl, h_dp) in [
+            ("S", PREVIEW_HEIGHT_S_DP),
+            ("M", PREVIEW_HEIGHT_M_DP),
+            ("L", PREVIEW_HEIGHT_L_DP),
+        ] {
+            let is_cur = (self.preview_panel_height_dp - h_dp).abs() < PREVIEW_HEIGHT_MATCH_TOL_DP;
+            if ui.selectable_label(is_cur, lbl).clicked() {
+                self.preview_panel_height_dp = h_dp;
+            }
+        }
+    }
+
+    pub(crate) fn render_waterfall_and_kinetic_card(
+        &mut self,
+        ui: &mut Ui,
+        state: &mut GrafiaCanvasState,
+        tm: &MacTheme,
+        target_w_px: u32,
+    ) {
+        ScrollArea::horizontal()
+            .id_salt("preview_strip_ctrl_scroll")
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    let is_ic = self.studio_mode == StudioWorkspaceMode::IconStudio;
+                    let hdr = if is_ic {
+                        "KINETISCHE TIJDLIJN & SPECIMEN"
+                    } else {
+                        "LIVE SPECIMEN WATERFALL"
+                    };
+                    ui.label(section_header_text(hdr, tm));
+                    ui.add(Separator::default().vertical());
+                    self.render_preview_size_presets(ui);
+                    ui.add(Separator::default().vertical());
+                    if is_ic {
+                        self.render_kinetic_timeline_controls(ui, state);
+                    } else {
+                        let r = PREVIEW_BLUR_MIN_RADIUS_PX..=PREVIEW_BLUR_MAX_RADIUS_PX;
+                        let _ = ui
+                            .add(Slider::new(&mut self.preview_cfg.blur_radius_px, r).text("Blur"));
+                        ui.checkbox(&mut self.preview_cfg.flipped, "Spiegel");
+                        ui.checkbox(&mut self.preview_cfg.inverted, "Inverteer");
+                    }
+                });
+            });
+        self.render_waterfall_texture(ui, state, target_w_px);
+    }
+
+    pub(crate) fn render_waterfall_texture(
+        &mut self,
+        ui: &mut Ui,
+        state: &GrafiaCanvasState,
+        target_w_px: u32,
+    ) {
+        let avail_h = (self.preview_panel_height_dp - PREVIEW_HEADER_CHROME_DP)
+            .clamp(PREVIEW_STRIP_MIN_HEIGHT_DP, PREVIEW_STRIP_MAX_HEIGHT_DP);
+        self.preview_cfg.width_px = target_w_px;
+        self.preview_cfg.height_px = avail_h.round() as u32;
+        let (tex, _) = self
+            .preview_cache
+            .get_or_update_texture(ui.ctx(), state, &self.preview_cfg);
+        let sz = Vec2::new(
+            self.preview_cfg.width_px as f32,
+            self.preview_cfg.height_px as f32,
+        );
+        ui.add(Image::from_texture((tex.id(), sz)));
     }
 }

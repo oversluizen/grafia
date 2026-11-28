@@ -1,97 +1,36 @@
-//! Single-Row macOS Sonoma / AppKit Toolbar built with `egui-macview` (`MacSegmentedControl` & `MacPopUpButton`)
-//! for `vector_canvas_demo` (`SPEC-017 §2.9` & `SPEC-018 §1.1`).
+//! 4-Zone Liquid Glass macOS Sonoma / AppKit Toolbar (`Zone A: Studio & Creatie`,
+//! `Zone B: Gecentreerde Showcase-Pil`, `Zone C: Weergave, Overlays & Vensters`, `SPEC-018 §3.7`).
 
 use super::super::VIEW_MODE_SPECS;
-use super::icon_studio_showcase::{demo_kinetic_effect_by_idx, DEMO_KINETIC_DEFAULT_PHASE};
-use super::presets::StudioThemePreset;
-use super::toolbar_specs::TOOL_ICON_SPECS;
+pub use super::toolbar_specs::{StudioSubWorkspace, StudioWorkspaceMode, TOOL_CATEGORIES};
+use super::toolbar_specs::{
+    CASE_POPUP_WIDTH_DP, CHAPTER_POPUP_WIDTH_DP, CORE_STUDIO_TOOLS, GLASS_CAPSULE_CORNER_RADIUS_U8,
+    GLASS_CAPSULE_PAD_X_F32, GLASS_CAPSULE_PAD_Y_F32, GLASS_HEADER_FONT_PT,
+    MOBILE_RESPONSIVE_BREAKPOINT_WIDTH_DP, TOOL_GRID_SPACING_X_DP, TOOL_GRID_SPACING_Y_DP,
+};
 use super::{DemoPreset, MockFontHost, ShowcaseChapter};
-use egui::{ScrollArea, Separator, Ui};
+use egui::{CornerRadius, Frame, Grid, Margin, RichText, Stroke, Ui};
 use egui_macview::{MacPopUpButton, MacSegmentedControl, MacSymbol, MacTheme};
 use grafia::adapters::{CanvasTool, GrafiaCanvasState};
-use grafia::core::PrimitiveSubTool;
+use grafia::core::{PrimitiveSubTool, SymbolColorRenderingMode};
 use grafia::tokens::GrafiaTheme;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum StudioWorkspaceMode {
-    #[default]
-    LetterStudio,
-    IconStudio,
+pub fn liquid_glass_capsule_frame(tm: &MacTheme) -> Frame {
+    Frame::NONE
+        .fill(tm.control_background())
+        .corner_radius(CornerRadius::same(GLASS_CAPSULE_CORNER_RADIUS_U8))
+        .stroke(Stroke::new(1.0, tm.specular_rim_top()))
+        .inner_margin(Margin::symmetric(
+            GLASS_CAPSULE_PAD_X_F32 as i8,
+            GLASS_CAPSULE_PAD_Y_F32 as i8,
+        ))
 }
 
-#[rustfmt::skip]
-const CORE_STUDIO_TOOLS: [(CanvasTool, &str, &str); 8] = [
-    (CanvasTool::Select, "\u{f61e}", "Selecteren (V)"), (CanvasTool::Pen, "\u{f2bf}", "Bézier-Pen (P)"),
-    (CanvasTool::Primitives, "\u{f80c}", "Rechthoek / Cirkel (F)"), (CanvasTool::ShapeBuilder, "\u{f618}", "Vlakken Smelten"),
-    (CanvasTool::Knife, "\u{f7c9}", "Mes (E)"), (CanvasTool::Pencil, "\u{f7cb}", "Vrije Schetspen (B)"),
-    (CanvasTool::Measurement, "\u{f7ca}", "Meetlat (L)"), (CanvasTool::Text, "\u{f892}", "Tekst & Kerning (T)"),
-];
-
-#[rustfmt::skip]
-const KINETIC_EFFECT_LABELS: [&str; 10] = [
-    "Animatie: Pulse", "Animatie: Bounce", "Animatie: VarColor", "Animatie: Scale", "Animatie: DrawOn",
-    "Animatie: DrawOff", "Animatie: Wiggle", "Animatie: Rotate", "Animatie: Breathe", "Animatie: MagicReplace",
-];
-
-#[rustfmt::skip]
-pub const TOOL_CATEGORIES: [(&str, &[CanvasTool]); 4] = [
-    ("1. Selectie & Transformatie", &[CanvasTool::Select, CanvasTool::Lasso, CanvasTool::Rotate, CanvasTool::Scale, CanvasTool::Zoom, CanvasTool::Text]),
-    ("2. Vector & Vlak Constructie", &[CanvasTool::Pen, CanvasTool::Primitives, CanvasTool::Pencil, CanvasTool::Knife, CanvasTool::ShapeBuilder, CanvasTool::Pixel]),
-    ("3. CAGD, Stems & Borstels", &[CanvasTool::Measurement, CanvasTool::Stem, CanvasTool::Trowel, CanvasTool::Cleaner]),
-    ("4. Masters, Hinting & Notitie", &[CanvasTool::TrueTypeInstructor, CanvasTool::Hoi, CanvasTool::CurvedTrajectory, CanvasTool::Annotation]),
-];
-
-impl MockFontHost {
-    pub fn switch_studio_workspace(
-        &mut self,
-        mode: StudioWorkspaceMode,
-        state: &mut GrafiaCanvasState,
-    ) {
-        if self.studio_mode == mode {
-            return;
-        }
-        self.studio_mode = mode;
-        if mode == StudioWorkspaceMode::LetterStudio {
-            if matches!(
-                self.active_chapter,
-                ShowcaseChapter::IconStudioEnAnimatie | ShowcaseChapter::HostStekkersEnHardware
-            ) {
-                self.active_chapter = ShowcaseChapter::BasisTekenen;
-            }
-            state.icon_studio.kinetic.playing = false;
-            state.icon_studio.kinetic.phase_t = 0.0;
-            state.icon_studio.kinetic.playback_mode = grafia::core::KineticPlaybackMode::OneShot;
-            state.icon_studio.radial_symmetry.fold_count = 1;
-            state.icon_studio.variable_width_strokes.clear();
-            state.show_metrics = true;
-            state.set_icon_keyline_grid_enabled(false);
-            if !state.color_sublayers.is_empty()
-                || state.glyph.name.contains('.')
-                || state.glyph.width > 700.0
-            {
-                state.load_glyph_archetype(state.active_archetype);
-            }
-            state.show_selection_info_hud = true;
-            self.fit_canvas_viewport(state);
-        } else {
-            self.active_chapter = ShowcaseChapter::IconStudioEnAnimatie;
-            state.text_stream = grafia::core::CanvasTextStream::new();
-            state.set_companion_master_layers(Vec::new());
-            state.show_master_compatibility = false;
-            state.set_postscript_hints(Vec::new());
-            state.set_truetype_instructions(Vec::new());
-            state.set_pixel_preview_ppem(None);
-            state.show_metrics = false;
-            if state.color_sublayers.is_empty() || !state.glyph.name.contains('.') {
-                self.apply_icon_studio_preset(DemoPreset::KineticWifiBounceAndColorModes, state);
-            } else {
-                state.glyph.width = 800.0;
-                state.glyph.height = 800.0;
-                state.set_icon_keyline_grid_enabled(true);
-                self.fit_canvas_viewport(state);
-            }
-        }
-    }
+pub fn section_header_text(label: &str, tm: &MacTheme) -> RichText {
+    RichText::new(label)
+        .size(GLASS_HEADER_FONT_PT)
+        .color(tm.secondary_label())
+        .strong()
 }
 
 pub fn render_top_toolbar(
@@ -101,56 +40,112 @@ pub fn render_top_toolbar(
     host: &mut MockFontHost,
     show_preview_panel: &mut bool,
 ) {
-    let mac_theme = host.active_mac_theme();
-    ScrollArea::horizontal()
-        .id_salt("top_toolbar_scroll")
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                let nav_icon = MacSymbol::SidebarLeading.as_str();
-                let mut sb_on = [host.show_left_sidebar];
-                if MacSegmentedControl::new(&[nav_icon], 0)
-                    .id_salt("sonoma_left_nav_toggle")
-                    .theme(&mac_theme)
-                    .show_multi(ui, &mut sb_on)
-                    .is_some()
-                {
-                    host.show_left_sidebar = sb_on[0];
-                }
-                let ws_idx = usize::from(host.studio_mode == StudioWorkspaceMode::IconStudio);
-                MacSegmentedControl::new(&["\u{f892} Letter", "\u{f77e} Icoon"], ws_idx)
-                    .id_salt("sonoma_ws_seg")
-                    .theme(&mac_theme)
-                    .show(ui, |idx| {
-                        let m = if idx == 1 {
-                            StudioWorkspaceMode::IconStudio
-                        } else {
-                            StudioWorkspaceMode::LetterStudio
-                        };
-                        host.switch_studio_workspace(m, state);
-                    });
-                ui.add(Separator::default().vertical());
-                render_appkit_tools_segmented(ui, state, &mac_theme);
-                ui.add(Separator::default().vertical());
-                render_appkit_view_mode_segmented(ui, state, &mac_theme);
-                ui.add(Separator::default().vertical());
-                render_appkit_scene_popups(ui, state, theme, host, &mac_theme);
-                ui.add(Separator::default().vertical());
-                render_appkit_utility_strip(ui, state, theme, host, show_preview_panel, &mac_theme);
+    let tm = host.active_mac_theme();
+    if ui.available_width() < MOBILE_RESPONSIVE_BREAKPOINT_WIDTH_DP {
+        ui.horizontal_wrapped(|ui| {
+            liquid_glass_capsule_frame(&tm).show(ui, |ui| {
+                render_zone_a_workspace_switcher(ui, state, theme, host, &tm);
+                render_zone_b_showcase_pill(ui, state, theme, host, &tm);
+                host.render_zone_c_overlays_and_windows(ui, state, theme, show_preview_panel, &tm);
             });
+        });
+        ui.horizontal_wrapped(|ui| {
+            liquid_glass_capsule_frame(&tm).show(ui, |ui| {
+                render_zone_a_core_tools(ui, state, host, &tm);
+                render_zone_c_view_or_color_mode(ui, state, host, &tm);
+            });
+        });
+    } else {
+        ui.horizontal(|ui| {
+            liquid_glass_capsule_frame(&tm).show(ui, |ui| {
+                render_zone_a_workspace_switcher(ui, state, theme, host, &tm);
+            });
+            liquid_glass_capsule_frame(&tm).show(ui, |ui| {
+                render_zone_a_core_tools(ui, state, host, &tm);
+                render_zone_b_showcase_pill(ui, state, theme, host, &tm);
+            });
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |r_ui| {
+                liquid_glass_capsule_frame(&tm).show(r_ui, |ui| {
+                    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |l_ui| {
+                        render_zone_c_view_or_color_mode(l_ui, state, host, &tm);
+                        host.render_zone_c_overlays_and_windows(
+                            l_ui,
+                            state,
+                            theme,
+                            show_preview_panel,
+                            &tm,
+                        );
+                    });
+                });
+            });
+        });
+    }
+}
+
+fn render_zone_a_workspace_switcher(
+    ui: &mut Ui,
+    state: &mut GrafiaCanvasState,
+    theme: &mut GrafiaTheme,
+    host: &mut MockFontHost,
+    tm: &MacTheme,
+) {
+    let mut sb_on = [host.show_left_sidebar];
+    if MacSegmentedControl::new(&[MacSymbol::SidebarLeading.as_str()], 0)
+        .id_salt("zone_a_sb_toggle")
+        .theme(tm)
+        .show_multi(ui, &mut sb_on)
+        .is_some()
+    {
+        host.show_left_sidebar = sb_on[0];
+    }
+    let ws_idx = usize::from(host.studio_mode == StudioWorkspaceMode::IconStudio);
+    MacSegmentedControl::new(&["\u{f892} Aa", "\u{f77e} ❖"], ws_idx)
+        .id_salt("zone_a_ws_seg")
+        .theme(tm)
+        .show(ui, |idx| {
+            let sub = if idx == 1 {
+                StudioSubWorkspace::IconVectorAndGlass
+            } else {
+                StudioSubWorkspace::LetterContourAndSpacing
+            };
+            host.activate_sub_workspace(sub, state, theme);
+        });
+    let tabs: &[StudioSubWorkspace] = if host.studio_mode == StudioWorkspaceMode::LetterStudio {
+        &StudioSubWorkspace::LETTER_TABS
+    } else {
+        &StudioSubWorkspace::ICON_TABS
+    };
+    let labels: Vec<&str> = tabs.iter().map(|t| t.tab_label()).collect();
+    let cur = tabs
+        .iter()
+        .position(|&w| w == host.active_workspace)
+        .unwrap_or(0);
+    MacSegmentedControl::new(&labels, cur)
+        .id_salt("zone_a_sub_ws_tabs")
+        .theme(tm)
+        .show(ui, |idx| {
+            host.activate_sub_workspace(tabs[idx], state, theme);
         });
 }
 
-fn render_appkit_tools_segmented(ui: &mut Ui, state: &mut GrafiaCanvasState, mac_theme: &MacTheme) {
-    let sel_idx = CORE_STUDIO_TOOLS
+fn render_zone_a_core_tools(
+    ui: &mut Ui,
+    state: &mut GrafiaCanvasState,
+    host: &MockFontHost,
+    tm: &MacTheme,
+) {
+    let ws_tools = host.active_workspace.tools();
+    let _ = CORE_STUDIO_TOOLS;
+    let sel_idx = ws_tools
         .iter()
-        .position(|(t, _, _)| *t == state.active_tool)
+        .position(|(t, _)| *t == state.active_tool)
         .unwrap_or(0);
-    let icons: [&str; 8] = CORE_STUDIO_TOOLS.map(|(_, i, _)| i);
+    let icons: [&str; 6] = ws_tools.map(|(_, i)| i);
     MacSegmentedControl::new(&icons, sel_idx)
-        .id_salt("sonoma_tools_seg")
-        .theme(mac_theme)
+        .id_salt("zone_a_tools_seg")
+        .theme(tm)
         .show(ui, |idx| {
-            let (tool, _, _) = CORE_STUDIO_TOOLS[idx];
+            let (tool, _) = ws_tools[idx];
             if tool == CanvasTool::Primitives && state.active_tool == CanvasTool::Primitives {
                 state.drawing_tool_state.primitive_sub_tool =
                     if state.drawing_tool_state.primitive_sub_tool == PrimitiveSubTool::Rectangle {
@@ -161,62 +156,39 @@ fn render_appkit_tools_segmented(ui: &mut Ui, state: &mut GrafiaCanvasState, mac
             }
             state.activate_tool(tool);
         });
-    ui.menu_button("\u{f608} Tools", |ui| {
-        for (cat_idx, (cat_title, tools)) in TOOL_CATEGORIES.iter().enumerate() {
-            if cat_idx > 0 {
-                ui.separator();
-            }
-            ui.strong(*cat_title);
-            egui::Grid::new(("tool_cat_grid", cat_idx))
-                .num_columns(2)
-                .spacing([8.0, 4.0])
-                .show(ui, |g_ui| {
-                    for (i, &tool) in tools.iter().enumerate() {
-                        let icon = TOOL_ICON_SPECS
-                            .iter()
-                            .find(|(t, _, _)| *t == tool)
-                            .map_or("", |(_, ic, _)| *ic);
-                        let (nl_name, nl_tip) = super::tool_dutch_guide(tool);
-                        let lbl = format!("{icon} {nl_name}");
-                        if g_ui
-                            .selectable_label(state.active_tool == tool, lbl)
-                            .on_hover_text(nl_tip)
-                            .clicked()
-                        {
-                            state.activate_tool(tool);
-                            g_ui.close();
-                        }
-                        if i % 2 == 1 {
-                            g_ui.end_row();
-                        }
+    ui.menu_button("•••", |ui| {
+        Grid::new("tool_categories_2x2_card")
+            .num_columns(2)
+            .spacing([TOOL_GRID_SPACING_X_DP, TOOL_GRID_SPACING_Y_DP])
+            .show(ui, |card_ui| {
+                for (cat_idx, (cat_title, tools)) in TOOL_CATEGORIES.iter().enumerate() {
+                    card_ui.vertical(|col_ui| {
+                        col_ui.label(section_header_text(cat_title, tm));
+                        super::glyph_info_card_ui::render_tool_category_grid(
+                            col_ui, cat_idx, tools, state,
+                        );
+                    });
+                    if cat_idx % 2 == 1 {
+                        card_ui.end_row();
                     }
-                });
-        }
-    });
+                }
+            });
+    })
+    .response
+    .on_hover_text("Alle 20 gereedschappen met S-Pen / muis-uitlegballonnetjes & sneltoetsen");
 }
 
-fn render_appkit_view_mode_segmented(ui: &mut Ui, st: &mut GrafiaCanvasState, tm: &MacTheme) {
-    let specs = [
-        VIEW_MODE_SPECS[0],
-        VIEW_MODE_SPECS[1],
-        VIEW_MODE_SPECS[3],
-        VIEW_MODE_SPECS[2],
-    ];
-    let icons = specs.map(|s| s.2);
-    let cur = specs.iter().position(|s| s.0 == st.view_mode).unwrap_or(0);
-    MacSegmentedControl::new(&icons, cur)
-        .id_salt("sonoma_view_seg")
-        .theme(tm)
-        .show(ui, |idx| st.view_mode = specs[idx].0);
-}
-
-fn render_appkit_scene_popups(
+fn render_zone_b_showcase_pill(
     ui: &mut Ui,
     st: &mut GrafiaCanvasState,
     theme: &mut GrafiaTheme,
     host: &mut MockFontHost,
     tm: &MacTheme,
 ) {
+    MacSegmentedControl::new(&["◀"], 0)
+        .id_salt("zone_b_prev_btn")
+        .theme(tm)
+        .show_momentary(ui, |_| host.step_tour_prev(st, theme));
     let ch_labels: [&str; 6] = ShowcaseChapter::ALL.map(ShowcaseChapter::short_pill);
     let mut ch_idx = ShowcaseChapter::ALL
         .iter()
@@ -224,14 +196,13 @@ fn render_appkit_scene_popups(
         .unwrap_or(0);
     let prev_ch = ch_idx;
     MacPopUpButton::new(&mut ch_idx, &ch_labels)
-        .id("sonoma_chapter_6_pop")
-        .width(96.0)
+        .id("zone_b_chapter_pop")
+        .width(CHAPTER_POPUP_WIDTH_DP)
         .theme(tm)
         .show(ui);
     if ch_idx != prev_ch {
         host.active_chapter = ShowcaseChapter::ALL[ch_idx];
-        let first_preset = host.active_chapter.presets()[0];
-        host.apply_preset(first_preset, st, theme);
+        host.apply_preset(host.active_chapter.presets()[0], st, theme);
     }
     let ch_presets = host.active_chapter.presets();
     let case_labels: [&str; 6] = ch_presets.map(|p| super::coach_card(p).short_button);
@@ -242,127 +213,56 @@ fn render_appkit_scene_popups(
         .unwrap_or(0);
     let prev_case = case_idx;
     MacPopUpButton::new(&mut case_idx, &case_labels)
-        .id("sonoma_chapter_cases_6_pop")
-        .width(196.0)
+        .id("zone_b_case_pop")
+        .width(CASE_POPUP_WIDTH_DP)
         .theme(tm)
         .show(ui);
     if case_idx != prev_case {
         host.apply_preset(ch_presets[case_idx], st, theme);
     }
-    MacSegmentedControl::new(&["◀", "▶"], 0)
-        .id_salt("sonoma_case_step_seg")
+    MacSegmentedControl::new(&["▶"], 0)
+        .id_salt("zone_b_next_btn")
         .theme(tm)
-        .show_momentary(ui, |idx| {
-            if idx == 0 {
-                host.step_tour_prev(st, theme);
-            } else {
-                host.step_tour_next(st, theme);
-            }
-        });
+        .show_momentary(ui, |_| host.step_tour_next(st, theme));
+}
+
+fn render_zone_c_view_or_color_mode(
+    ui: &mut Ui,
+    st: &mut GrafiaCanvasState,
+    host: &MockFontHost,
+    tm: &MacTheme,
+) {
     if host.studio_mode == StudioWorkspaceMode::IconStudio {
-        let mut eff_idx = (0..10)
+        let cur_cm = (0..4)
             .find(|&i| {
-                std::mem::discriminant(&st.icon_studio.kinetic.effect)
-                    == std::mem::discriminant(&demo_kinetic_effect_by_idx(i))
+                let (_, m) = SymbolColorRenderingMode::preset_by_index(i);
+                std::mem::discriminant(&st.icon_studio.color_mode) == std::mem::discriminant(&m)
             })
             .unwrap_or(1);
-        let prev_eff = eff_idx;
-        MacPopUpButton::new(&mut eff_idx, &KINETIC_EFFECT_LABELS)
-            .id("sonoma_kin_pop")
-            .width(142.0)
+        MacSegmentedControl::new(&["\u{f7f8}", "\u{f7ff}", "\u{f80d}", "\u{f77e}"], cur_cm)
+            .id_salt("zone_c_icon_cm_seg")
             .theme(tm)
-            .show(ui);
-        if eff_idx != prev_eff {
-            st.icon_studio.kinetic.effect = demo_kinetic_effect_by_idx(eff_idx);
-            st.icon_studio.kinetic.phase_t = st
-                .icon_studio
-                .kinetic
-                .phase_t
-                .max(DEMO_KINETIC_DEFAULT_PHASE);
-            st.bump_content_generation();
-        }
-        let play_lbl = if st.icon_studio.kinetic.playing {
-            "⏸"
-        } else {
-            "▶"
-        };
-        MacSegmentedControl::new(&[play_lbl], 0)
-            .id_salt("sonoma_kinetic_play_btn")
-            .theme(tm)
-            .show_momentary(ui, |_| {
-                st.icon_studio.kinetic.playing = !st.icon_studio.kinetic.playing;
-                st.bump_content_generation();
+            .show(ui, |idx| {
+                if idx == 3 {
+                    st.view_mode = VIEW_MODE_SPECS[3].0;
+                } else {
+                    st.view_mode = VIEW_MODE_SPECS[0].0;
+                    let (_, m) = SymbolColorRenderingMode::preset_by_index(idx);
+                    st.set_symbol_color_rendering_mode(m);
+                }
             });
+    } else {
+        let specs = [
+            VIEW_MODE_SPECS[0],
+            VIEW_MODE_SPECS[1],
+            VIEW_MODE_SPECS[3],
+            VIEW_MODE_SPECS[2],
+        ];
+        let icons = specs.map(|s| s.2);
+        let cur = specs.iter().position(|s| s.0 == st.view_mode).unwrap_or(0);
+        MacSegmentedControl::new(&icons, cur)
+            .id_salt("zone_c_view_seg")
+            .theme(tm)
+            .show(ui, |idx| st.view_mode = specs[idx].0);
     }
-}
-
-fn toggle_demo_fullscreen(ui: &Ui, host: &mut MockFontHost) {
-    host.is_fullscreen = !host.is_fullscreen;
-    if host.is_fullscreen {
-        host.show_coach_banner = false;
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    ui.ctx()
-        .send_viewport_cmd(egui::ViewportCommand::Fullscreen(host.is_fullscreen));
-    #[cfg(target_arch = "wasm32")]
-    {
-        let _ = ui;
-        if let Some(doc) = web_sys::window().and_then(|w| w.document()) {
-            if doc.fullscreen_element().is_some() {
-                doc.exit_fullscreen();
-            } else if let Some(el) = doc.document_element() {
-                let _ = el.request_fullscreen();
-            }
-        }
-    }
-}
-
-fn render_appkit_utility_strip(
-    ui: &mut Ui,
-    state: &mut GrafiaCanvasState,
-    theme: &mut GrafiaTheme,
-    host: &mut MockFontHost,
-    show_preview_panel: &mut bool,
-    mac_theme: &MacTheme,
-) {
-    let mut th_idx = StudioThemePreset::ALL
-        .iter()
-        .position(|&p| p == host.studio_theme)
-        .unwrap_or(0);
-    let prev_th = th_idx;
-    MacPopUpButton::new(&mut th_idx, &StudioThemePreset::LABELS)
-        .id("sonoma_studio_theme_pop")
-        .width(148.0)
-        .theme(mac_theme)
-        .show(ui);
-    if th_idx != prev_th {
-        host.apply_studio_theme(StudioThemePreset::ALL[th_idx], state, theme);
-    }
-    let mut active = [
-        host.show_mobile_thumb_hud,
-        host.thumb_dock_right,
-        host.show_right_inspector,
-        *show_preview_panel,
-        host.show_coach_banner,
-        host.is_fullscreen,
-    ];
-    if let Some(i) =
-        MacSegmentedControl::new(&["\u{f7c7}", "L⇄R", "\u{f424}", "\u{f7ff}", "?", "⛶"], 0)
-            .id_salt("sonoma_util_multi_seg")
-            .theme(mac_theme)
-            .show_multi(ui, &mut active)
-    {
-        match i {
-            0 => host.set_mobile_thumb_hud_enabled(active[0], state),
-            1 => host.thumb_dock_right = active[1],
-            2 => host.show_right_inspector = active[2],
-            3 => *show_preview_panel = active[3],
-            4 => host.show_coach_banner = active[4],
-            _ => toggle_demo_fullscreen(ui, host),
-        }
-    }
-    MacSegmentedControl::new(&["\u{f37d}"], 0)
-        .id_salt("sonoma_fit_btn")
-        .theme(mac_theme)
-        .show_momentary(ui, |_| host.fit_canvas_viewport(state));
 }

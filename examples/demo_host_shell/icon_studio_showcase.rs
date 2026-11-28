@@ -256,7 +256,7 @@ impl MockFontHost {
             vec![NodeId(300), NodeId(303), NodeId(320), NodeId(323)],
         );
         st.icon_studio.kinetic.effect = demo_kinetic_effect_by_idx(1);
-        st.icon_studio.kinetic.phase_t = DEMO_KINETIC_DEFAULT_PHASE;
+        st.icon_studio.kinetic.phase_t = 0.0;
         st.bump_content_generation();
         self.push_log("Case 31: Wi-Fi Signaal (gedempt editorial kleurenpalet)");
     }

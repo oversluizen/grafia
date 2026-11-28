@@ -1,8 +1,64 @@
 //! Toolbar, View-Mode, Transform-Origin, and Font Setup Specifications for `vector_canvas_demo`.
 
+use super::DemoPreset;
 use egui_macview::{setup_symbols_font, MacSymbol};
 use grafia::adapters::CanvasTool;
 use grafia::core::MetricsOrigin;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StudioWorkspaceMode {
+    #[default]
+    LetterStudio,
+    IconStudio,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StudioSubWorkspace {
+    #[default]
+    LetterContourAndSpacing,
+    LetterCagdAndStems,
+    LetterMastersAndHinting,
+    IconVectorAndGlass,
+    IconKineticAndTouch,
+}
+
+#[rustfmt::skip]
+impl StudioSubWorkspace {
+    pub const LETTER_TABS: [Self; 3] = [Self::LetterContourAndSpacing, Self::LetterCagdAndStems, Self::LetterMastersAndHinting];
+    pub const ICON_TABS: [Self; 2] = [Self::IconVectorAndGlass, Self::IconKineticAndTouch];
+    #[must_use] pub const fn studio_mode(self) -> StudioWorkspaceMode {
+        if matches!(self, Self::IconVectorAndGlass | Self::IconKineticAndTouch) { StudioWorkspaceMode::IconStudio } else { StudioWorkspaceMode::LetterStudio }
+    }
+    #[must_use] pub const fn tab_label(self) -> &'static str {
+        match self {
+            Self::LetterContourAndSpacing => "1. Contour", Self::LetterCagdAndStems => "2. Bochten",
+            Self::LetterMastersAndHinting => "3. Masters", Self::IconVectorAndGlass => "4. Vector & Glas",
+            Self::IconKineticAndTouch => "5. Kinetisch",
+        }
+    }
+    #[must_use] pub const fn tools(self) -> [(CanvasTool, &'static str); 6] {
+        use CanvasTool as T;
+        match self {
+            Self::LetterContourAndSpacing => [(T::Select, "\u{f61e}"), (T::Pen, "\u{f2bf}"), (T::Primitives, "\u{f80c}"), (T::Knife, "\u{f7c9}"), (T::Text, "\u{f892}"), (T::Annotation, "\u{f853}")],
+            Self::LetterCagdAndStems => [(T::Select, "\u{f61e}"), (T::Pen, "\u{f2bf}"), (T::Pencil, "\u{f7cb}"), (T::Stem, "\u{f500}"), (T::Measurement, "\u{f7ca}"), (T::Trowel, "\u{f6f4}")],
+            Self::LetterMastersAndHinting => [(T::Select, "\u{f61e}"), (T::CurvedTrajectory, "\u{f6e5}"), (T::Hoi, "\u{f899}"), (T::TrueTypeInstructor, "\u{f48a}"), (T::Pixel, "\u{f804}"), (T::Zoom, "\u{f785}")],
+            Self::IconVectorAndGlass => [(T::Select, "\u{f61e}"), (T::Pen, "\u{f2bf}"), (T::Primitives, "\u{f80c}"), (T::ShapeBuilder, "\u{f618}"), (T::Rotate, "\u{f7c7}"), (T::Scale, "\u{f386}")],
+            Self::IconKineticAndTouch => [(T::Select, "\u{f61e}"), (T::Pen, "\u{f2bf}"), (T::ShapeBuilder, "\u{f618}"), (T::Lasso, "\u{f6d4}"), (T::Measurement, "\u{f7ca}"), (T::Zoom, "\u{f785}")],
+        }
+    }
+    #[must_use] pub const fn default_preset(self) -> DemoPreset {
+        match self {
+            Self::LetterContourAndSpacing => DemoPreset::TextStreamAovaKerning,
+            Self::LetterCagdAndStems => DemoPreset::CurvatureCombSpikesAndHeatmap,
+            Self::LetterMastersAndHinting => DemoPreset::MultiMasterCompatAndAutoMatch,
+            Self::IconVectorAndGlass => DemoPreset::IconLiquidGlassAndBakeColrV1,
+            Self::IconKineticAndTouch => DemoPreset::KineticWifiBounceAndColorModes,
+        }
+    }
+    #[must_use] pub const fn from_tour_index(idx: usize) -> Self {
+        match idx { 0..=5 => Self::LetterContourAndSpacing, 6..=17 => Self::LetterCagdAndStems, 18..=23 => Self::LetterMastersAndHinting, 24..=29 => Self::IconVectorAndGlass, _ => Self::IconKineticAndTouch }
+    }
+}
 
 pub const WINDOW_WIDTH_DP: f32 = 1280.0;
 pub const WINDOW_HEIGHT_DP: f32 = 840.0;
@@ -37,12 +93,59 @@ pub const DEMO_GUIDE_Y_UPM: f64 = 250.0;
 pub const EVENT_LOG_MAX_HEIGHT_DP: f32 = 110.0;
 pub const PREVIEW_STRIP_MIN_WIDTH_DP: f32 = 64.0;
 pub const PREVIEW_STRIP_MAX_WIDTH_DP: f32 = 2048.0;
+pub const PREVIEW_HEIGHT_S_DP: f32 = 120.0;
+pub const PREVIEW_HEIGHT_M_DP: f32 = 180.0;
+pub const PREVIEW_HEIGHT_L_DP: f32 = 300.0;
+pub const PREVIEW_HEIGHT_MATCH_TOL_DP: f32 = 16.0;
+pub const PREVIEW_HEADER_CHROME_DP: f32 = 56.0;
+pub const PREVIEW_STRIP_MIN_HEIGHT_DP: f32 = 64.0;
+pub const PREVIEW_STRIP_MAX_HEIGHT_DP: f32 = 420.0;
+pub const PREVIEW_PANEL_MIN_DP: f32 = 110.0;
+pub const PREVIEW_PANEL_MAX_DP: f32 = 480.0;
+pub const BOTTOM_WATERFALL_SPLIT_RATIO: f32 = 0.68;
+pub const COMPACT_PHONE_BREAKPOINT_DP: f32 = 600.0;
+pub const GLASS_CAPSULE_CORNER_RADIUS_U8: u8 = 9;
+pub const GLASS_CAPSULE_PAD_X_F32: f32 = 8.0;
+pub const GLASS_CAPSULE_PAD_Y_F32: f32 = 4.0;
+pub const GLASS_HEADER_FONT_PT: f32 = 9.5;
+pub const GLASS_VALUE_FONT_PT: f32 = 11.5;
+pub const CHAPTER_POPUP_WIDTH_DP: f32 = 76.0;
+pub const CASE_POPUP_WIDTH_DP: f32 = 148.0;
+pub const KINETIC_POPUP_WIDTH_DP: f32 = 136.0;
+pub const TOOL_GRID_SPACING_X_DP: f32 = 8.0;
+pub const TOOL_GRID_SPACING_Y_DP: f32 = 4.0;
+pub const INFO_GRID_SPACING_X_DP: f32 = 12.0;
+pub const INFO_GRID_SPACING_Y_DP: f32 = 4.0;
 pub const MOBILE_RESPONSIVE_BREAKPOINT_WIDTH_DP: f32 = 900.0;
 pub const MIN_FIT_CANVAS_DIM_DP: f32 = 64.0;
 pub const CANVAS_RESIZE_EPSILON_SQ_DP: f32 = 16.0;
 pub const PRESETS_MENU_MAX_HEIGHT_DP: f32 = 320.0;
 pub const TOUCH_LOUPE_FINGER_OFFSET_DP: f32 = 44.0;
-pub const APP_TITLE: &str = "Grafia Vector Canvas — Host-Port (Stekkers) Testbank";
+pub const APP_TITLE: &str = "Grafia Vector Canvas — Editorial Studio & Host-Port Showcase";
+
+#[rustfmt::skip]
+pub const CORE_STUDIO_TOOLS: [(CanvasTool, &str, &str); 6] = [
+    (CanvasTool::Select, "\u{f61e}", "Selecteren (V)"),
+    (CanvasTool::Pen, "\u{f2bf}", "Bézier-Pen (P)"),
+    (CanvasTool::Primitives, "\u{f80c}", "Vormen (F)"),
+    (CanvasTool::Knife, "\u{f7c9}", "Mes (E)"),
+    (CanvasTool::ShapeBuilder, "\u{f618}", "Shape Builder"),
+    (CanvasTool::Text, "\u{f892}", "Tekst & Kerning (T)"),
+];
+
+#[rustfmt::skip]
+pub const KINETIC_EFFECT_LABELS: [&str; 10] = [
+    "Pulse", "Bounce", "VarColor", "Scale", "DrawOn",
+    "DrawOff", "Wiggle", "Rotate", "Breathe", "MagicReplace",
+];
+
+#[rustfmt::skip]
+pub const TOOL_CATEGORIES: [(&str, &[CanvasTool]); 4] = [
+    ("SELECTIE & TRANSFORMATIE", &[CanvasTool::Select, CanvasTool::Lasso, CanvasTool::Rotate, CanvasTool::Scale, CanvasTool::Zoom, CanvasTool::Text]),
+    ("TEKENEN & CONSTRUCTIE", &[CanvasTool::Pen, CanvasTool::Primitives, CanvasTool::Pencil, CanvasTool::Knife, CanvasTool::ShapeBuilder, CanvasTool::Pixel]),
+    ("BOCHTEN, STEMS & BORSTELS", &[CanvasTool::Measurement, CanvasTool::Stem, CanvasTool::Trowel, CanvasTool::Cleaner]),
+    ("MASTERS, HINTING & NOTITIE", &[CanvasTool::TrueTypeInstructor, CanvasTool::Hoi, CanvasTool::CurvedTrajectory, CanvasTool::Annotation]),
+];
 
 /// Installs a deterministic panic hook writing `grafia_canvas_crash.log` beside the executable.
 pub fn install_crash_logger() {
@@ -57,172 +160,49 @@ pub fn install_crash_logger() {
     }));
 }
 
-/// Visual 3x3 Origin Anchor Grid rows (`NW [6], N [7], NE [8]`, `W [3], C [4], E [5]`, `SW [0], S [1], SE [2]`).
+#[rustfmt::skip]
 pub const ORIGIN_ANCHOR_GRID_ROWS: [[(u8, &str, &str); 3]; 3] = [
-    [
-        (6, "\u{f52f}", "Top-Left Origin [NW / Anchor 6]"),
-        (7, "\u{f366}", "Top-Center Origin [N / Anchor 7]"),
-        (8, "\u{f534}", "Top-Right Origin [NE / Anchor 8]"),
-    ],
-    [
-        (3, "\u{f4fd}", "Middle-Left Origin [W / Anchor 3]"),
-        (4, "\u{f7e1}", "Center Origin [C / Anchor 4]"),
-        (5, "\u{f50a}", "Middle-Right Origin [E / Anchor 5]"),
-    ],
-    [
-        (0, "\u{f4ef}", "Bottom-Left Origin [SW / Anchor 0]"),
-        (1, "\u{f35d}", "Bottom-Center Origin [S / Anchor 1]"),
-        (2, "\u{f4f4}", "Bottom-Right Origin [SE / Anchor 2]"),
-    ],
+    [(6, "\u{f52f}", "Top-Left [NW]"), (7, "\u{f366}", "Top-Center [N]"), (8, "\u{f534}", "Top-Right [NE]")],
+    [(3, "\u{f4fd}", "Middle-Left [W]"), (4, "\u{f7e1}", "Center [C]"), (5, "\u{f50a}", "Middle-Right [E]")],
+    [(0, "\u{f4ef}", "Bottom-Left [SW]"), (1, "\u{f35d}", "Bottom-Center [S]"), (2, "\u{f4f4}", "Bottom-Right [SE]")],
 ];
 
-/// Metrics origin button labels and tooltips for the Transform Panel.
+#[rustfmt::skip]
 pub const METRICS_ORIGIN_SPECS: [(MetricsOrigin, &str, &str); 3] = [
-    (
-        MetricsOrigin::Baseline,
-        "Base",
-        "Transform Origin at Baseline (Y = 0 UPM)",
-    ),
-    (
-        MetricsOrigin::HalfXHeight,
-        "xH/2",
-        "Transform Origin at Half x-Height",
-    ),
-    (
-        MetricsOrigin::CapHeight,
-        "Cap",
-        "Transform Origin at Cap Height",
-    ),
+    (MetricsOrigin::Baseline, "Base", "Origin at Baseline (Y = 0 UPM)"),
+    (MetricsOrigin::HalfXHeight, "xH/2", "Origin at Half x-Height"),
+    (MetricsOrigin::CapHeight, "Cap", "Origin at Cap Height"),
 ];
 
-/// Tool icon and tooltip table covering all 20 `CanvasTool` variants.
+#[rustfmt::skip]
 pub const TOOL_ICON_SPECS: [(CanvasTool, &str, &str); 20] = [
-    (
-        CanvasTool::Select,
-        "\u{f61e}",
-        "Select Tool [V] — Drag nodes/segments (Shift: 45° snap, Alt: smooth/corner)",
-    ),
-    (
-        CanvasTool::Lasso,
-        "\u{f6d4}",
-        "Lasso Tool [Shift+V] — Freeform polygon selection (Alt: OnCurve only, Shift: XOR)",
-    ),
-    (
-        CanvasTool::Pen,
-        "\u{f2bf}",
-        "Pen Tool [P] — Click to place anchor, drag handles, click start node to close",
-    ),
-    (
-        CanvasTool::Rotate,
-        "\u{f7c7}",
-        "Rotate Tool [R] — Click to relocate origin, drag to rotate (Shift: 45° snap)",
-    ),
-    (
-        CanvasTool::Scale,
-        "\u{f386}",
-        "Scale Tool [S] — Click to relocate origin, drag to scale (Shift: constrain)",
-    ),
-    (
-        CanvasTool::Zoom,
-        MacSymbol::Search.as_str(),
-        "Zoom Tool [Z] — Click or marquee drag to zoom in (Alt: zoom out)",
-    ),
-    (
-        CanvasTool::Knife,
-        "\u{f7c9}",
-        "Knife Tool [E] — Drag across contours to slice (Alt: insert nodes, Shift: 0°/90°)",
-    ),
-    (
-        CanvasTool::Primitives,
-        "\u{f80c}",
-        "Primitives Tool [F] — Drag Rect/Circle (Shift+F: cycle, Shift: square, Alt: center)",
-    ),
-    (
-        CanvasTool::Measurement,
-        "\u{f7ca}",
-        "Measurement Tool [L] — Drag ruler to inspect intersections, segment lengths & angles",
-    ),
-    (
-        CanvasTool::Annotation,
-        "\u{f853}",
-        "Annotation Tool [A] — Place Text/Circle/Arrow/Plus/Minus (Shift+A: cycle sub-tool)",
-    ),
-    (
-        CanvasTool::Pencil,
-        "\u{f7cb}",
-        "Pencil Tool [B] — Freehand sketch fitted to smooth cubic Bezier segments",
-    ),
-    (
-        CanvasTool::Pixel,
-        "\u{f804}",
-        "Pixel Tool [X] — Click/drag grid cells to stamp or erase pixel squares",
-    ),
-    (
-        CanvasTool::Text,
-        "\u{f892}",
-        "Text Tool [T] — Multi-glyph horizontal/vertical strip, interactive spacing & kerning",
-    ),
-    (
-        CanvasTool::TrueTypeInstructor,
-        "\u{f48a}",
-        "TrueType Instructor Tool [I] — TrueType Anchor/Stem/Align/Interpolate/Delta hints & PPEM grid",
-    ),
-    (
-        CanvasTool::Hoi,
-        "\u{f899}",
-        "Higher-Order Interpolation Tool [H] — Non-linear cubic master interpolation control polygon",
-    ),
-    (
-        CanvasTool::Stem,
-        "\u{f500}",
-        "Structural Stem Tool — Click paired stem to adjust width with handle servo (Alt: narrower)",
-    ),
-    (
-        CanvasTool::CurvedTrajectory,
-        "\u{f6e5}",
-        "Curved Master Trajectory Tool — Click or drag quadratic/cubic migration control handle",
-    ),
-    (
-        CanvasTool::Trowel,
-        "\u{f6f4}",
-        "Trowel Brush Tool — Drag circular brush to locally smooth jagged contour chains",
-    ),
-    (
-        CanvasTool::Cleaner,
-        "\u{f80a}",
-        "Cleaner Brush Tool — Drag circular brush to excise micro-loops, spikes & duplicate nodes",
-    ),
-    (
-        CanvasTool::ShapeBuilder,
-        "\u{f618}",
-        "Shape Builder Tool — Drag across planar regions to merge (Alt: erase region)",
-    ),
+    (CanvasTool::Select, "\u{f61e}", "Select Tool [V] — Drag nodes/segments"),
+    (CanvasTool::Lasso, "\u{f6d4}", "Lasso Tool [Shift+V] — Freeform selection"),
+    (CanvasTool::Pen, "\u{f2bf}", "Pen Tool [P] — Cubic Bezier & spline pen"),
+    (CanvasTool::Rotate, "\u{f7c7}", "Rotate Tool [R] — Relocate origin & rotate"),
+    (CanvasTool::Scale, "\u{f386}", "Scale Tool [S] — Relocate origin & scale"),
+    (CanvasTool::Zoom, MacSymbol::Search.as_str(), "Zoom Tool [Z] — Click or marquee zoom"),
+    (CanvasTool::Knife, "\u{f7c9}", "Knife Tool [E] — Slice across contours"),
+    (CanvasTool::Primitives, "\u{f80c}", "Primitives Tool [F] — Rect / Circle"),
+    (CanvasTool::Measurement, "\u{f7ca}", "Measurement Tool [L] — Intersections & lengths"),
+    (CanvasTool::Annotation, "\u{f853}", "Annotation Tool [A] — Canvas notes & arrows"),
+    (CanvasTool::Pencil, "\u{f7cb}", "Pencil Tool [B] — Freehand Bezier sketch"),
+    (CanvasTool::Pixel, "\u{f804}", "Pixel Tool [X] — Stamp pixel grid cells"),
+    (CanvasTool::Text, "\u{f892}", "Text Tool [T] — Multi-glyph strip & kerning"),
+    (CanvasTool::TrueTypeInstructor, "\u{f48a}", "TrueType Instructor [I] — Visual hinting"),
+    (CanvasTool::Hoi, "\u{f899}", "HOI Tool [H] — Non-linear master interpolation"),
+    (CanvasTool::Stem, "\u{f500}", "Structural Stem Tool — Paired stem width servo"),
+    (CanvasTool::CurvedTrajectory, "\u{f6e5}", "Curved Master Trajectory Tool"),
+    (CanvasTool::Trowel, "\u{f6f4}", "Trowel Brush Tool — Local contour smoothing"),
+    (CanvasTool::Cleaner, "\u{f80a}", "Cleaner Brush Tool — Excise micro-loops"),
+    (CanvasTool::ShapeBuilder, "\u{f618}", "Shape Builder Tool — Planar region merge"),
 ];
 
-/// All standalone action icon codepoints rendered in the toolbar and sidebar.
+#[rustfmt::skip]
 pub const ALL_ACTION_ICONS: [&str; 22] = [
-    "\u{f618}",
-    MacSymbol::SidebarLeading.as_str(),
-    "\u{f37d}",
-    "\u{f544}",
-    "\u{f549}",
-    "\u{f7c5}",
-    "\u{f7c7}",
-    "\u{f500}",
-    "\u{f52a}",
-    "\u{f386}",
-    "\u{f7da}",
-    "\u{f4e3}",
-    "\u{f53d}",
-    "\u{f6f4}",
-    "\u{f48a}",
-    "\u{f899}",
-    "\u{f892}",
-    "\u{f80a}",
-    "\u{f6e5}",
-    "\u{f77e}",
-    "\u{f424}",
-    "\u{f4c8}",
+    "\u{f618}", MacSymbol::SidebarLeading.as_str(), "\u{f37d}", "\u{f544}", "\u{f549}", "\u{f7c5}",
+    "\u{f7c7}", "\u{f500}", "\u{f52a}", "\u{f386}", "\u{f7da}", "\u{f4e3}", "\u{f53d}", "\u{f6f4}",
+    "\u{f48a}", "\u{f899}", "\u{f892}", "\u{f80a}", "\u{f6e5}", "\u{f77e}", "\u{f424}", "\u{f4c8}",
 ];
 
 /// Deterministically initializes `egui` fonts and registers `egui-macview` Cupertino vector icons.

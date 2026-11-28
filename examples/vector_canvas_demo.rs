@@ -7,8 +7,8 @@ pub mod demo_host_shell;
 pub use demo_host_shell::toolbar_specs::{
     configure_demo_fonts, fit_demo_canvas_viewport, install_crash_logger, ALL_ACTION_ICONS,
     APP_TITLE, DEMO_GUIDE_X_UPM, DEMO_GUIDE_Y_UPM, METRICS_ORIGIN_SPECS, MIN_WINDOW_HEIGHT_DP,
-    MIN_WINDOW_WIDTH_DP, ORIGIN_ANCHOR_GRID_ROWS, TOOL_ICON_SPECS, WINDOW_HEIGHT_DP,
-    WINDOW_WIDTH_DP,
+    MIN_WINDOW_WIDTH_DP, ORIGIN_ANCHOR_GRID_ROWS, PREVIEW_PANEL_MAX_DP, PREVIEW_PANEL_MIN_DP,
+    TOOL_ICON_SPECS, WINDOW_HEIGHT_DP, WINDOW_WIDTH_DP,
 };
 use demo_host_shell::{
     demo_panels::{render_left_studio_sidebar, render_top_toolbar},
@@ -57,6 +57,7 @@ impl GrafiaVectorCanvasDemo {
     }
 
     /// Renders the complete interactive Grafia Vector Canvas Demo UI inside `ui`.
+    #[rustfmt::skip]
     pub fn render_ui(&mut self, ui: &mut egui::Ui) {
         self.host.active_mac_theme().apply_to_egui(ui.ctx());
         self.host.poll_host_ports(&mut self.state);
@@ -66,8 +67,7 @@ impl GrafiaVectorCanvasDemo {
             }
         }
         let w = ui.ctx().content_rect().width();
-        self.host
-            .update_responsive_layout(w, &mut self.show_preview_panel, &mut self.state);
+        self.host.update_responsive_layout(w, &mut self.show_preview_panel, &mut self.state);
         if self.state.icon_studio.kinetic.playing {
             let dt = f64::from(ui.input(|i| i.stable_dt).clamp(0.001, 0.05));
             self.state.step_kinetic_timeline(dt);
@@ -76,24 +76,18 @@ impl GrafiaVectorCanvasDemo {
         Panel::top("top_toolbar").show(ui, |ui| {
             let pr = &mut self.show_preview_panel;
             render_top_toolbar(ui, &mut self.state, &mut self.theme, &mut self.host, pr);
+            self.host.render_multi_tab_canvas_bar(ui, &mut self.state, &mut self.theme);
             if self.host.show_coach_banner {
                 ui.add(Separator::default().horizontal());
-                self.host
-                    .render_coach_banner(ui, &mut self.state, &mut self.theme);
+                self.host.render_coach_banner(ui, &mut self.state, &mut self.theme);
             }
         });
-        Panel::bottom("status_bar").show(ui, |ui| {
-            MockFontHost::render_status_bar_contents(ui, &self.state)
-        });
         if self.show_preview_panel {
-            let ph = self.host.preview_panel_height_dp;
             Panel::bottom("glyph_preview_panel")
                 .resizable(true)
-                .default_size(ph)
-                .size_range(110.0..=480.0)
-                .show(ui, |ui| {
-                    self.host.render_preview_strip_panel(ui, &self.state)
-                });
+                .default_size(self.host.preview_panel_height_dp)
+                .size_range(PREVIEW_PANEL_MIN_DP..=PREVIEW_PANEL_MAX_DP)
+                .show(ui, |ui| self.host.render_preview_strip_panel(ui, &mut self.state));
         }
         if self.host.show_left_sidebar {
             Panel::left("shapes_sidebar").show(ui, |ui| {
@@ -106,16 +100,19 @@ impl GrafiaVectorCanvasDemo {
             });
         }
         CentralPanel::default().show(ui, |ui| {
-            let avail = ui.available_size();
-            self.host.record_and_fit_canvas_size(avail, &mut self.state);
-            let stashed = self.host.take_mobile_hud_guarded_events(ui, avail);
-            let r = GrafiaCanvasWidget::new(&mut self.state, &self.theme)
-                .with_size(avail)
-                .show(ui);
-            MockFontHost::restore_mobile_hud_guarded_events(ui, stashed);
-            self.host
-                .render_mobile_thumb_hud_overlay(ui, r.rect, &mut self.state);
+            if self.host.show_font_grid_view {
+                self.host.render_font_and_icon_grid_overview(ui, &mut self.state, &mut self.theme);
+            } else {
+                self.host.last_canvas_origin = ui.cursor().min;
+                let avail = ui.available_size();
+                self.host.record_and_fit_canvas_size(avail, &mut self.state);
+                let stashed = self.host.take_mobile_hud_guarded_events(ui, avail);
+                let r = GrafiaCanvasWidget::new(&mut self.state, &self.theme).with_size(avail).show(ui);
+                MockFontHost::restore_mobile_hud_guarded_events(ui, stashed);
+                self.host.render_mobile_thumb_hud_overlay(ui, r.rect, &mut self.state);
+            }
         });
+        self.host.sync_active_glyph_to_library(&self.state);
         self.host.poll_host_ports(&mut self.state);
     }
 }
@@ -241,7 +238,9 @@ mod tests {
             assert!(app.state.validate_invariants().is_ok());
         }
         assert_eq!(DemoPreset::ALL.len(), 36);
-        assert!(app.host.show_left_sidebar && app.state.show_selection_info_hud);
+        assert!(!app.host.show_left_sidebar && app.host.show_right_inspector);
+        assert!(app.state.show_selection_info_hud);
+        assert!(!app.show_preview_panel && !app.host.show_coach_banner);
         for ch in demo_host_shell::ShowcaseChapter::ALL {
             assert_eq!(ch.presets().len(), 6);
         }
@@ -259,32 +258,20 @@ mod tests {
         assert_eq!(app.host.preview_cache.render_count(), renders_before);
         app.host.step_tour_next(&mut app.state, &mut app.theme);
         app.host.step_tour_prev(&mut app.state, &mut app.theme);
-        app.host.apply_preset(
-            DemoPreset::TextStreamAovaKerning,
-            &mut app.state,
-            &mut app.theme,
-        );
+        let aova = DemoPreset::TextStreamAovaKerning;
+        app.host.apply_preset(aova, &mut app.state, &mut app.theme);
         app.state.insert_text_at_caret("S");
         app.host.poll_host_ports(&mut app.state);
         assert_eq!(app.host.text_buffer, "AOSVA");
         app.state.delete_text_backward_at_caret();
         app.host.poll_host_ports(&mut app.state);
         assert_eq!(app.host.text_buffer, "AOVA");
-        let lsb_act = grafia::core::SelectionInfoAction::SetLsb(55.0);
-        assert!(app.state.apply_selection_info_action(lsb_act));
+        assert!(app
+            .state
+            .apply_selection_info_action(grafia::core::SelectionInfoAction::SetLsb(55.0)));
         app.host.poll_host_ports(&mut app.state);
         assert!(app.state.validate_invariants().is_ok());
-
-        let mut mob = GrafiaVectorCanvasDemo::new();
-        let _ = run_frame(
-            &mut mob,
-            egui::Rect::from_min_size(egui::Pos2::ZERO, egui::Vec2::new(390.0, 844.0)),
-        );
-        assert!(!mob.host.show_left_sidebar && mob.host.show_mobile_thumb_hud);
-        assert_eq!(mob.state.preferences.touch_finger_offset_dp, 0.0);
-        assert_eq!(demo_host_shell::sonoma_top_bar::TOOL_CATEGORIES.len(), 4);
-        let c_sz = mob.host.last_canvas_size.expect("mobile size");
-        assert!(c_sz.x >= 350.0 && c_sz.y >= 650.0);
+        demo_host_shell::frame_renderer::verify_and_save_baken_1980_and_s9_ultra_renders(&ctx);
     }
 
     #[test]

@@ -1,308 +1,309 @@
-//! Host Inspector Sidebar, Stekker Preset Bar, and Cached Bottom Preview Strip Panel for `MockFontHost`.
+//! Slank Rechter Frosted Liquid Glass Icoon-Grid Palet (`4×` vierkante glazen icoon-tegels
+//! per rij met Nederlandse S-Pen / muis-hover uitlegballonnetjes, `SPEC-018 §3.7`).
 
+use super::sonoma_top_bar::{liquid_glass_capsule_frame, section_header_text, StudioSubWorkspace};
 use super::toolbar_specs::{
-    EVENT_LOG_MAX_HEIGHT_DP, PREVIEW_STRIP_MAX_WIDTH_DP, PREVIEW_STRIP_MIN_WIDTH_DP,
+    DEMO_GUIDE_X_UPM, DEMO_GUIDE_Y_UPM, DEMO_ROTATE_STEP_DEG, DEMO_SCALE_UP_FACTOR,
+    DEMO_SLANT_STEP_DEG, GRID_SPACING_DP, METRICS_ORIGIN_SPECS, ORIGIN_ANCHOR_GRID_ROWS,
+    SIDEBAR_TOP_SPACE_DP,
 };
-use super::{MockFontHost, METRIC_STEP_UPM};
-use egui::{Grid, Image, RichText, ScrollArea, Separator, Slider, Ui};
+use super::{DemoPreset, MockFontHost};
+use egui::{Button, Grid, ScrollArea, Separator, Ui};
+use egui_macview::{MacSymbol, MacTheme};
 use grafia::adapters::GrafiaCanvasState;
-use grafia::core::{SelectionInfo, SelectionInfoAction, TransformGridAnchor};
-use grafia::tokens::{PREVIEW_BLUR_MAX_RADIUS_PX, PREVIEW_BLUR_MIN_RADIUS_PX};
+use grafia::core::{FontPoint, TransformGridAnchor, TransformOriginSpec};
 
-const PIN_GRID_ROWS: [[TransformGridAnchor; 3]; 3] = [
-    [
-        TransformGridAnchor::TopLeft,
-        TransformGridAnchor::TopCenter,
-        TransformGridAnchor::TopRight,
-    ],
-    [
-        TransformGridAnchor::MiddleLeft,
-        TransformGridAnchor::Center,
-        TransformGridAnchor::MiddleRight,
-    ],
-    [
-        TransformGridAnchor::BottomLeft,
-        TransformGridAnchor::BottomCenter,
-        TransformGridAnchor::BottomRight,
-    ],
-];
+const ICON_TILE_W_DP: f32 = 34.0;
+const ICON_TILE_H_DP: f32 = 26.0;
+
+#[rustfmt::skip]
+pub(crate) fn icon_tile(ui: &mut Ui, icon: &str, tip: &str) -> bool {
+    ui.add_sized([ICON_TILE_W_DP, ICON_TILE_H_DP], Button::new(icon)).on_hover_text(tip).clicked()
+}
+
+#[rustfmt::skip]
+pub(crate) fn icon_tile_toggle(ui: &mut Ui, active: bool, icon: &str, tip: &str) -> bool {
+    ui.add_sized([ICON_TILE_W_DP, ICON_TILE_H_DP], Button::selectable(active, icon)).on_hover_text(tip).clicked()
+}
+
+#[rustfmt::skip]
+pub fn render_overlays_popover_contents(ui: &mut Ui, state: &mut GrafiaCanvasState, tm: &MacTheme) {
+    ui.label(section_header_text("1. HULPLIJNEN & RASTER", tm));
+    ui.horizontal_wrapped(|ui| {
+        if icon_tile_toggle(ui, state.show_rulers, "\u{f7ca}", "20dp Linialen [⌘R]") { state.show_rulers = !state.show_rulers; }
+        if icon_tile_toggle(ui, state.show_metrics, "\u{f52a}", "Typo-Metriek Lijnen") { state.show_metrics = !state.show_metrics; }
+        if icon_tile_toggle(ui, state.show_guides, "\u{f424}", "Hulplijnen [⌘;]") { state.show_guides = !state.show_guides; }
+        if icon_tile_toggle(ui, state.show_background, "\u{f80d}", "Achtergrondlaag [⌘B]") { state.show_background = !state.show_background; }
+        if icon_tile_toggle(ui, state.show_selection_info_hud, "\u{f853}", "Zwevende Glyphs-4 Canvas Info-Box") { state.show_selection_info_hud = !state.show_selection_info_hud; }
+    });
+    ui.add(Separator::default().horizontal());
+    ui.label(section_header_text("2. KROMMING, AUDIT & OPTICA", tm));
+    MockFontHost::render_harmony_controls(ui, state);
+}
 
 impl MockFontHost {
     pub fn render_host_inspector(&mut self, ui: &mut Ui, state: &mut GrafiaCanvasState) {
-        ui.strong("Host-Port Stekker Inspector");
-        ui.add(Separator::default().horizontal());
-        Self::render_selection_info_summary(ui, state);
+        let tm = self.active_mac_theme();
+        ScrollArea::vertical()
+            .id_salt("right_frosted_icon_palette_scroll")
+            .show(ui, |ui| {
+                ui.add_space(SIDEBAR_TOP_SPACE_DP);
+                liquid_glass_capsule_frame(&tm).show(ui, |ui| {
+                    self.render_structured_info_card(ui, state, &tm);
+                });
+                ui.add_space(SIDEBAR_TOP_SPACE_DP);
+                liquid_glass_capsule_frame(&tm).show(ui, |ui| {
+                    Self::render_icon_transform_and_origin_card(ui, state, &tm);
+                });
+                ui.add_space(SIDEBAR_TOP_SPACE_DP);
+                liquid_glass_capsule_frame(&tm).show(ui, |ui| {
+                    self.render_workspace_specific_icon_grid(ui, state, &tm);
+                });
+            });
+    }
+
+    fn render_icon_transform_and_origin_card(
+        ui: &mut Ui,
+        state: &mut GrafiaCanvasState,
+        tm: &MacTheme,
+    ) {
+        ui.label(section_header_text("OORSPRONG (3×3) & TRANSFORMATIE", tm));
         ui.horizontal(|ui| {
-            Grid::new("host_pin_grid")
-                .spacing([2.0, 2.0])
+            Grid::new("insp_origin_anchor_grid")
+                .spacing([GRID_SPACING_DP, GRID_SPACING_DP])
                 .show(ui, |g_ui| {
-                    for row in PIN_GRID_ROWS {
-                        for anchor in row {
-                            let is_active = state.transform_grid_anchor == anchor;
-                            if g_ui.selectable_label(is_active, "•").clicked() {
-                                let _ = state.apply_selection_info_action(
-                                    SelectionInfoAction::SetMultiAnchor(anchor),
-                                );
+                    for row in ORIGIN_ANCHOR_GRID_ROWS {
+                        for (idx, icon, tip) in row {
+                            let anchor = TransformGridAnchor::from_index(idx);
+                            let active = state.transform_origin_mode
+                                == TransformOriginSpec::BoundingBoxOrigin(anchor);
+                            if g_ui
+                                .selectable_label(active, icon)
+                                .on_hover_text(tip)
+                                .clicked()
+                            {
+                                state.set_transform_grid_anchor(anchor);
                             }
                         }
                         g_ui.end_row();
                     }
                 });
-            let mut prop = state.multi_selection_proportional;
-            if ui.checkbox(&mut prop, "Prop. Scale").changed() {
-                let _ = state
-                    .apply_selection_info_action(SelectionInfoAction::SetMultiProportional(prop));
-            }
-            if ui.button("Cmd+U Anchors").clicked() {
-                let _ = state.apply_selection_info_action(SelectionInfoAction::ResetDefaultAnchors);
-                self.poll_host_ports(state);
-            }
-        });
-        Self::render_harmony_controls(ui, state);
-        Self::render_controller_simulator_section(ui, state);
-        if let Some(a) = state.selected_anchor_info() {
-            ui.label(
-                RichText::new(format!(
-                    "Selected Anchor: '{}' @ ({:.0}, {:.0})",
-                    a.name, a.x, a.y
-                ))
-                .strong(),
-            );
-        }
-        if let Some(c) = state.selected_component_info() {
-            ui.horizontal_wrapped(|ui| {
-                ui.label(RichText::new(format!("Component: '{}'", c.component_name)).strong());
-                if ui.selectable_label(c.locked, "Lock").clicked() {
-                    let _ = state.apply_selection_info_action(
-                        SelectionInfoAction::SetComponentLocked(!c.locked),
-                    );
-                }
-                if ui
-                    .selectable_label(c.automatic_alignment, "Auto-Align")
-                    .clicked()
-                {
-                    let _ = state.apply_selection_info_action(
-                        SelectionInfoAction::SetComponentAutoAlignment(!c.automatic_alignment),
-                    );
-                }
-                if ui.button("Decompose").clicked() {
-                    let _ =
-                        state.apply_selection_info_action(SelectionInfoAction::DecomposeComponents);
+            ui.add(Separator::default().vertical());
+            ui.vertical(|v_ui| {
+                for (m, lbl, tip) in METRICS_ORIGIN_SPECS {
+                    let active =
+                        state.transform_origin_mode == TransformOriginSpec::MetricsOrigin(m);
+                    if v_ui
+                        .selectable_label(active, lbl)
+                        .on_hover_text(tip)
+                        .clicked()
+                    {
+                        state.set_metrics_origin(m);
+                    }
                 }
             });
-        }
-        ui.add(Separator::default().horizontal());
-        ui.strong("Live Host-Port Event Log");
-        ScrollArea::vertical()
-            .max_height(EVENT_LOG_MAX_HEIGHT_DP)
-            .show(ui, |ui| {
-                for line in &self.event_log {
-                    ui.monospace(line);
+        });
+        Self::render_transform_8_tiles(ui, state);
+    }
+
+    fn render_transform_8_tiles(ui: &mut Ui, state: &mut GrafiaCanvasState) {
+        #[rustfmt::skip]
+        const TILES: [(&str, &str); 8] = [
+            ("\u{f7c5}", "Roteer −15° CCW [⌘⇧L] — Draai selectie rond het 3×3 oorsprongspunt"),
+            ("\u{f7c7}", "Roteer +15° CW [⌘R] — Draai selectie +15° rond het 3×3 oorsprongspunt"),
+            ("\u{f500}", "Spiegel Horizontaal [⌘⇧H] — Spiegel over de verticale as"),
+            ("\u{f52a}", "Spiegel Verticaal [⌘⇧V] — Spiegel over de horizontale as"),
+            ("\u{f386}", "Proportioneel Schalen 110% [S] — Vergroot selectie met 10%"),
+            ("\u{f7da}", "Optisch Cursiveren +12° [⌘⇧I] — Schuintrekken met extrema-behoud"),
+            ("\u{f80c}", "Overlap Verwijderen [⌘⇧O] — Smelt overlappende contouren samen"),
+            ("\u{f48a}", "Extrema Toevoegen [⌘⇧E] — Plaats ankerpunten op H/V uitersten"),
+        ];
+        Grid::new("insp_transform_icon_grid_4col")
+            .num_columns(4)
+            .spacing([GRID_SPACING_DP * 2.0, GRID_SPACING_DP * 2.0])
+            .show(ui, |g_ui| {
+                for (i, (ic, tip)) in TILES.into_iter().enumerate() {
+                    if icon_tile(g_ui, ic, tip) {
+                        let _ = match i {
+                            0 => state.rotate_by_degrees(-DEMO_ROTATE_STEP_DEG),
+                            1 => state.rotate_by_degrees(DEMO_ROTATE_STEP_DEG),
+                            2 => state.flip_horizontal(),
+                            3 => state.flip_vertical(),
+                            4 => state.scale_by_factor(DEMO_SCALE_UP_FACTOR, DEMO_SCALE_UP_FACTOR),
+                            5 => state.slant_by_degrees(DEMO_SLANT_STEP_DEG, true),
+                            6 => state.remove_overlap(),
+                            _ => state.add_extremes_action(),
+                        };
+                    }
+                    if i % 4 == 3 {
+                        g_ui.end_row();
+                    }
                 }
             });
     }
 
-    fn render_harmony_controls(ui: &mut Ui, state: &mut GrafiaCanvasState) {
-        ui.horizontal_wrapped(|ui| {
-            if ui.button("G2 Harmonize").clicked() {
-                state.harmonize_selected_nodes();
-            }
-            if ui
-                .selectable_label(state.show_tunni_lines, "Tunni")
-                .clicked()
-            {
-                state.toggle_show_tunni_lines();
-            }
-            if ui
-                .selectable_label(state.power_nudge_enabled, "Power Nudge")
-                .clicked()
-            {
-                state.toggle_power_nudge();
-            }
-            if ui
-                .selectable_label(state.curve_harmony.show_curvature_comb, "Comb")
-                .clicked()
-            {
-                state.toggle_show_curvature_comb();
-            }
-            if !state.smart_corners().is_empty() && ui.button("Bake Corners").clicked() {
-                state.bake_smart_corners();
-            }
-            let sym_on =
-                state.curve_harmony.symmetry_overlay_mode != grafia::SymmetryOverlayMode::Off;
-            if ui.selectable_label(sym_on, "Symmetry").clicked() {
-                let next = if sym_on {
-                    grafia::SymmetryOverlayMode::Off
-                } else {
-                    grafia::SymmetryOverlayMode::VerticalAxis
-                };
-                state.set_symmetry_overlay_mode(next);
-            }
-            if ui
-                .selectable_label(state.curve_harmony.show_measurement_rainbow, "Rainbow")
-                .clicked()
-            {
-                state.toggle_show_measurement_rainbow();
-            }
-            if ui
-                .selectable_label(state.curve_harmony.quick_preview_on_drag, "QuickPrev")
-                .clicked()
-            {
-                state.toggle_quick_preview_on_drag();
-            }
-            if ui
-                .selectable_label(state.curve_harmony.show_optical_rhythm_fill, "Rhythm")
-                .clicked()
-            {
-                state.toggle_show_optical_rhythm_fill();
-            }
-            if ui
-                .selectable_label(state.curve_harmony.show_stem_gauge, "StemGauge")
-                .clicked()
-            {
-                state.toggle_show_stem_gauge();
-            }
-            if ui
-                .selectable_label(state.curve_harmony.show_visual_centroid, "Centroid ⊕")
-                .clicked()
-            {
-                state.toggle_show_visual_centroid();
-            }
-        });
-    }
-
-    fn render_selection_info_summary(ui: &mut Ui, state: &mut GrafiaCanvasState) {
-        match state.selection_info() {
-            SelectionInfo::GlyphBase(g) => {
-                Self::render_glyph_base_selection_info(ui, state, &g);
-            }
-            SelectionInfo::SingleOnCurve(n) => {
-                ui.label(format!(
-                    "SingleOnCurve {:?} ({:.1}, {:.1}) [{:?}]",
-                    n.node_id, n.x, n.y, n.node_type
-                ));
-                if ui.button("Toggle Smooth").clicked() {
-                    let _ =
-                        state.apply_selection_info_action(SelectionInfoAction::ToggleOnCurveSmooth);
-                }
-            }
-            SelectionInfo::SingleOffCurve(h) => {
-                ui.label(format!(
-                    "SingleOffCurve {:?} d=({:.1},{:.1}) len={:.1}",
-                    h.node_id, h.delta_x, h.delta_y, h.length
-                ));
-            }
-            SelectionInfo::MultiNode(m) => {
-                ui.label(format!(
-                    "MultiNode ({}/{}) {:.0}x{:.0} @ ({:.0},{:.0})",
-                    m.selected_node_count,
-                    m.total_layer_node_count,
-                    m.width,
-                    m.height,
-                    m.origin_x,
-                    m.origin_y
-                ));
-            }
-            SelectionInfo::Guide(gd) => {
-                ui.label(format!(
-                    "Guide {:?} ({:.0},{:.0}) {:.1}°",
-                    gd.guide_ref.id, gd.x, gd.y, gd.angle_deg
-                ));
-            }
-            SelectionInfo::HobbyNode(h) => {
-                ui.label(format!(
-                    "Hobby {:?} ({:.1},{:.1}) t=({:.2},{:.2})",
-                    h.node_id, h.x, h.y, h.tension_in, h.tension_out
-                ));
-            }
-            SelectionInfo::BackgroundImage(bg) => {
-                ui.label(format!(
-                    "BgImage ({:.0},{:.0}) {:.0}%x{:.0}%",
-                    bg.x, bg.y, bg.scale_x_pct, bg.scale_y_pct
-                ));
-            }
-            other => {
-                ui.label(format!("{other:?}"));
-            }
-        }
-    }
-
-    fn render_glyph_base_selection_info(
+    fn render_workspace_specific_icon_grid(
+        &mut self,
         ui: &mut Ui,
         state: &mut GrafiaCanvasState,
-        g: &grafia::core::GlyphBaseInfo,
+        tm: &MacTheme,
     ) {
-        ui.label(format!(
-            "GlyphBase (/{}) | Contours: {} | Nodes: {}",
-            g.glyph_name, g.contour_count, g.total_node_count
-        ));
-        ui.label(format!(
-            "BBox: ({:.0},{:.0}) {:.0}x{:.0} | LSB:{:.0} RSB:{:.0} W:{:.0}",
-            g.bbox_x, g.bbox_y, g.bbox_w, g.bbox_h, g.lsb, g.rsb, g.advance_width
-        ));
-        ui.horizontal_wrapped(|ui| {
-            use SelectionInfoAction as Act;
-            let actions = [
-                ("LSB -10", Act::SetLsb(g.lsb - METRIC_STEP_UPM)),
-                ("LSB +10", Act::SetLsb(g.lsb + METRIC_STEP_UPM)),
-                ("RSB -10", Act::SetRsb(g.rsb - METRIC_STEP_UPM)),
-                ("RSB +10", Act::SetRsb(g.rsb + METRIC_STEP_UPM)),
-                (
-                    "W +10",
-                    Act::SetAdvanceWidth(g.advance_width + METRIC_STEP_UPM),
-                ),
-                ("Center in Width", Act::CenterInWidth),
-            ];
-            for (lbl, act) in actions {
-                if ui.button(lbl).clicked() {
-                    let _ = state.apply_selection_info_action(act);
-                }
+        let hdr = match self.active_workspace {
+            StudioSubWorkspace::LetterContourAndSpacing => "1. PAD-CHIRURGIE, ANKERS & COMPONENTEN",
+            StudioSubWorkspace::LetterCagdAndStems => "2. CAGD, TUNNI, KAM & STAMDIKTE",
+            StudioSubWorkspace::LetterMastersAndHinting => "3. MASTERS, HINTING & AUTO-TRACE",
+            StudioSubWorkspace::IconVectorAndGlass => "4. 800×800 KEYLINES, VLAKKEN & GLAS",
+            StudioSubWorkspace::IconKineticAndTouch => "5. KINETISCHE SF-SYMBOLEN & DUIMWIEL",
+        };
+        ui.label(section_header_text(hdr, tm));
+        match self.active_workspace {
+            StudioSubWorkspace::LetterContourAndSpacing => {
+                Self::render_ws1_contour_icon_grid(ui, state)
             }
-        });
+            StudioSubWorkspace::LetterCagdAndStems => Self::render_harmony_controls(ui, state),
+            StudioSubWorkspace::LetterMastersAndHinting => {
+                self.render_ws3_masters_icon_grid(ui, state)
+            }
+            StudioSubWorkspace::IconVectorAndGlass | StudioSubWorkspace::IconKineticAndTouch => {
+                self.render_icon_studio_and_kinetic_bar(ui, state);
+            }
+        }
     }
 
-    pub fn render_preview_strip_panel(&mut self, ui: &mut Ui, state: &GrafiaCanvasState) {
-        ScrollArea::horizontal()
-            .id_salt("preview_strip_ctrl_scroll")
-            .show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    ui.strong("Preview Venster");
-                    ui.add(Separator::default().vertical());
-                    for (lbl, h_dp) in [("S 120", 120.0), ("M 200", 200.0), ("L 320", 320.0)] {
-                        let is_cur = (self.preview_panel_height_dp - h_dp).abs() < 16.0;
-                        if ui.selectable_label(is_cur, lbl).clicked() {
-                            self.preview_panel_height_dp = h_dp;
+    fn render_ws1_contour_icon_grid(ui: &mut Ui, state: &mut GrafiaCanvasState) {
+        #[rustfmt::skip]
+        const WS1_TILES: [(&str, &str); 8] = [
+            ("\u{f6f4}", "Corrigeer Padrichting [⌘⇧R] — Buitenrand CCW, binnen-counter CW"),
+            ("\u{f4e3}", "Keer Padrichting Om [⌃⌥⌘R] — Draai wikkelrichting (CW ↔ CCW) om"),
+            ("\u{f53d}", "Maak Knoop Startpunt — Stel geselecteerde knoop in als index 0"),
+            ("\u{f892}", "Ruim Paden Op [⌘⌥⇧T] — Verwijder dubbele knopen en trek handles strak"),
+            ("\u{f899}", "Buigpunten Toevoegen — Splits kubische S-bochten op inflectiepunt κ=0"),
+            ("\u{f80a}", "Lijn Selectie Uit [⌘⇧A] — Lijn geselecteerde knopen H/V uit"),
+            ("\u{f6e5}", "Verbind Open Eindpunten [⌘J] — Sluit twee open eindknopen"),
+            ("\u{f77e}", "Herstel Standaard Ankers [⌘U] — Injecteer top/bottom/ogonek + wolk"),
+        ];
+        let g_pt = FontPoint::new(DEMO_GUIDE_X_UPM, DEMO_GUIDE_Y_UPM);
+        Grid::new("ws1_path_ops_icon_grid_4col")
+            .num_columns(4)
+            .spacing([GRID_SPACING_DP * 2.0, GRID_SPACING_DP * 2.0])
+            .show(ui, |g_ui| {
+                for (i, (ic, tip)) in WS1_TILES.into_iter().enumerate() {
+                    if icon_tile(g_ui, ic, tip) {
+                        if i == 7 {
+                            state.reset_default_anchors();
+                        } else {
+                            let _ = match i {
+                                0 => state.correct_path_direction(),
+                                1 => state.reverse_selected_or_all_contours(),
+                                2 => state.make_node_first(),
+                                3 => state.tidy_up_paths(),
+                                4 => state.add_inflection_points(),
+                                5 => state.align_selection(),
+                                _ => state.connect_selected_open_endpoints(),
+                            };
                         }
                     }
-                    ui.add(Separator::default().vertical());
-                    let _ = ui.add(
-                        Slider::new(
-                            &mut self.preview_cfg.blur_radius_px,
-                            PREVIEW_BLUR_MIN_RADIUS_PX..=PREVIEW_BLUR_MAX_RADIUS_PX,
-                        )
-                        .text("Blur (px)"),
-                    );
-                    ui.checkbox(&mut self.preview_cfg.flipped, "Spiegel V");
-                    ui.checkbox(&mut self.preview_cfg.inverted, "Inverteer");
-                });
+                    if i % 4 == 3 {
+                        g_ui.end_row();
+                    }
+                }
+                if icon_tile(
+                    g_ui,
+                    MacSymbol::Plus.as_str(),
+                    "Lokale Hulplijn Toevoegen [⌘G]",
+                ) {
+                    state.add_guide_from_selection(false, g_pt);
+                }
+                if icon_tile_toggle(
+                    g_ui,
+                    state.show_guides,
+                    "\u{f424}",
+                    "Toon / Verberg Hulplijnen [⌘;]",
+                ) {
+                    state.show_guides = !state.show_guides;
+                }
+                if icon_tile_toggle(
+                    g_ui,
+                    state.lock_guides,
+                    "\u{f4c8}",
+                    "Vergrendel Hulplijnen [⌘⌥;]",
+                ) {
+                    state.lock_guides = !state.lock_guides;
+                }
+                if icon_tile_toggle(
+                    g_ui,
+                    state.show_background,
+                    "\u{f80d}",
+                    "Referentie-Achtergrondlaag [⌘B]",
+                ) {
+                    if state.background_contours.is_empty() {
+                        state.copy_selection_to_background();
+                    }
+                    state.show_background = !state.show_background;
+                }
+                g_ui.end_row();
             });
-        let target_w_px =
-            (ui.available_width()
-                .round()
-                .clamp(PREVIEW_STRIP_MIN_WIDTH_DP, PREVIEW_STRIP_MAX_WIDTH_DP)) as u32;
-        let avail_h = ui
-            .available_height()
-            .max(self.preview_panel_height_dp - 28.0);
-        let target_h_px = (avail_h.round().clamp(72.0, 440.0)) as u32;
-        self.preview_cfg.width_px = target_w_px;
-        self.preview_cfg.height_px = target_h_px;
-        let (tex, _) = self
-            .preview_cache
-            .get_or_update_texture(ui.ctx(), state, &self.preview_cfg);
-        let size = egui::Vec2::new(
-            self.preview_cfg.width_px as f32,
-            self.preview_cfg.height_px as f32,
-        );
-        ui.add(Image::from_texture((tex.id(), size)));
+    }
+
+    fn render_ws3_masters_icon_grid(&mut self, ui: &mut Ui, state: &mut GrafiaCanvasState) {
+        #[rustfmt::skip]
+        const WS3_TILES: [(&str, &str, Option<DemoPreset>); 8] = [
+            ("\u{f6e5}", "Multi-Master Compatibiliteitsstralen [⌘⌥N]", Some(DemoPreset::MultiMasterCompatAndAutoMatch)),
+            ("\u{f6f4}", "Auto-Match Master Volgorde & Startknopen", None),
+            ("\u{f899}", "Hogere-Orde Interpolatie (HOI) Diamanten [H]", Some(DemoPreset::HigherOrderInterpolationHoi)),
+            ("\u{f7c7}", "Gebogen Master-Trajecten voor Rotatie", Some(DemoPreset::CurvedMasterTrajectories)),
+            ("\u{f48a}", "TrueType Visual Instructor & 16 PPEM Raster [I]", Some(DemoPreset::TrueTypeVisualInstructor16Ppem)),
+            ("\u{f500}", "PostScript Stam- & Ghost-Hints", Some(DemoPreset::PostScriptStemAndGhostHints)),
+            ("\u{f804}", "Scan-Onderlegger & Auto-Trace naar Bézier", None),
+            ("\u{f80c}", "Hoeken Vastbakken (Bake Smart Corners)", None),
+        ];
+        let mut dummy_theme = state.theme.clone();
+        Grid::new("ws3_masters_icon_grid_4col")
+            .num_columns(4)
+            .spacing([GRID_SPACING_DP * 2.0, GRID_SPACING_DP * 2.0])
+            .show(ui, |g_ui| {
+                for (i, (ic, tip, preset)) in WS3_TILES.into_iter().enumerate() {
+                    if icon_tile(g_ui, ic, tip) {
+                        if let Some(p) = preset {
+                            self.apply_preset(p, state, &mut dummy_theme);
+                        } else if i == 1 {
+                            let _ = state.auto_match_master_compatibility(1);
+                        } else if i == 6 {
+                            self.apply_auto_trace_bg_image_preset(state);
+                        } else {
+                            state.bake_smart_corners();
+                        }
+                    }
+                    if i % 4 == 3 {
+                        g_ui.end_row();
+                    }
+                }
+            });
+    }
+
+    #[rustfmt::skip]
+    pub(crate) fn render_harmony_controls(ui: &mut Ui, state: &mut GrafiaCanvasState) {
+        Grid::new("ws2_cagd_icon_grid_4col").num_columns(4).spacing([GRID_SPACING_DP * 2.0, GRID_SPACING_DP * 2.0]).show(ui, |g_ui| {
+            if icon_tile(g_ui, "G²", "G² Krommingscontinuïteit (Genius ★) [⌥⌘H]") { state.harmonize_selected_nodes(); }
+            if icon_tile(g_ui, "G³", "G³ Clothoïde / Euler-Spiraal (❖) [⌃⌥⌘H]") { state.harmonize_selected_nodes_g3(); }
+            if icon_tile_toggle(g_ui, state.show_tunni_lines, "\u{f6e5}", "Blauwe Tunni-Hefboomlijnen & Ratio-Badges") { state.toggle_show_tunni_lines(); }
+            if icon_tile_toggle(g_ui, state.curve_harmony.show_curvature_comb, "\u{f899}", "Krommingskam (Curvature Comb) [⌘⌥C]") { state.toggle_show_curvature_comb(); }
+            g_ui.end_row();
+            if icon_tile_toggle(g_ui, state.curve_harmony.show_outline_audit, "\u{f48a}", "Rode-Pijlen Contour-Audit [⌘⇧D]") { state.curve_harmony.show_outline_audit = !state.curve_harmony.show_outline_audit; }
+            if icon_tile_toggle(g_ui, state.power_nudge_enabled, "\u{f386}", "Power Nudge & Servo-Handles [⌃⌘]") { state.toggle_power_nudge(); }
+            let sym_on = state.curve_harmony.symmetry_overlay_mode != grafia::SymmetryOverlayMode::Off;
+            if icon_tile_toggle(g_ui, sym_on, "\u{f500}", "Spiegel-As Symmetrie-Overlay") {
+                state.set_symmetry_overlay_mode(if sym_on { grafia::SymmetryOverlayMode::Off } else { grafia::SymmetryOverlayMode::VerticalAxis });
+            }
+            if icon_tile_toggle(g_ui, state.curve_harmony.show_measurement_rainbow, "\u{f7ca}", "Continue Dikte-Regenboog (Measurement Rainbow)") { state.toggle_show_measurement_rainbow(); }
+            g_ui.end_row();
+            if icon_tile_toggle(g_ui, state.curve_harmony.show_optical_rhythm_fill, "\u{f7ff}", "Optische Ritme-Vulling & Overshoot-Band") { state.toggle_show_optical_rhythm_fill(); }
+            if icon_tile_toggle(g_ui, state.curve_harmony.show_stem_gauge, "\u{f52a}", "Structurele Stamdikte-Meter") { state.toggle_show_stem_gauge(); }
+            if icon_tile_toggle(g_ui, state.curve_harmony.show_visual_centroid, "⊕", "Optisch Zwaartepunt (Visual Centroid ⊕)") { state.toggle_show_visual_centroid(); }
+            if icon_tile(g_ui, "★", "Converteer Kubisch ↔ Hobby-Spline") && !state.convert_selected_cubic_nodes_to_hobby() {
+                let _ = state.convert_selected_hobby_nodes_to_cubic();
+            }
+            g_ui.end_row();
+        });
     }
 }
